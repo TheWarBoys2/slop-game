@@ -1,0 +1,34 @@
+name: Build Windows server
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Smoke test the server boots
+        run: |
+          bun server.js 7777 &
+          sleep 2
+          curl -sf http://localhost:7777/ > /dev/null
+          curl -sf http://localhost:7777/game.js > /dev/null
+      - name: Build SlopValley.exe
+        run: bun build --compile --minify --target=bun-windows-x64 server.js --outfile SlopValley.exe
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Slop Valley build ${{ github.run_number }}
+          body: Automatic build of ${{ github.sha }}. Hosts running SlopValley.bat pick this up on next launch.
+          make_latest: true
+          files: |
+            SlopValley.exe
+            SlopValley.bat

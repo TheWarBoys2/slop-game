@@ -1,0 +1,3 @@
+*.exe
+version.txt
+node_modules/
