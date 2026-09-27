@@ -23,7 +23,7 @@ Only the host installs anything. Everyone else just opens a link in their browse
 
 **How a match goes:** a short first day, then five nights with days in between. Zombies come from the map edges and go for players or straight for the Hearth. If the Hearth's health hits zero you lose. Kill the Leshen on night 5 to win. Winner winner, chicken dinner.
 
-**Controls:** WASD move, mouse aim and shoot, R reload, E plant / harvest / open crates, Space dodge, Q shout, 1/2 or mouse wheel swap weapons, B shop (daytime only), Tab scoreboard, Enter chat.
+**Controls:** WASD move, mouse aim and shoot, R reload, E plant / harvest / open crates, Space dodge, Q shout, 1/2 or mouse wheel swap weapons, B shop (daytime only), K skills, Tab scoreboard, Enter chat. There is more to find than this README lets on.
 
 ## Hosting on Windows (the host only)
 
@@ -59,4 +59,6 @@ SLOP_FAST=1 bun server.js   # short days/nights and lots of gold, for testing
 bun tools/bots.js ws://localhost:7777/ws 4   # 4 bots join and play
 ```
 
-`server.js` runs the whole game and serves `public/`. The browser client is `public/game.js`.
+`server.js` runs the whole game and serves `public/`. The browser client is `public/game.js`. `story.js` is spoilers.
+
+`SLOP_DMG=30` multiplies player damage, for testing the ending quickly.
