@@ -4,6 +4,7 @@ import indexHtml from "./public/index.html" with { type: "text" };
 import gameJs from "./public/game.js" with { type: "text" };
 import os from "node:os";
 import { storyEvent, bossKind, BOSSES, ending, valleyName } from "./story.js";
+import { NPCS, QUESTS, CLUES, npcLines } from "./npcs.js";
 
 const PORT = Number(process.argv[2] || process.env.PORT || 7777);
 const TICK_RATE = 30;
@@ -13,6 +14,11 @@ const DAY_LEN = FAST ? 6 : 50;
 const NIGHT_LEN = FAST ? 8 : 60;
 const VOTE_LEN = FAST ? 3 : 25;
 const LAST_NIGHT = 5;
+const DROP_LEN = FAST ? 4 : 12; // seconds the balloon takes to cross the valley
+const ROYALE_ZONES = [ // [wait, shrink, radius]
+  [60, 40, 1000], [40, 30, 650], [30, 25, 380], [25, 20, 180], [20, 20, 0],
+].map(([w, s, r]) => [FAST ? w / 6 : w, FAST ? s / 4 : s, r]);
+const STORY_ZONE_R = [1700, 1350, 1100, 920, 800, 680];
 const TEST_DMG = Number(process.env.SLOP_DMG || 1); // testing only
 
 // ---------------------------------------------------------------- helpers
@@ -54,7 +60,25 @@ function generateMap(seed) {
   WALLS = walls;
 }
 generateMap((Math.random() * 1e9) | 0);
-function mapMsg() { return { t: "map", map: { W, H, walls: WALLS, hearth: HEARTH, plots: PLOTS.map((p) => ({ x: p.x, y: p.y })), seed: MAP_SEED, valley: VALLEY } }; }
+let NPC_POS = [];
+function placeNpcs() {
+  const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
+  NPC_POS = [{ id: "grubb", x: hc.x - 40, y: HEARTH.y - 40 }, { id: "haddock", x: hc.x + 40, y: HEARTH.y + HEARTH.h + 40 }];
+  for (const id of ["aldous", "vex", "pell", "morwen"]) {
+    let best = null;
+    for (let i = 0; i < 60; i++) {
+      const sp = freeSpot(26);
+      const d = Math.hypot(sp.x - hc.x, sp.y - hc.y);
+      const want = id === "morwen" ? d > 800 : d > 350 && d < 750;
+      if (want && !NPC_POS.some((n) => Math.hypot(n.x - sp.x, n.y - sp.y) < 200)) { best = sp; break; }
+      if (!best) best = sp;
+    }
+    NPC_POS.push({ id, ...best });
+  }
+}
+placeNpcs();
+function npcList() { return game.mode === "royale" ? [] : NPC_POS.map((n) => ({ ...n, name: NPCS[n.id].name, role: NPCS[n.id].role, color: NPCS[n.id].color, hat: NPCS[n.id].hat })); }
+function mapMsg() { return { t: "map", map: { W, H, walls: WALLS, hearth: HEARTH, plots: PLOTS.map((p) => ({ x: p.x, y: p.y })), seed: MAP_SEED, valley: VALLEY, npcs: npcList() } }; }
 
 // ---------------------------------------------------------------- data
 const WEAPONS = {
@@ -190,7 +214,7 @@ let zombies = [];
 let crates = [];
 let events = [];
 const freshMods = () => ({ hearthRegen: 0, zHp: 1, zCount: 1, dmg: 1, shoutCd: 1, speed: 1, hpBonus: 0, taxFree: false, nightCut: 1, bossHp: 1 });
-const game = { phase: "lobby", night: 0, ends: 0, hearth: 1000, hearthMax: 1000, result: null, spawnLeft: 0, spawnNext: 0, bossId: 0, bossKind: "leshen", stats: null, flags: { valley: VALLEY }, mods: freshMods(), vote: null, story: null, ending: null };
+const game = { mode: "story", zone: null, drop: null, aff: {}, clues: new Set(), phase: "lobby", night: 0, ends: 0, hearth: 1000, hearthMax: 1000, result: null, spawnLeft: 0, spawnNext: 0, bossId: 0, bossKind: "leshen", stats: null, flags: { valley: VALLEY }, mods: freshMods(), vote: null, story: null, ending: null };
 
 function newWeapon(type, rarity = 0, enh = 0) {
   return { type, rarity, enh, ammo: WEAPONS[type].mag, reloadUntil: 0, reloadStart: 0, nextShot: 0, bloom: 0, hot: false, tried: false };
@@ -198,7 +222,7 @@ function newWeapon(type, rarity = 0, enh = 0) {
 function wName(w) { return w.rarity === 4 ? MYTHIC[w.type] : WEAPONS[w.type].name; }
 function traitOf(p) { return TRAITS[p.trait] || {}; }
 function sk(p, s) { return p.sk[s] || 0; }
-function maxHp(p) { return CLASSES[p.cls].hp + (traitOf(p).hp || 0) + 20 * sk(p, "tough") + game.mods.hpBonus + (p.champion ? 50 : 0); }
+function maxHp(p) { return CLASSES[p.cls].hp + (traitOf(p).hp || 0) + 20 * sk(p, "tough") + game.mods.hpBonus + (p.champion ? 50 : 0) + p.bonusHp; }
 function fullName(p) { return `${p.base}${p.gen > 1 ? " " + ROMAN[Math.min(p.gen, 12)] : ""} ${traitOf(p).epithet}`; }
 function xpNeed(lvl) { return 50 + 30 * (lvl - 1); }
 
@@ -222,7 +246,8 @@ function makePlayer(ws, msg) {
 function resetProgress(p) {
   p.lvl = 1; p.xp = 0; p.pts = 0; p.sk = { ...(BACKGROUNDS[p.bg].sk || {}) };
   p.gen = 1; p.lineage = []; p.trait = p.chosenTrait || pick(TRAIT_KEYS); p.champion = false; p.heat = 0; p.dead = false;
-  p.st = { kills: 0, deaths: 0, dmg: 0, crops: 0, tk: 0, gold: 0, bounty: 0, shots: 0, hits: 0, hs: 0, perfect: 0 };
+  p.st = { kills: 0, deaths: 0, dmg: 0, crops: 0, tk: 0, gold: 0, bounty: 0, shots: 0, hits: 0, hs: 0, perfect: 0, cases: 0, shoutHits: 0, repairs: 0, pk: 0 };
+  p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null;
 }
 function resetLoadout(p, fresh) {
   p.hp = maxHp(p); p.armor = 0;
@@ -266,7 +291,7 @@ function dmgMult(p, w) {
   if (w.hot) m *= 1.2;
   return m * TEST_DMG;
 }
-function price(p, cost) { return Math.round(cost * (1 - 0.1 * sk(p, "haggler"))); }
+function price(p, cost) { return Math.round(cost * (1 - 0.1 * sk(p, "haggler") - p.discount)); }
 function reloadTime(p, w) { return WEAPONS[w.type].reload * (1 - 0.15 * sk(p, "quick")); }
 // current cone half-angle: tight first shot, blooms while spraying, worse while moving
 function spreadOf(p, w) {
@@ -303,10 +328,9 @@ function hurtZombie(z, dmg, p, kind) {
   }
 }
 function hurtPlayer(v, dmg, attacker, cause) {
-  if (v.dead || now() < v.dashUntil) return;
+  if (v.dead || v.air || now() < v.dashUntil) return;
   if (attacker && attacker !== v) {
-    dmg *= 0.5; // friendly fire is real, but halved
-    attacker.heat += dmg;
+    if (game.mode !== "royale") { dmg *= 0.5; attacker.heat += dmg; } // friendly fire is real, but halved
     attacker.st.dmg += dmg;
     attacker.pe.push({ k: "dmg", x: v.x, y: v.y - 20, v: Math.round(dmg), crit: false, ff: true });
   }
@@ -317,10 +341,18 @@ function hurtPlayer(v, dmg, attacker, cause) {
 }
 function killPlayer(v, attacker, cause) {
   if (v.dead) return;
-  v.dead = true; v.hp = 0; v.respawnAt = now() + 5; v.st.deaths++; v.champion = false;
+  v.dead = true; v.hp = 0; v.respawnAt = now() + 5; v.st.deaths++; v.champion = false; v.dlg = null;
   const prim = v.weapons.find((w) => w.type !== "pistol");
   if (prim) crates.push({ id: nextId++, x: v.x, y: v.y, w: { ...prim, ammo: WEAPONS[prim.type].mag, reloadUntil: 0, hot: false }, grave: true });
   const vStars = Math.min(5, Math.floor(v.heat / 40));
+  if (game.mode === "royale") {
+    v.out = true;
+    v.place = [...players.values()].filter((q) => !q.out).length + 1;
+    if (attacker && attacker !== v) { attacker.st.pk++; addGold(attacker, 50, "Elimination"); addXp(attacker, 30); feed(`${fullName(attacker)} eliminated ${fullName(v)} (#${v.place})`, "#ff9090"); }
+    else feed(`${fullName(v)} was ${cause || "eaten"} (#${v.place})`, "#ff9090");
+    v.pe.push({ k: "wasted", place: v.place });
+    return;
+  }
   if (attacker && attacker !== v) {
     attacker.st.tk++;
     attacker.heat += 80;
@@ -433,6 +465,7 @@ function tryActiveReload(p, w) {
 
 // ---------------------------------------------------------------- actions
 function interact(p) {
+  if (p.air) return;
   let best = null, bd = 60 * 60;
   for (const c of crates) { const d = dist2(c, p); if (d < bd) { bd = d; best = c; } }
   if (best) {
@@ -445,6 +478,7 @@ function interact(p) {
     if (w.rarity >= 3) feed(`${fullName(p)} found ${w.rarity === 4 ? "the MYTHIC" : "a LEGENDARY"} ${wName(w)}`, w.rarity === 4 ? "#ff4b4b" : "#ffc030");
     return;
   }
+  if (game.mode !== "royale") for (const n of NPC_POS) if (dist2(n, p) < 70 * 70) return openDlg(p, n.id);
   let plot = null; bd = 48 * 48;
   for (const pl of PLOTS) { const d = dist2(pl, p); if (d < bd) { bd = d; plot = pl; } }
   if (!plot) return;
@@ -464,6 +498,7 @@ function giveWeapon(p, w) {
   p.weapons[1] = w; p.active = 1;
 }
 function buy(p, item) {
+  if (game.mode === "royale" && game.phase !== "lobby") return toast(p, "No shops in the Royale. Loot it or lose it.", "#f88");
   if (game.phase !== "day" && game.phase !== "lobby") return toast(p, "The shop is shut at night.", "#f88");
   if (p.dead) return;
   const it = SHOP[item]; if (!it) return;
@@ -475,13 +510,13 @@ function buy(p, item) {
   if (item === "seeds") p.seeds += 3;
   else if (item === "medkit") p.hp = maxHp(p);
   else if (item === "kevlar") p.armor = 60;
-  else if (item === "repair") { game.hearth = Math.min(game.hearthMax, game.hearth + 200); feed(`${fullName(p)} repaired the Hearth`, "#8f8"); }
+  else if (item === "repair") { p.st.repairs++; game.hearth = Math.min(game.hearthMax, game.hearth + 200); feed(`${fullName(p)} repaired the Hearth`, "#8f8"); }
   else if (item === "case") {
     const r = Math.random() * 100 - (traitOf(p).luck ? 8 : 0);
     const rarity = r < 0.8 ? 4 : r < 4 ? 3 : r < 15 ? 2 : r < 40 ? 1 : 0;
     const w = newWeapon(pick(LOOT_TYPES), rarity);
     giveWeapon(p, w);
-    p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) });
+    p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) }); p.st.cases++;
     if (rarity >= 2) setTimeout(() => feed(`${fullName(p)} unboxed ${RARITY[rarity].toUpperCase()} ${wName(w)}`, ["", "", "#c070ff", "#ffc030", "#ff4b4b"][rarity]), 3200);
   } else if (WEAPONS[item]) giveWeapon(p, newWeapon(item));
   if (item !== "case") toast(p, `Bought ${it.name}`, "#8f8");
@@ -510,8 +545,8 @@ function learn(p, s) {
 }
 function doShout(p) {
   const t = now();
-  if (p.dead || t < p.shoutCd) return;
-  p.shoutCd = t + 15 * (1 - (traitOf(p).shout || 0)) * (1 - 0.15 * sk(p, "thuum")) * game.mods.shoutCd;
+  if (p.dead || p.air || t < p.shoutCd) return;
+  p.shoutCd = t + 15 * (1 - (traitOf(p).shout || 0)) * (1 - 0.15 * sk(p, "thuum")) * game.mods.shoutCd * p.shoutMult;
   const range = 280 * (1 + 0.15 * sk(p, "thuum"));
   events.push({ k: "shout", x: p.x, y: p.y, a: p.a, id: p.id, r: range });
   const hit = (e, mass) => {
@@ -523,12 +558,12 @@ function doShout(p) {
     return true;
   };
   const mass = { boss: game.bossKind === "golem" ? 99 : 5, elite: 3, tank: 2 };
-  for (const z of zombies) if (hit(z, mass[z.type] || 1)) { z.stun = t + 1.2; hurtZombie(z, 10, p); }
+  for (const z of zombies) if (hit(z, mass[z.type] || 1)) { z.stun = t + 1.2; hurtZombie(z, 10, p); p.st.shoutHits++; }
   for (const q of players.values()) if (q !== p && !q.dead) hit(q, 1);
 }
 function doDodge(p) {
   const t = now();
-  if (p.dead || t < p.dashCd) return;
+  if (p.dead || p.air || t < p.dashCd) return;
   let dx = ((p.keys & 8) ? 1 : 0) - ((p.keys & 2) ? 1 : 0), dy = ((p.keys & 4) ? 1 : 0) - ((p.keys & 1) ? 1 : 0);
   if (!dx && !dy) { dx = Math.cos(p.a); dy = Math.sin(p.a); }
   const l = Math.hypot(dx, dy); p.dashDx = dx / l; p.dashDy = dy / l;
@@ -571,10 +606,146 @@ function resolveVote() {
   feed(`${v.ev.title}: "${v.ev.choices[choice].label}"${winners.length > 1 && top > 0 ? " (tie broken by fate)" : ""}`, "#e0c0ff");
 }
 
+// ---------------------------------------------------------------- npcs & dialogue
+const npcApi = {
+  progress: (p, id) => p.st[QUESTS[id].stat] - p.q[id].base,
+  accept: (p, id) => { p.q[id] = { base: p.st[QUESTS[id].stat], done: false, told: false }; toast(p, `New quest: ${QUESTS[id].title}. ${QUESTS[id].desc} [J]`, "#e0c0ff"); },
+  gold: (p, n) => { if (n > 0) addGold(p, n); else p.gold = Math.max(0, p.gold + n); },
+  goldAll: (n) => { for (const q of players.values()) addGold(q, n); },
+  pointsAll: (n) => { for (const q of players.values()) q.pts += n; },
+  clue: (id) => {
+    if (game.clues.has(id)) return;
+    game.clues.add(id);
+    feed(`CLUE ${game.clues.size}/5: ${CLUES[id]}`, "#e0c0ff");
+    events.push({ k: "clue", n: game.clues.size });
+    if (game.clues.size === 4) feed("You know enough. Somebody should have a word with the Mayor.", "#ffd34d");
+  },
+  story: (title, text) => { game.story = { title, pick: "", text, until: now() + 14 }; events.push({ k: "vote" }); },
+  mods: () => game.mods,
+  name: fullName,
+  crate: (p, rarity, type) => { const at = { x: p.x + rand(-30, 30), y: p.y + 40 }; collide(at, 20); crates.push({ id: nextId++, ...at, w: newWeapon(type || pick(LOOT_TYPES), rarity) }); },
+  blackCase: (p) => {
+    const r = Math.random() * 100 - (traitOf(p).luck ? 8 : 0);
+    const rarity = r < 8 ? 4 : r < 30 ? 3 : r < 65 ? 2 : 1;
+    const w = newWeapon(pick(LOOT_TYPES), rarity);
+    giveWeapon(p, w); p.st.cases++;
+    p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) });
+    if (rarity >= 3) setTimeout(() => feed(`${fullName(p)} unboxed ${RARITY[rarity].toUpperCase()} ${wName(w)} from Vex's coat`, rarity === 4 ? "#ff4b4b" : "#ffc030"), 3200);
+  },
+};
+function dlgCtx(p) { return { p, f: game.flags, aff: game.aff, clues: game.clues, q: p.q, api: npcApi }; }
+function openDlg(p, npc) {
+  p.dlg = { npc, node: "start" };
+  p.talked.add(npc);
+  addXp(p, 1);
+  sendDlg(p);
+}
+function sendDlg(p) {
+  if (!p.dlg) { p.pe.push({ k: "dlg", close: 1 }); return; }
+  const N = NPCS[p.dlg.npc], node = N.nodes[p.dlg.node], c = dlgCtx(p);
+  p.dlgOpts = node.opts.filter((o) => !o.if || o.if(c));
+  p.pe.push({ k: "dlg", npc: p.dlg.npc, name: N.name, role: N.role, text: node.text(c), opts: p.dlgOpts.map((o) => o.label) });
+}
+function pickDlg(p, i) {
+  if (!p.dlg) return;
+  const o = p.dlgOpts && p.dlgOpts[i];
+  if (!o) { p.dlg = null; sendDlg(p); return; }
+  const c = dlgCtx(p);
+  const msg = o.do ? o.do(c) : undefined;
+  if (msg) toast(p, msg, "#e0c0ff");
+  p.dlg = o.to ? { npc: p.dlg.npc, node: o.to } : null;
+  sendDlg(p);
+}
+function questReady(p) {
+  const out = [];
+  for (const [id, st] of Object.entries(p.q)) if (!st.done && npcApi.progress(p, id) >= QUESTS[id].goal) out.push(QUESTS[id].npc);
+  return out;
+}
+
+// ---------------------------------------------------------------- zone & drop (battle royale bits)
+function zoneInit(cx, cy, r, stages) {
+  game.zone = { cx, cy, r, fcx: cx, fcy: cy, fr: r, tcx: cx, tcy: cy, tr: r, t0: 0, t1: 0, stages: stages || [], dmg: 3 };
+  if (stages && stages.length) zoneNext(now());
+}
+function zoneNext(t) {
+  const z = game.zone, [wait, shrink, r] = z.stages.shift();
+  const slack = Math.max(0, z.r - r);
+  const a = rand(0, Math.PI * 2), d = rand(0, slack * 0.8);
+  z.fcx = z.cx; z.fcy = z.cy; z.fr = z.r;
+  z.tcx = clamp(z.cx + Math.cos(a) * d, 200, W - 200); z.tcy = clamp(z.cy + Math.sin(a) * d, 200, H - 200); z.tr = r;
+  z.t0 = t + wait; z.t1 = z.t0 + shrink;
+}
+function zoneShrinkTo(r, secs) { // story mode: the fog closes in around the Hearth each night
+  const z = game.zone, t = now();
+  z.fcx = z.cx; z.fcy = z.cy; z.fr = z.r; z.tcx = z.cx; z.tcy = z.cy; z.tr = r; z.t0 = t; z.t1 = t + secs;
+}
+function zoneTick(t) {
+  const z = game.zone; if (!z) return;
+  if (t >= z.t0 && z.t1 > z.t0) {
+    const k = clamp((t - z.t0) / (z.t1 - z.t0), 0, 1);
+    z.cx = z.fcx + (z.tcx - z.fcx) * k; z.cy = z.fcy + (z.tcy - z.fcy) * k; z.r = z.fr + (z.tr - z.fr) * k;
+    if (k >= 1 && z.stages.length) { z.dmg = Math.min(20, z.dmg * 1.7); zoneNext(t); }
+  }
+}
+function outsideZone(e) { const z = game.zone; return z && (e.x - z.cx) ** 2 + (e.y - z.cy) ** 2 > z.r * z.r; }
+function startDrop(through) {
+  let a = rand(0, Math.PI * 2);
+  const cx = through ? through.x : rand(700, W - 700), cy = through ? through.y : rand(500, H - 500);
+  const L = 1900;
+  game.drop = { x0: cx - Math.cos(a) * L, y0: cy - Math.sin(a) * L, x1: cx + Math.cos(a) * L, y1: cy + Math.sin(a) * L, t0: now(), dur: DROP_LEN };
+  for (const p of players.values()) if (!p.dead) { p.air = "plane"; p.dlg = null; }
+}
+function dropPos(t) {
+  const d = game.drop, k = clamp((t - d.t0) / d.dur, 0, 1);
+  return { x: d.x0 + (d.x1 - d.x0) * k, y: d.y0 + (d.y1 - d.y0) * k, k };
+}
+function jump(p) {
+  if (p.air !== "plane") return;
+  const t = now(), pos = dropPos(t);
+  p.x = clamp(pos.x, 40, W - 40); p.y = clamp(pos.y, 40, H - 40);
+  p.air = "fall"; p.fallEnd = t + 2.2;
+}
+
+// ---------------------------------------------------------------- royale
+function startRoyale() {
+  generateMap((Math.random() * 1e9) | 0);
+  game.mode = "royale";
+  broadcastRaw(JSON.stringify(mapMsg()));
+  game.phase = "royale"; game.night = 0; game.ends = Infinity; game.result = null; game.ending = null;
+  game.flags = { valley: VALLEY }; game.mods = freshMods(); game.vote = null; game.story = null; game.bossId = 0;
+  game.hearthMax = game.hearth = 1e9;
+  zombies = []; crates = [];
+  for (const pl of PLOTS) { pl.stage = 0; pl.prog = 0; }
+  for (const p of players.values()) { resetProgress(p); resetLoadout(p, true); p.weapons = [newWeapon("pistol")]; p.active = 0; p.gold = 0; }
+  const n = 18 + 5 * players.size;
+  for (let i = 0; i < n; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon(pick(LOOT_TYPES), lootRarity(2)) });
+  for (let i = 0; i < 12; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon("pistol", lootRarity(1)) });
+  zoneInit(W / 2, H / 2, 1700, ROYALE_ZONES.map((z) => [...z]));
+  startDrop(null);
+  events.push({ k: "banner", text: `SLOP ROYALE: ${VALLEY.toUpperCase()}`, sub: "Jump with SPACE. Loot up. Stay out of the fog. Last farmer standing wins." });
+}
+function endRoyale() {
+  game.phase = "over"; game.result = "royale";
+  for (const z of zombies) z.burn = true;
+  const winner = [...players.values()].find((p) => !p.out);
+  if (winner) winner.place = 1;
+  game.ending = [winner ? `${fullName(winner)} is the last farmer standing in ${VALLEY}.` : `Nobody survived ${VALLEY}. The fog wins.`];
+  const rows = [...players.values()].map((p) => {
+    const s = p.st, acc = s.shots ? s.hits / s.shots : 0, n = players.size;
+    const r = clamp(10 - (p.place - 1) * (6 / Math.max(1, n - 1)) + s.pk * 0.3 + (acc - 0.35), 3, 10);
+    return { name: fullName(p), cls: CLASSES[p.cls].name, color: p.color, ...s, place: p.place || n, acc: Math.round(acc * 100), lvl: p.lvl, dmg: Math.round(s.dmg), rating: Math.round(r * 10) / 10, lineage: [fullName(p)], winner: p === winner, id: p.id };
+  }).sort((a, b) => a.place - b.place);
+  game.stats = rows;
+  events.push({ k: "over" });
+}
+
 // ---------------------------------------------------------------- phases
 function startGame() {
+  if (game.mode === "royale") return startRoyale();
   generateMap((Math.random() * 1e9) | 0);
+  placeNpcs();
   broadcastRaw(JSON.stringify(mapMsg()));
+  game.aff = Object.fromEntries(Object.keys(NPCS).map((k) => [k, 0])); game.clues = new Set();
   game.phase = "day"; game.night = 0; game.ends = now() + DAY_LEN; game.result = null; game.ending = null;
   game.flags = { valley: VALLEY }; game.mods = freshMods(); game.vote = null; game.story = null; game.bossId = 0;
   const n = Math.max(1, players.size);
@@ -583,7 +754,10 @@ function startGame() {
   for (const pl of PLOTS) { pl.stage = 0; pl.prog = 0; }
   for (const p of players.values()) { resetProgress(p); resetLoadout(p, true); }
   spawnCrates();
-  events.push({ k: "banner", text: `WELCOME TO ${VALLEY.toUpperCase()}`, sub: "Plant crops, find loot, pick your skills [K]. Night is coming." });
+  const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
+  zoneInit(hc.x, hc.y, STORY_ZONE_R[0]);
+  startDrop(hc);
+  events.push({ k: "banner", text: `WELCOME TO ${VALLEY.toUpperCase()}`, sub: "SPACE to jump. The townsfolk want a word [E]. Night is coming." });
   openVote(1);
 }
 function lootRarity(bonus = 0) {
@@ -602,6 +776,8 @@ function startNight() {
   game.spawnLeft = Math.round((10 + 8 * game.night) * (0.6 + 0.4 * n) * game.mods.zCount * game.mods.nightCut);
   game.mods.nightCut = 1;
   game.spawnNext = now() + 2;
+  zoneShrinkTo(STORY_ZONE_R[game.night], 25);
+  events.push({ k: "feed", text: "The slop fog is closing in. Stay near the Hearth.", color: "#c080ff" });
   if (game.night === LAST_NIGHT) {
     game.ends = Infinity;
     game.bossKind = bossKind(game.flags);
@@ -617,6 +793,7 @@ function startNight() {
 }
 function startDay() {
   game.phase = "day"; game.ends = now() + DAY_LEN;
+  for (const p of players.values()) p.talked.clear();
   for (const z of zombies) if (z.type !== "elite") z.burn = true;
   spawnCrates();
   events.push({ k: "banner", text: `DAY ${game.night + 1}`, sub: `The sun burns the dead. ${LAST_NIGHT - game.night} night${LAST_NIGHT - game.night === 1 ? "" : "s"} left. Shop open [B].` });
@@ -625,7 +802,8 @@ function startDay() {
 function endGame(win) {
   game.phase = "over"; game.result = win ? "win" : "lose"; game.vote = null;
   for (const z of zombies) z.burn = true;
-  game.ending = ending(win, game.flags, game.night);
+  game.flags.clueCount = game.clues.size;
+  game.ending = [...ending(win, game.flags, game.night), ...(win ? npcLines(game.flags, game.aff) : [])];
   const rows = [...players.values()].map((p) => {
     const s = p.st;
     const acc = s.shots ? s.hits / s.shots : 0;
@@ -664,6 +842,20 @@ function tick() {
   else if (game.phase === "night" && t > game.ends) startDay();
   if (game.vote && (t > game.vote.ends || (players.size && [...players.keys()].every((id) => game.vote.votes.has(id))))) resolveVote();
   if (game.story && t > game.story.until) game.story = null;
+  zoneTick(t);
+  if (game.phase === "royale") {
+    const target = 10 + 3 * players.size;
+    if (zombies.length < target && Math.random() < dt * 1.5) {
+      const z = spawnZombie(Math.random() < 0.1 ? "tank" : Math.random() < 0.35 ? "runner" : "walker");
+      const sp = freeSpot(30); z.x = sp.x; z.y = sp.y; z.arson = false;
+      if ([...players.values()].some((p) => !p.dead && dist2(p, z) < 500 * 500)) z.hp = 0;
+    }
+    const left = [...players.values()].filter((p) => !p.out);
+    if ((players.size > 1 && left.length <= 1) || left.length === 0) endRoyale();
+  }
+  if (tickN % 30 === 0) for (const p of players.values()) for (const [id, qs] of Object.entries(p.q)) {
+    if (!qs.done && !qs.told && npcApi.progress(p, id) >= QUESTS[id].goal) { qs.told = true; toast(p, `Quest complete: ${QUESTS[id].title}. Go and see ${NPCS[QUESTS[id].npc].name}.`, "#e0c0ff"); }
+  }
   if (game.phase === "night" && game.spawnLeft > 0 && t > game.spawnNext) {
     const r = Math.random();
     const type = game.night >= 3 && r < 0.12 ? "tank" : game.night >= 2 && r < 0.4 ? "runner" : "walker";
@@ -676,9 +868,28 @@ function tick() {
   if ((game.phase === "day" || game.phase === "night") && game.mods.hearthRegen) game.hearth = Math.min(game.hearthMax, game.hearth + game.mods.hearthRegen * dt);
 
   // players
-  const alive = [...players.values()].filter((p) => !p.dead);
+  const alive = [...players.values()].filter((p) => !p.dead && !p.air);
   for (const p of players.values()) {
-    if (p.dead) { if (game.phase !== "over" && t > p.respawnAt) respawnHeir(p); continue; }
+    if (p.dead) { if (game.phase !== "over" && !p.out && game.mode !== "royale" && t > p.respawnAt) respawnHeir(p); continue; }
+    if (p.air === "plane") {
+      const pos = dropPos(t); p.x = pos.x; p.y = pos.y;
+      if (pos.k >= 0.97) jump(p);
+      continue;
+    }
+    if (p.air === "fall") {
+      let fx = ((p.keys & 8) ? 1 : 0) - ((p.keys & 2) ? 1 : 0), fy = ((p.keys & 4) ? 1 : 0) - ((p.keys & 1) ? 1 : 0);
+      if (fx && fy) { fx *= Math.SQRT1_2; fy *= Math.SQRT1_2; }
+      p.x = clamp(p.x + fx * 420 * dt, 30, W - 30); p.y = clamp(p.y + fy * 420 * dt, 30, H - 30);
+      if (t > p.fallEnd) { p.air = null; collide(p, 16); events.push({ k: "land", x: p.x, y: p.y }); }
+      continue;
+    }
+    if (outsideZone(p) && (game.phase === "night" || game.phase === "royale" || game.phase === "day")) {
+      p.hp -= (game.mode === "royale" ? game.zone.dmg : 6) * dt; p.lastHurt = t;
+      if (tickN % 15 === 0) p.pe.push({ k: "fog" });
+      if (p.hp <= 0) killPlayer(p, null, "lost in the slop fog");
+      if (p.dead) continue;
+    }
+    if (p.dlg) { const n = NPC_POS.find((q) => q.id === p.dlg.npc); if (!n || dist2(n, p) > 150 * 150) { p.dlg = null; sendDlg(p); } }
     let mx = ((p.keys & 8) ? 1 : 0) - ((p.keys & 2) ? 1 : 0), my = ((p.keys & 4) ? 1 : 0) - ((p.keys & 1) ? 1 : 0);
     if (mx && my) { mx *= Math.SQRT1_2; my *= Math.SQRT1_2; }
     const sp = speedOf(p);
@@ -694,7 +905,7 @@ function tick() {
     const w = p.weapons[p.active];
     w.bloom = Math.max(0, w.bloom - dt * 2.2);
     if (w.reloadUntil && t >= w.reloadUntil) { w.reloadUntil = 0; w.ammo = WEAPONS[w.type].mag; }
-    if (p.firing && !w.reloadUntil && t >= w.nextShot) {
+    if (p.firing && !p.dlg && !w.reloadUntil && t >= w.nextShot) {
       if (w.ammo > 0) shoot(p, w);
       else startReload(p, w);
     }
@@ -716,7 +927,8 @@ function tick() {
     // 'arson' zombies beeline for the Hearth and only get distracted by players right next to them
     let target = null, bd = (z.type === "boss" || z.type === "elite" ? 700 : z.arson ? 110 : 420) ** 2;
     for (const p of alive) { const d = dist2(p, z); if (d < bd) { bd = d; target = p; } }
-    const goal = target || hc;
+    if (!target && game.mode === "royale") { if (!z.wander || dist2(z, z.wander) < 900 || Math.random() < dt * 0.1) z.wander = freeSpot(20); }
+    const goal = target || (game.mode === "royale" ? z.wander : hc);
     let dx = goal.x - z.x, dy = goal.y - z.y;
     const d = Math.hypot(dx, dy) || 1;
     dx /= d; dy /= d;
@@ -727,7 +939,7 @@ function tick() {
     const ox = z.x, oy = z.y;
     z.x += (dx * sp + z.vx) * dt; z.y += (dy * sp + z.vy) * dt;
     z.vx *= Math.pow(0.03, dt); z.vy *= Math.pow(0.03, dt);
-    const touchingHearth = z.x + z.r > HEARTH.x - 4 && z.x - z.r < HEARTH.x + HEARTH.w + 4 && z.y + z.r > HEARTH.y - 4 && z.y - z.r < HEARTH.y + HEARTH.h + 4;
+    const touchingHearth = game.mode !== "royale" && z.x + z.r > HEARTH.x - 4 && z.x - z.r < HEARTH.x + HEARTH.w + 4 && z.y + z.r > HEARTH.y - 4 && z.y - z.r < HEARTH.y + HEARTH.h + 4;
     if (collide(z, z.r) && !touchingHearth) {
       const moved = Math.hypot(z.x - ox, z.y - oy);
       if (moved < sp * dt * 0.4) z.steer = z.steer ? z.steer : (Math.random() < 0.5 ? 1.2 : -1.2);
@@ -767,7 +979,11 @@ function snapshot() {
   const v = game.vote;
   return {
     t: "s",
-    g: { ph: game.phase, n: game.night, left: game.ends === Infinity ? -1 : Math.max(0, r(game.ends - t)), hh: r(game.hearth), hm: game.hearthMax, res: game.result, boss: game.bossId, bk: game.bossKind, valley: VALLEY },
+    g: { mode: game.mode, alive: [...players.values()].filter((p) => !p.out && !p.dead).length,
+      zone: game.zone ? [r(game.zone.cx), r(game.zone.cy), r(game.zone.r), r(game.zone.tcx), r(game.zone.tcy), r(game.zone.tr), game.zone.t0 > t ? r(game.zone.t0 - t) : -1] : null,
+      drop: game.drop && t - game.drop.t0 < game.drop.dur + 3 ? [r(game.drop.x0), r(game.drop.y0), r(game.drop.x1), r(game.drop.y1), +dropPos(t).k.toFixed(3)] : null,
+      clues: [...game.clues].map((c) => CLUES[c]),
+      ph: game.phase, n: game.night, left: game.ends === Infinity ? -1 : Math.max(0, r(game.ends - t)), hh: r(game.hearth), hm: game.hearthMax, res: game.result, boss: game.bossId, bk: game.bossKind, valley: VALLEY },
     vote: v ? { title: v.ev.title, text: v.ev.text, ch: v.ev.choices.map((c) => [c.label, c.desc]), votes: Object.fromEntries(v.votes), left: Math.max(0, r(v.ends - t)) } : null,
     story: game.story ? { title: game.story.title, pick: game.story.pick, text: game.story.text } : null,
     p: [...players.values()].map((p) => {
@@ -779,6 +995,8 @@ function snapshot() {
         rl: w.reloadUntil ? +(w.reloadUntil - t).toFixed(2) : 0, rt: w.reloadUntil ? +(w.reloadUntil - w.reloadStart).toFixed(2) : 0, rtr: w.tried ? 1 : 0,
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
         lv: p.lvl, xp: p.xp, xn: xpNeed(p.lvl), pts: p.pts, sk: p.sk, ch: p.champion ? 1 : 0,
+        air: p.air === "plane" ? 1 : p.air === "fall" ? 2 : 0, out: p.out ? 1 : 0, pk: p.st.pk,
+        nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
         k: p.st.kills, de: p.st.deaths, cr: p.st.crops, tk: p.st.tk, hs: p.st.hs, acc: p.st.shots ? Math.round(p.st.hits / p.st.shots * 100) : 0,
       };
     }),
@@ -817,6 +1035,7 @@ function onMessage(ws, raw) {
     spectators.delete(ws);
     players.set(np.id, np);
     if (game.phase === "day" || game.phase === "night") { game.hearthMax += 250; game.hearth += 250; }
+    if (game.phase === "royale") { np.dead = true; np.out = true; np.place = 99; toast(np, "A Royale is in progress. You're spectating until the next round.", "#ffd34d"); }
     feed(`Sul sul! ${fullName(np)} the ${BACKGROUNDS[np.bg].name} ${CLASSES[np.cls].name} joined`, "#8f8");
     return;
   }
@@ -827,9 +1046,11 @@ function onMessage(ws, raw) {
       break;
     case "reload": { const w = p.weapons[p.active]; if (w.reloadUntil) tryActiveReload(p, w); else startReload(p, w); break; }
     case "swap": if (p.weapons.length > 1) { p.active = m.i === 0 || m.i === 1 ? Math.min(m.i, p.weapons.length - 1) : 1 - p.active; } break;
-    case "use": if (!p.dead) interact(p); break;
+    case "use": if (p.air === "plane") jump(p); else if (!p.dead) interact(p); break;
+    case "dlg": pickDlg(p, m.i | 0); break;
+    case "mode": if (p.id === hostId() && game.phase !== "day" && game.phase !== "night" && game.phase !== "royale" && (m.m === "story" || m.m === "royale")) { game.mode = m.m; broadcastRaw(JSON.stringify(mapMsg())); } break;
     case "shout": doShout(p); break;
-    case "dodge": doDodge(p); break;
+    case "dodge": if (p.air === "plane") jump(p); else doDodge(p); break;
     case "buy": buy(p, m.item); break;
     case "learn": learn(p, String(m.s)); break;
     case "vote": if (game.vote && Number.isInteger(m.i) && m.i >= 0 && m.i < game.vote.ev.choices.length) game.vote.votes.set(p.id, m.i); break;
@@ -859,7 +1080,7 @@ const server = Bun.serve({
       spectators.delete(ws);
       const p = players.get(ws.data.pid);
       if (p) { players.delete(p.id); feed(`${fullName(p)} left the valley`, "#aaa"); if (game.vote) game.vote.votes.delete(p.id); }
-      if (players.size === 0 && game.phase !== "lobby") { game.phase = "lobby"; zombies = []; crates = []; game.vote = null; }
+      if (players.size === 0 && game.phase !== "lobby") { game.phase = "lobby"; zombies = []; crates = []; game.vote = null; game.zone = null; game.drop = null; }
     },
   },
 });

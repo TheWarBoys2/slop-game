@@ -60,7 +60,24 @@
   .st-n { float: right; color: #ffd34d; margin-top: -30px; }
   .st-f { color: #888; font-size: 12px; }
   #overSub p { margin: 6px 0; line-height: 1.4; }
-  #startBtn { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 6; padding: 12px 28px; font-size: 20px; font-weight: bold; background: #ffd34d; border: 0; border-radius: 8px; cursor: pointer; }
+  #lobbyBar { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; gap: 10px; align-items: center; }
+  .modeBtns { display: flex; gap: 6px; }
+  .modeBtns button { padding: 10px 16px; font-size: 16px; font-weight: bold; background: #2a3423; color: #cfe0b8; border: 2px solid #4b5e38; border-radius: 8px; cursor: pointer; }
+  .modeBtns button.sel { border-color: #ffd34d; color: #ffd34d; }
+  #dlg { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); width: min(640px, calc(100% - 32px)); z-index: 7; background: #1a1624f2; border: 2px solid #8a6ab0; border-radius: 12px; padding: 14px 18px; }
+  .dl-n { font-size: 20px; font-weight: bold; color: #e0c0ff; margin-bottom: 6px; }
+  .dl-n span { font-size: 13px; color: #a090b8; font-weight: normal; margin-left: 8px; }
+  .dl-t { color: #eee; line-height: 1.5; margin-bottom: 10px; font-size: 15px; }
+  .dl-o { padding: 7px 10px; margin: 4px 0; background: #2a2338; border-radius: 6px; cursor: pointer; color: #ddd; }
+  .dl-o:hover { background: #3a3050; color: #fff; }
+  .dl-o b { color: #ffd34d; }
+  .jq { padding: 8px 10px; margin: 5px 0; background: #2a2338; border-radius: 6px; }
+  .jq span { float: right; color: #ffd34d; }
+  .jq.done { opacity: .55; }
+  .jq small { display: block; color: #b0a0c8; }
+  .jc { padding: 8px 10px; margin: 5px 0; background: #2a2020; border-left: 3px solid #e0c0ff; border-radius: 4px; color: #ddd; line-height: 1.4; }
+  #journalBody h3 { color: #cfe0b8; margin: 14px 0 4px; }
+  #startBtn { padding: 12px 28px; font-size: 20px; font-weight: bold; background: #ffd34d; border: 0; border-radius: 8px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -88,7 +105,7 @@
     <div class="keys">
       <kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> aim/shoot &nbsp; <kbd>R</kbd> reload &nbsp; <kbd>E</kbd> plant / harvest / loot &nbsp;
       <kbd>Space</kbd> dodge roll &nbsp; <kbd>Q</kbd> FUS RO DAH &nbsp; <kbd>1</kbd><kbd>2</kbd> swap &nbsp; <kbd>B</kbd> shop (day) &nbsp;
-      <kbd>K</kbd> skills &nbsp; <kbd>Tab</kbd> scoreboard &nbsp; <kbd>Enter</kbd> chat
+      <kbd>K</kbd> skills &nbsp; <kbd>J</kbd> journal &nbsp; <kbd>Tab</kbd> scoreboard &nbsp; <kbd>Enter</kbd> chat
     </div>
   </div>
 </div>
@@ -121,13 +138,27 @@
     <table id="overTable"></table>
     <h3 style="margin:18px 0 6px;color:#cfe0b8">Dynasties</h3>
     <div id="overLineage"></div>
+    <div class="modeBtns hidden" style="margin-top:14px"><button data-m="story">Story</button><button data-m="royale">Royale</button></div>
     <button class="big hidden" id="again">Play again</button>
     <div class="tag hidden" id="waitHost" style="margin-top:14px">Waiting for the host to start another round...</div>
   </div>
 </div>
 
 <div id="chatbox" class="hidden"><input id="chatin" maxlength="120" placeholder="Say something (Enter to send, Esc to cancel)"></div>
-<button id="startBtn" class="hidden">Start game</button>
+<div id="lobbyBar">
+  <div class="modeBtns hidden"><button data-m="story">Story</button><button data-m="royale">Royale</button></div>
+  <button id="startBtn" class="hidden">Start game</button>
+</div>
+
+<div id="dlg" class="hidden"></div>
+
+<div id="journal" class="overlay hidden">
+  <div class="panel" style="max-width:620px">
+    <h2 style="margin:0 0 4px;color:#e0c0ff">Journal</h2>
+    <div id="journalBody"></div>
+    <div class="keys"><kbd>J</kbd>/<kbd>Esc</kbd> to close.</div>
+  </div>
+</div>
 
 <script src="/game.js"></script>
 </body>

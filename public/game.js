@@ -113,7 +113,12 @@ function onSnap(m) {
   const mr = m.p.find((p) => p.id === me);
   if (mr && mr.rl > 0) { const end = T() + mr.rl; if (!rel.end || Math.abs(end - rel.end) > 0.15) rel.end = end; rel.total = mr.rt; rel.tried = !!mr.rtr; } else rel.end = 0;
   const hostId = m.p.length ? Math.min(...m.p.map((p) => p.id)) : 0;
+  if (m.g.ph !== "day" && m.g.ph !== "night" && m.g.ph !== "lobby" && dlgOpen) showDlg({ close: 1 });
   $("startBtn").classList.toggle("hidden", !(joined && m.g.ph === "lobby" && hostId === me));
+  const canMode = joined && hostId === me && (m.g.ph === "lobby" || m.g.ph === "over");
+  for (const el of document.querySelectorAll(".modeBtns")) el.classList.toggle("hidden", !canMode);
+  for (const b of document.querySelectorAll(".modeBtns button")) b.classList.toggle("sel", b.dataset.m === m.g.mode);
+  $("startBtn").textContent = m.g.mode === "royale" ? "Start Royale" : "Start Story";
   if (m.g.ph === "over") {
     $("again").classList.toggle("hidden", hostId !== me);
     $("waitHost").classList.toggle("hidden", hostId === me);
@@ -122,7 +127,7 @@ function onSnap(m) {
   if (mine && pred.init === false) { pred.x = mine.x; pred.y = mine.y; pred.init = true; }
   if (mine) {
     const dx = mine.x - pred.x, dy = mine.y - pred.y;
-    if (mine.d || dx * dx + dy * dy > 90 * 90) { pred.x = mine.x; pred.y = mine.y; }
+    if ((mine.d || dx * dx + dy * dy > 90 * 90) && !mine.air) { pred.x = mine.x; pred.y = mine.y; }
     pred.srvX = mine.x; pred.srvY = mine.y;
   }
 }
@@ -140,6 +145,8 @@ function handleEvent(e) {
   else if (e.k === "say") bubbles.set(e.id, { text: e.text, t });
   else if (e.k === "banner") { banner = { text: e.text, sub: e.sub, t }; sfx("banner"); }
   else if (e.k === "vote") sfx("banner");
+  else if (e.k === "clue") { sfx("lvl"); clueT = t; }
+  else if (e.k === "land") fx.push({ kind: "boom", t0: t, dur: 0.35, x: e.x, y: e.y, r: 30, dust: true });
 }
 function handlePersonal(e) {
   const t = T();
@@ -153,13 +160,15 @@ function handlePersonal(e) {
   else if (e.k === "jam") { pushLim(toasts, { text: "Fumbled the reload!", color: "#ff8080", t }, 4); sfx("jam"); }
   else if (e.k === "gold") pushLim(toasts, { text: `+${e.amt}g  ${e.reason}`, color: "#ffd34d", t }, 4);
   else if (e.k === "hurt") { hurtFlash = t; shake = Math.max(shake, 5); sfx("hurt"); }
-  else if (e.k === "wasted") wasted = t;
+  else if (e.k === "wasted") { wasted = t; wastedPlace = e.place || 0; }
+  else if (e.k === "dlg") showDlg(e);
+  else if (e.k === "fog") fogT = t;
   else if (e.k === "case") caseAnim = { t0: t, type: e.type, rarity: e.rarity, name: e.name, reel: makeReel(e.type, e.rarity, e.name) };
   else if (e.k === "enh") { enhAnim = { t0: t, ...e }; sfx(e.ok ? "lvl" : "jam"); }
 }
 function pushLim(arr, v, n) { arr.push(v); while (arr.length > n) arr.shift(); }
 function nearShake(e, amt) { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 500) shake = Math.max(shake, amt); }
-let hearthHitT = 0, hsT = 0, localReloadTry = 0;
+let hearthHitT = 0, hsT = -9, localReloadTry = 0, wastedPlace = 0, fogT = -9, clueT = -9;
 const rel = { end: 0, total: 1, tried: false };
 function makeReel(type, rarity, name) {
   const types = Object.keys(WNAME).filter((k) => k !== "pistol");
@@ -183,8 +192,11 @@ addEventListener("keydown", (e) => {
   if (k === "tab") { e.preventDefault(); showScores = true; return; }
   if (k === "enter") { openChat(); e.preventDefault(); return; }
   if (k === "b") { toggleSkills(false); toggleShop(); return; }
+  if (dlgOpen && /^[1-9]$/.test(k)) { send({ t: "dlg", i: Number(k) - 1 }); return; }
+  if (k === "escape" && dlgOpen) { send({ t: "dlg", i: -1 }); return; }
   if (k === "k") { toggleSkills(); return; }
-  if (k === "escape") { toggleShop(false); toggleSkills(false); return; }
+  if (k === "j") { toggleJournal(); return; }
+  if (k === "escape") { toggleShop(false); toggleSkills(false); toggleJournal(false); return; }
   if (shopOpen && /^[0-9]$/.test(k)) { const items = Object.keys(SHOP); const i = (Number(k) + 9) % 10; if (items[i]) send({ t: "buy", item: items[i] }); return; }
   if (e.repeat) return;
   keys.add(k);
@@ -204,6 +216,7 @@ cv.addEventListener("wheel", () => send({ t: "swap" }), { passive: true });
 cv.addEventListener("contextmenu", (e) => e.preventDefault());
 $("startBtn").onclick = (e) => { e.target.blur(); send({ t: "start" }); };
 $("again").onclick = (e) => { e.target.blur(); send({ t: "start" }); };
+for (const b of document.querySelectorAll(".modeBtns button")) b.onclick = (e) => { e.target.blur(); send({ t: "mode", m: b.dataset.m }); };
 function openChat() { chatting = true; keys.clear(); mouseDown = false; $("chatbox").classList.remove("hidden"); $("chatin").value = ""; $("chatin").focus(); }
 function closeChat() { chatting = false; $("chatbox").classList.add("hidden"); $("chatin").blur(); cv.focus(); }
 function toggleShop(force) {
@@ -312,6 +325,35 @@ function sfx(kind, vol = 1, sub) {
   else if (kind === "banner") tone("triangle", 196, 196, 0.8, 0.25);
 }
 
+// ---------------------------------------------------------------- dialogue & journal
+let dlgOpen = false;
+function showDlg(e) {
+  const box = $("dlg");
+  if (e.close) { dlgOpen = false; box.classList.add("hidden"); return; }
+  dlgOpen = true;
+  const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  box.innerHTML = `<div class="dl-n">${esc(e.name)} <span>${esc(e.role)}</span></div><div class="dl-t">${esc(e.text)}</div>` +
+    e.opts.map((o, i) => `<div class="dl-o" data-i="${i}"><b>${i + 1}.</b> ${esc(o)}</div>`).join("");
+  for (const el of box.querySelectorAll(".dl-o")) el.onclick = () => send({ t: "dlg", i: Number(el.dataset.i) });
+  box.classList.remove("hidden");
+  sfx("hit");
+}
+let journalOpen = false;
+function toggleJournal(force) {
+  journalOpen = force === undefined ? !journalOpen : force;
+  $("journal").classList.toggle("hidden", !journalOpen);
+  if (journalOpen) renderJournal();
+}
+function renderJournal() {
+  const mine = S?.p.find((p) => p.id === me);
+  if (!mine) return;
+  const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const qs = mine.q.length ? mine.q.map(([title, desc, prog, goal, done, npc]) => `<div class="jq${done ? " done" : ""}"><b>${esc(title)}</b> <span>${done ? "done" : `${prog}/${goal}`}</span><small>${esc(desc)} (${esc(npc)})</small></div>`).join("") : `<div class="tag">No quests yet. Talk to people in town [E].</div>`;
+  const cl = S.g.clues.length ? S.g.clues.map((c) => `<div class="jc">${esc(c)}</div>`).join("") : `<div class="tag">Nothing yet. Somebody in town knows something.</div>`;
+  $("journalBody").innerHTML = `<h3>Quests</h3>${qs}<h3>Evidence (${S.g.clues.length}/5)</h3>${cl}`;
+}
+setInterval(() => { if (journalOpen) renderJournal(); }, 500);
+
 function keyMask() {
   if (chatting || shopOpen || skillsOpen) return 0;
   return (keys.has("w") ? 1 : 0) | (keys.has("a") ? 2 : 0) | (keys.has("s") ? 4 : 0) | (keys.has("d") ? 8 : 0);
@@ -343,6 +385,7 @@ function stepPred(dt) {
   const mine = S?.p.find((p) => p.id === me);
   if (!mine || !MAP) return;
   if (mine.d) { pred.x = mine.x; pred.y = mine.y; return; }
+  if (mine.air) { const k = Math.min(1, dt * 12); pred.x += (mine.x - pred.x) * k; pred.y += (mine.y - pred.y) * k; if (Math.hypot(mine.x - pred.x, mine.y - pred.y) > 300) { pred.x = mine.x; pred.y = mine.y; } return; }
   const m = keyMask();
   let mx = ((m & 8) ? 1 : 0) - ((m & 2) ? 1 : 0), my = ((m & 4) ? 1 : 0) - ((m & 1) ? 1 : 0);
   if (mx && my) { mx *= Math.SQRT1_2; my *= Math.SQRT1_2; }
@@ -379,6 +422,39 @@ function drawHat(hat, x, y, r) {
   else if (hat === "horns") { ctx.fillStyle = "#999"; ctx.beginPath(); ctx.arc(0, 0, 11, Math.PI, 0); ctx.fill(); ctx.fillStyle = "#eee"; ctx.beginPath(); ctx.moveTo(-10, -4); ctx.lineTo(-18, -16); ctx.lineTo(-7, -8); ctx.fill(); ctx.beginPath(); ctx.moveTo(10, -4); ctx.lineTo(18, -16); ctx.lineTo(7, -8); ctx.fill(); }
   else if (hat === "flower") { for (let i = 0; i < 5; i++) { ctx.fillStyle = "#ff8fc8"; ctx.beginPath(); ctx.arc(Math.cos(i * 1.26) * 5, -6 + Math.sin(i * 1.26) * 5, 4, 0, 7); ctx.fill(); } ctx.fillStyle = "#ffd34d"; ctx.beginPath(); ctx.arc(0, -6, 3, 0, 7); ctx.fill(); }
   ctx.restore();
+}
+function drawNpcHat(hat, x, y) {
+  ctx.save(); ctx.translate(x, y - 12);
+  if (hat === "tophat") { ctx.fillStyle = "#222"; ctx.fillRect(-14, -2, 28, 5); ctx.fillRect(-9, -20, 18, 18); ctx.fillStyle = "#a33"; ctx.fillRect(-9, -6, 18, 3); }
+  else if (hat === "hood") { ctx.fillStyle = "#8a7a5a"; ctx.beginPath(); ctx.arc(0, 6, 19, Math.PI * 1.05, Math.PI * 1.95); ctx.lineTo(0, -16); ctx.fill(); }
+  else if (hat === "witch") { ctx.fillStyle = "#2a3a2a"; ctx.fillRect(-18, -2, 36, 5); ctx.beginPath(); ctx.moveTo(-11, 0); ctx.lineTo(6, -34); ctx.lineTo(11, 0); ctx.fill(); }
+  else if (hat === "flatcap") { ctx.fillStyle = "#5a5040"; ctx.beginPath(); ctx.ellipse(2, 0, 16, 7, 0, Math.PI, 0); ctx.fill(); ctx.fillRect(4, -2, 16, 4); }
+  else if (hat === "helmet") { ctx.fillStyle = "#99a"; ctx.beginPath(); ctx.arc(0, 2, 15, Math.PI, 0); ctx.fill(); ctx.fillStyle = "#c33"; ctx.fillRect(-2, -18, 4, 8); }
+  ctx.restore();
+}
+function drawMinimap(mine, t) {
+  if (!S || S.g.ph === "lobby" && !S.g.zone) return;
+  const mw = 190, mh = mw * MAP.H / MAP.W, mx = 12, my = 12, k = mw / MAP.W;
+  ctx.fillStyle = "#000b"; ctx.fillRect(mx - 3, my - 3, mw + 6, mh + 6);
+  ctx.fillStyle = "#3f6030"; ctx.fillRect(mx, my, mw, mh);
+  ctx.fillStyle = "#0006"; for (const w of MAP.walls) ctx.fillRect(mx + w.x * k, my + w.y * k, Math.max(1, w.w * k), Math.max(1, w.h * k));
+  if (S.g.mode !== "royale") { const h = MAP.hearth; ctx.fillStyle = "#ff8a2a"; ctx.fillRect(mx + h.x * k, my + h.y * k, h.w * k, h.h * k); }
+  ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
+  if (S.g.zone) {
+    const [cx, cy, r, tcx, tcy, tr] = S.g.zone;
+    ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.arc(mx + cx * k, my + cy * k, Math.max(0.5, r * k), 0, 7, true); ctx.fillStyle = "#7828a080"; ctx.fill("evenodd");
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(mx + tcx * k, my + tcy * k, Math.max(0.5, tr * k), 0, 7); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (S.g.drop && S.g.drop[4] < 1) { const [x0, y0, x1, y1, dk] = S.g.drop; ctx.strokeStyle = "#ffd34d"; ctx.beginPath(); ctx.moveTo(mx + x0 * k, my + y0 * k); ctx.lineTo(mx + x1 * k, my + y1 * k); ctx.stroke(); ctx.fillStyle = "#ffd34d"; ctx.beginPath(); ctx.arc(mx + (x0 + (x1 - x0) * dk) * k, my + (y0 + (y1 - y0) * dk) * k, 3, 0, 7); ctx.fill(); }
+  ctx.restore();
+  if (MAP.npcs && S.g.mode !== "royale") for (const n of MAP.npcs) { ctx.fillStyle = "#e0c0ff"; ctx.fillRect(mx + n.x * k - 1.5, my + n.y * k - 1.5, 3, 3); }
+  for (const p of S.p) {
+    if (p.d || p.air === 1) continue;
+    if (S.g.mode === "royale" && p.id !== me) continue; // no wallhacks in the Royale
+    const x = p.id === me ? pred.x : p.x, y = p.id === me ? pred.y : p.y;
+    ctx.fillStyle = p.id === me ? "#fff" : p.c; ctx.beginPath(); ctx.arc(mx + x * k, my + y * k, p.id === me ? 3.5 : 2.5, 0, 7); ctx.fill();
+  }
+  if (S.g.boss) { const bz = S.z.find((z) => z[0] === S.g.boss); if (bz) { ctx.fillStyle = "#f33"; ctx.beginPath(); ctx.arc(mx + bz[2] * k, my + bz[3] * k, 4, 0, 7); ctx.fill(); } }
 }
 function drawEyes(style, x, y, t, id) {
   ctx.fillStyle = "#111";
@@ -419,7 +495,8 @@ function render() {
   if (!MAP || !S) { text("Connecting to the valley...", VW / 2, VH / 2, 24, "#ffd34d"); return; }
   stepPred(dt);
   const mine = S.p.find((p) => p.id === me);
-  const cam = mine ? { x: pred.x, y: pred.y } : { x: MAP.W / 2, y: MAP.H / 2 };
+  let cam = mine ? { x: pred.x, y: pred.y } : { x: MAP.W / 2, y: MAP.H / 2 };
+  if (mine && mine.out && S.g.ph === "royale") { const alive = S.p.filter((p) => !p.d && !p.out); if (alive.length) { const f = alive[Math.floor(t / 8) % alive.length]; const d = smooth("spec", f.x, f.y, dt); cam = { x: d.x, y: d.y }; } }
   shake *= Math.pow(0.001, dt);
   const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
   const ox = Math.round(VW / 2 - cam.x + sx), oy = Math.round(VH / 2 - cam.y + sy);
@@ -491,6 +568,22 @@ function render() {
     else { ctx.fillStyle = "#6b4a2a"; ctx.fillRect(x - 15, y - 12, 30, 24); ctx.fillStyle = RARITY_COL[rar]; ctx.fillRect(x - 15, y - 3, 30, 6); ctx.fillRect(x - 3, y - 12, 6, 24); }
   }
 
+  // townsfolk
+  if (MAP.npcs && S.g.mode !== "royale") for (const n of MAP.npcs) {
+    const bob = Math.sin(t * 2 + n.x) * 1.5;
+    ctx.fillStyle = "#0004"; ctx.beginPath(); ctx.ellipse(n.x, n.y + 14, 16, 6, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = n.color; ctx.beginPath(); ctx.arc(n.x, n.y + bob, 17, 0, 7); ctx.fill();
+    ctx.strokeStyle = "#0008"; ctx.lineWidth = 2; ctx.stroke();
+    drawEyes("dot", n.x, n.y + bob - 3, t, 0);
+    drawNpcHat(n.hat, n.x, n.y + bob);
+    text(n.name, n.x, n.y - 38, 12, "#e0c0ff");
+    text(n.role, n.x, n.y - 25, 10, "#b0a0c8");
+    if (mine && (!mine.nt.includes(n.id) || mine.qr.includes(n.id))) {
+      const q = mine.qr.includes(n.id);
+      text(q ? "?" : "!", n.x, n.y - 58 + Math.sin(t * 4) * 3, 22, q ? "#7dffb0" : "#ffd34d");
+    }
+  }
+
   // zombies
   for (const [id, type, zx, zy, hpPct, burn] of S.z) {
     const d = smooth("z" + id, zx, zy, dt);
@@ -522,8 +615,17 @@ function render() {
 
   // players
   for (const p of S.p) {
-    if (p.d) continue;
+    if (p.d || p.air === 1) continue;
     const d = p.id === me ? { x: pred.x, y: pred.y } : smooth("p" + p.id, p.x, p.y, dt);
+    if (p.air === 2) { // parachuting
+      ctx.save(); ctx.translate(d.x, d.y); ctx.scale(1.4, 1.4);
+      ctx.strokeStyle = "#ddd"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-8, -6); ctx.lineTo(-22, -34); ctx.moveTo(8, -6); ctx.lineTo(22, -34); ctx.stroke();
+      ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(0, -34, 26, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = "#fff5"; ctx.beginPath(); ctx.arc(0, -34, 26, Math.PI, Math.PI * 1.33); ctx.lineTo(0, -34); ctx.fill();
+      ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(0, 0, 12, 0, 7); ctx.fill(); ctx.restore();
+      text(p.n, d.x, d.y + 32, 12, "#fff");
+      continue;
+    }
     const a = p.id === me ? aimAngle() : p.a;
     if (p.cl === "gaffer") { ctx.strokeStyle = "#ffd34d33"; ctx.setLineDash([8, 8]); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(d.x, d.y, 260, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
     ctx.fillStyle = "#0004"; ctx.beginPath(); ctx.ellipse(d.x, d.y + 14, 16, 6, 0, 0, 7); ctx.fill();
@@ -563,6 +665,7 @@ function render() {
     const f = fx[i], k = (t - f.t0) / f.dur;
     if (k >= 1) { fx.splice(i, 1); continue; }
     if (f.kind === "tr") { ctx.strokeStyle = f.m ? "#ff4b4b" : TRACER[f.c] || "#fff"; ctx.globalAlpha = 1 - k; ctx.lineWidth = f.c === "sniper" ? 3 : 2; ctx.beginPath(); ctx.moveTo(f.x1, f.y1); ctx.lineTo(f.x2, f.y2); ctx.stroke(); ctx.globalAlpha = 1; }
+    else if (f.kind === "boom" && f.dust) { ctx.fillStyle = `rgba(200,180,140,${0.6 * (1 - k)})`; ctx.beginPath(); ctx.arc(f.x, f.y, f.r * (0.5 + k * 1.5), 0, 7); ctx.fill(); }
     else if (f.kind === "boom") { ctx.fillStyle = `rgba(255,${140 - k * 100},40,${1 - k})`; ctx.beginPath(); ctx.arc(f.x, f.y, f.r * (0.4 + k * 0.8), 0, 7); ctx.fill(); }
     else if (f.kind === "shout") {
       ctx.fillStyle = `rgba(200,230,255,${0.5 * (1 - k)})`; ctx.beginPath();
@@ -574,6 +677,32 @@ function render() {
     else if (f.kind === "burn") { ctx.fillStyle = `rgba(255,${160 - k * 120},30,${1 - k})`; ctx.beginPath(); ctx.arc(f.x, f.y - k * 30, 5 * (1 - k) + 2, 0, 7); ctx.fill(); }
     else if (f.kind === "text") { ctx.globalAlpha = 1 - k; text(f.text, f.x, f.y - k * 30, f.big ? 20 : 14, f.color); ctx.globalAlpha = 1; }
   }
+  // the drop balloon
+  if (S.g.drop) {
+    const [x0, y0, x1, y1, k] = S.g.drop;
+    if (k < 1) {
+      ctx.strokeStyle = "#ffffff30"; ctx.setLineDash([12, 10]); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); ctx.setLineDash([]);
+      const bd = smooth("balloon", x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, dt);
+      ctx.fillStyle = "#0003"; ctx.beginPath(); ctx.ellipse(bd.x + 40, bd.y + 80, 50, 20, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = "#b05a8a"; ctx.beginPath(); ctx.ellipse(bd.x, bd.y - 40, 55, 65, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = "#ffd34d"; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.ellipse(bd.x + i * 20, bd.y - 40, 6, 62, 0, 0, 7); ctx.fill(); }
+      ctx.strokeStyle = "#654"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bd.x - 30, bd.y + 5); ctx.lineTo(bd.x - 22, bd.y + 30); ctx.moveTo(bd.x + 30, bd.y + 5); ctx.lineTo(bd.x + 22, bd.y + 30); ctx.stroke();
+      ctx.fillStyle = "#6b4a2a"; ctx.fillRect(bd.x - 26, bd.y + 28, 52, 26);
+      text("VEX AIR", bd.x, bd.y - 40, 13, "#fff");
+      const riders = S.p.filter((p) => p.air === 1);
+      riders.forEach((p, i) => { ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(bd.x - 16 + (i % 4) * 11, bd.y + 28, 6, 0, 7); ctx.fill(); });
+    }
+  }
+  // the slop fog
+  if (S.g.zone && S.g.ph !== "lobby") {
+    const [cx, cy, r, tcx, tcy, tr] = S.g.zone;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(-2000, -2000, MAP.W + 4000, MAP.H + 4000); ctx.arc(cx, cy, Math.max(1, r), 0, 7, true);
+    ctx.fillStyle = `rgba(120, 40, 160, ${0.28 + Math.sin(t * 1.5) * 0.04})`; ctx.fill("evenodd");
+    ctx.restore();
+    ctx.strokeStyle = "#c080ff"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(cx, cy, Math.max(1, r), 0, 7); ctx.stroke();
+    if (tr < r - 2) { ctx.strokeStyle = "#ffffffaa"; ctx.lineWidth = 2; ctx.setLineDash([14, 10]); ctx.beginPath(); ctx.arc(tcx, tcy, Math.max(1, tr), 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+  }
   ctx.restore();
 
   // darkness
@@ -582,7 +711,9 @@ function render() {
   // hurt vignette
   if (t - hurtFlash < 0.3) { const g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VH * 0.8); g.addColorStop(0, "#f000"); g.addColorStop(1, `rgba(200,0,0,${0.5 * (1 - (t - hurtFlash) / 0.3)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
 
+  if (t - fogT < 1.2) { ctx.fillStyle = `rgba(120,40,160,${0.25 * (1 - (t - fogT) / 1.2)})`; ctx.fillRect(0, 0, VW, VH); }
   drawHud(mine, t);
+  drawMinimap(mine, t);
   drawCrosshair(mine, t);
   for (const k of disp.keys()) if (disp.get(k).seen < frameNo - 30) disp.delete(k);
 }
@@ -624,10 +755,12 @@ function drawHud(mine, t) {
   if (g.ph === "lobby") label = `${(MAP.valley || "").toUpperCase()} — ${S.p.length} farmer${S.p.length === 1 ? "" : "s"} waiting`;
   else if (g.ph === "day") label = `DAY ${g.n + 1}  ·  night falls in ${g.left}s`;
   else if (g.ph === "night") label = g.left < 0 ? `NIGHT ${g.n}  ·  FINAL CONTRACT` : `NIGHT ${g.n}/5  ·  dawn in ${g.left}s`;
-  else label = g.res === "win" ? "VICTORY" : "DEFEAT";
+  else if (g.ph === "royale") label = `ROYALE · ${g.alive} alive${g.zone && g.zone[6] >= 0 ? ` · fog moves in ${g.zone[6]}s` : g.zone && g.zone[5] < g.zone[2] - 2 ? " · FOG CLOSING" : ""}`;
+  else label = g.res === "win" ? "VICTORY" : g.res === "royale" ? "ROYALE OVER" : "DEFEAT";
+  if (g.ph === "lobby") label += g.mode === "royale" ? " · Royale" : " · Story";
   ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 200, 10, 400, 44, 10); ctx.fill();
   text(label, VW / 2, 26, 18, g.ph === "night" ? "#9fc0ff" : "#ffe9a0");
-  bar(VW / 2 - 180, 42, 360, 6, g.hh / g.hm, "#e8703a");
+  if (g.mode !== "royale") bar(VW / 2 - 180, 42, 360, 6, g.hh / g.hm, "#e8703a");
   if (g.ph === "lobby" && joined) {
     const hostId = S.p.length ? Math.min(...S.p.map((p) => p.id)) : 0;
     if (hostId !== me) text("Waiting for the host to start...", VW / 2, 80, 16, "#ccc");
@@ -697,7 +830,11 @@ function drawHud(mine, t) {
     let hint = null;
     for (const [, x, y, rar, grave] of S.cr) if ((x - pred.x) ** 2 + (y - pred.y) ** 2 < 60 * 60) { hint = [`E  ${grave ? "loot grave" : "open crate"}`, RARITY_COL[rar]]; break; }
     if (!hint) MAP.plots.forEach((pl, i) => { if (!hint && (pl.x - pred.x) ** 2 + (pl.y - pred.y) ** 2 < 48 * 48) { const s = S.pl[i]; hint = s === 0 ? [mine.sd ? "E  plant seed" : "No seeds — buy some [B]", "#8f8"] : s === 3 ? ["E  harvest", "#ffd34d"] : ["growing...", "#aaa"]; } });
+    if (!hint && MAP.npcs && g.mode !== "royale" && !dlgOpen) for (const n of MAP.npcs) if ((n.x - pred.x) ** 2 + (n.y - pred.y) ** 2 < 70 * 70) { hint = [`E  talk to ${n.name}`, "#e0c0ff"]; break; }
+    if (mine.air === 1) hint = ["SPACE to jump", "#ffd34d"];
+    else if (mine.air === 2) hint = ["WASD to steer your landing", "#ffd34d"];
     if (hint) text(hint[0], VW / 2, VH / 2 + 50, 16, hint[1]);
+    if (t - clueT < 5) text(`NEW EVIDENCE (${g.clues.length}/5): press J`, VW / 2, 120, 18, "#e0c0ff");
   }
 
   // banner
@@ -710,7 +847,11 @@ function drawHud(mine, t) {
     ctx.globalAlpha = 1;
   }
   // wasted
-  if (mine.d && t - wasted < 6) {
+  if (mine.d && g.mode === "royale" && wastedPlace) {
+    ctx.fillStyle = "rgba(40,40,40,0.45)"; ctx.fillRect(0, VH / 2 - 80, VW, 150);
+    text(wastedPlace === 99 ? "SPECTATING" : `ELIMINATED  #${wastedPlace}`, VW / 2, VH / 2 - 20, 60, "#d02020");
+    text("Spectating the survivors...", VW / 2, VH / 2 + 35, 18, "#ddd");
+  } else if (mine.d && t - wasted < 6) {
     const k = Math.min(1, (t - wasted) * 2);
     ctx.fillStyle = `rgba(40,40,40,${0.55 * k})`; ctx.fillRect(0, 0, VW, VH);
     ctx.globalAlpha = k;
@@ -779,18 +920,25 @@ function drawScores() {
 
 function showOver() {
   const win = S.g.res === "win";
-  $("overTitle").textContent = win ? "WINNER WINNER CHICKEN DINNER" : "THE HEARTH HAS FALLEN";
+  const royale = S.g.res === "royale";
+  const myRow = (S.stats || []).find((r) => r.id === me);
+  $("overTitle").textContent = royale ? (myRow && myRow.winner ? "WINNER WINNER CHICKEN DINNER" : `#${myRow ? myRow.place : "?"} · BETTER LUCK NEXT DROP`) : win ? "WINNER WINNER CHICKEN DINNER" : "THE HEARTH HAS FALLEN";
   $("overTitle").style.fontSize = "34px";
   $("overSub").innerHTML = (S.ending || []).map((l) => `<p>${String(l).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))}</p>`).join("");
   const rows = S.stats || [];
   const rc = (r) => r >= 8 ? "#4fd04f" : r >= 7 ? "#a8e04f" : r >= 6 ? "#e0d04f" : r >= 5 ? "#e09a4f" : "#e05050";
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  $("overTable").innerHTML = `<tr><th>Player</th><th>Pos</th><th>Kills</th><th>Dmg</th><th>Crops</th><th>HS</th><th>Acc</th><th>Deaths</th><th>TK</th><th>Rating</th></tr>` +
-    rows.map((r, i) => `<tr><td style="color:${r.color}">${i === 0 ? '<span class="motm">★</span> ' : ""}${esc(r.name)}</td><td>${r.cls}</td><td>${r.kills}</td><td>${r.dmg}</td><td>${r.crops}</td><td>${r.hs}</td><td>${r.acc}%</td><td>${r.deaths}</td><td>${r.tk}</td><td><span class="rating" style="background:${rc(r.rating)}">${r.rating.toFixed(1)}</span></td></tr>`).join("") +
-    (rows[0] ? `<tr><td colspan="10" class="motm">★ Player of the Match: ${esc(rows[0].name)}</td></tr>` : "");
+  const cols = royale
+    ? [["#", (r) => r.place], ["Player", null], ["Pos", (r) => r.cls], ["Elims", (r) => r.pk], ["Zombies", (r) => r.kills], ["Dmg", (r) => r.dmg], ["HS", (r) => r.hs], ["Acc", (r) => r.acc + "%"]]
+    : [["Player", null], ["Pos", (r) => r.cls], ["Kills", (r) => r.kills], ["Dmg", (r) => r.dmg], ["Crops", (r) => r.crops], ["HS", (r) => r.hs], ["Acc", (r) => r.acc + "%"], ["Deaths", (r) => r.deaths], ["TK", (r) => r.tk]];
+  $("overTable").innerHTML = `<tr>${cols.map(([h]) => `<th>${h}</th>`).join("")}<th>Rating</th></tr>` +
+    rows.map((r, i) => `<tr>${cols.map(([, f]) => f ? `<td>${esc(f(r))}</td>` : `<td style="color:${r.color}">${i === 0 ? '<span class="motm">★</span> ' : ""}${esc(r.name)}</td>`).join("")}<td><span class="rating" style="background:${rc(r.rating)}">${r.rating.toFixed(1)}</span></td></tr>`).join("") +
+    (rows[0] ? `<tr><td colspan="${cols.length + 1}" class="motm">★ Player of the Match: ${esc(rows[0].name)}</td></tr>` : "");
+  $("overLineage").parentElement.querySelector("h3:last-of-type").textContent = royale ? "" : "Dynasties";
   $("overLineage").innerHTML = rows.map((r) => `<div class="lineage">${r.lineage.map(esc).join(" → ")}</div>`).join("");
   $("over").classList.remove("hidden");
-  toggleShop(false); toggleSkills(false);
+  toggleShop(false); toggleSkills(false); toggleJournal(false);
+  if (dlgOpen) showDlg({ close: 1 });
 }
 
 // dynamic crosshair: the gap shows your real spread, so tap-firing and standing still visibly pay off
@@ -816,5 +964,6 @@ function drawCrosshair(mine, t) {
   }
 }
 
+window.slopDebug = { get S() { return S; }, get me() { return me; }, get MAP() { return MAP; } }; // for tools/ and curious people
 requestAnimationFrame(render);
 })();

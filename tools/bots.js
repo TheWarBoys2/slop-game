@@ -14,7 +14,9 @@ for (let i = 0; i < count; i++) {
     seen.phases.add(m.g.ph + m.g.n); seen.hh = m.g.hh; seen.maxZ = Math.max(seen.maxZ, m.z.length);
     if (m.g.ph === "over" && !seen.over) { seen.over = m.stats; seen.ending = m.ending; }
     const mp = m.p.find((q) => q.id === m.me); if (mp) seen.lv = Math.max(seen.lv, mp.lv);
-    if (m.g.ph === "lobby") ws.send(JSON.stringify({ t: "start" }));
+    if (m.g.ph === "lobby") { if (process.env.ROYALE && m.g.mode !== "royale") ws.send(JSON.stringify({ t: "mode", m: "royale" })); else ws.send(JSON.stringify({ t: "start" })); }
+    for (const e of m.pe) if (e.k === "dlg" && !e.close) { seen.dlg = (seen.dlg || 0) + 1; setTimeout(() => ws.send(JSON.stringify({ t: "dlg", i: (Math.random() * e.opts.length) | 0 })), 100); }
+    seen.clues = m.g.clues.length; seen.alive = m.g.alive; seen.zone = m.g.zone && m.g.zone[2];
   };
   ws.onerror = () => seen.errors++;
   setInterval(() => {
@@ -26,6 +28,7 @@ for (let i = 0; i < count; i++) {
     const k = [1, 2, 4, 8][(Date.now() / 700 + i) % 4 | 0];
     ws.send(JSON.stringify({ t: "in", k, a, f: !process.env.PASSIVE && !!tgt && bd < 700 ** 2 }));
     const r = Math.random();
+    if (p.air === 1 && Math.random() < 0.05) ws.send(JSON.stringify({ t: "dodge" }));
     if (r < 0.02) ws.send(JSON.stringify({ t: "use" }));
     else if (r < 0.03) ws.send(JSON.stringify({ t: "shout" }));
     else if (r < 0.04) ws.send(JSON.stringify({ t: "dodge" }));
@@ -37,4 +40,4 @@ for (let i = 0; i < count; i++) {
     if (S.story && !seen.stories.includes(S.story.title + ": " + S.story.pick)) seen.stories.push(S.story.title + ": " + S.story.pick);
   }, 50);
 }
-setInterval(() => console.log(JSON.stringify({ phases: [...seen.phases], maxZ: seen.maxZ, hh: seen.hh, errors: seen.errors, lv: seen.lv, stories: seen.stories, ending: seen.ending, over: seen.over && seen.over.map((r) => [r.name, r.rating, r.kills, r.hs, r.acc, r.deaths]) })), 5000);
+setInterval(() => console.log(JSON.stringify({ phases: [...seen.phases], maxZ: seen.maxZ, hh: seen.hh, errors: seen.errors, lv: seen.lv, dlg: seen.dlg, clues: seen.clues, alive: seen.alive, zone: seen.zone, stories: seen.stories, ending: seen.ending, over: seen.over && seen.over.map((r) => [r.name, r.rating, r.kills, r.hs, r.acc, r.deaths]) })), 5000);

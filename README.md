@@ -23,7 +23,7 @@ Only the host installs anything. Everyone else just opens a link in their browse
 
 **How a match goes:** a short first day, then five nights with days in between. Zombies come from the map edges and go for players or straight for the Hearth. If the Hearth's health hits zero you lose. Kill the Leshen on night 5 to win. Winner winner, chicken dinner.
 
-**Controls:** WASD move, mouse aim and shoot, R reload, E plant / harvest / open crates, Space dodge, Q shout, 1/2 or mouse wheel swap weapons, B shop (daytime only), K skills, Tab scoreboard, Enter chat. There is more to find than this README lets on.
+**Controls:** WASD move, mouse aim and shoot, R reload, E plant / harvest / open crates, Space dodge, Q shout, 1/2 or mouse wheel swap weapons, B shop (daytime only), K skills, J journal, Tab scoreboard, Enter chat. The host picks Story or Royale in the lobby. There is more to find than this README lets on.
 
 ## Hosting on Windows (the host only)
 
