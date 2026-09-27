@@ -60,7 +60,19 @@
   .st-n { float: right; color: #ffd34d; margin-top: -30px; }
   .st-f { color: #888; font-size: 12px; }
   #overSub p { margin: 6px 0; line-height: 1.4; }
-  #lobbyBar { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; gap: 10px; align-items: center; }
+  #lobbyPanel { position: fixed; top: 180px; right: 12px; width: 300px; z-index: 6; background: #1d2419ee; border: 2px solid #4b5e38; border-radius: 12px; padding: 12px 14px; }
+  #lobbyPanel h3 { margin: 0 0 8px; color: #ffd34d; }
+  .lp-row { display: flex; justify-content: space-between; padding: 5px 8px; margin: 3px 0; background: #2a3423; border-radius: 6px; font-size: 14px; }
+  .lp-row .ok { color: #7dffb0; font-weight: bold; } .lp-row .no { color: #999; }
+  .readyBtn { margin-top: 10px; width: 100%; padding: 12px; font-size: 20px; font-weight: bold; border: 0; border-radius: 8px; cursor: pointer; background: #ffd34d; color: #3a2400; }
+  .readyBtn.on { background: #3fbf6f; color: #062; }
+  .lp-cd { text-align: center; color: #7dffb0; font-size: 18px; font-weight: bold; margin-top: 8px; min-height: 22px; }
+  .lp-f { color: #9fb58a; font-size: 12px; margin-top: 6px; }
+  #buildBar { position: fixed; left: 50%; top: 92px; transform: translateX(-50%); z-index: 6; display: flex; gap: 6px; background: #000c; padding: 8px; border-radius: 10px; border: 2px solid #4b6e8a; }
+  #buildBar .pc { padding: 6px 10px; background: #2a3423; border-radius: 6px; border: 2px solid transparent; cursor: pointer; font-size: 13px; max-width: 170px; }
+  #buildBar .pc.sel { border-color: #9fe0ff; }
+  #buildBar .pc b { color: #9fe0ff; } #buildBar .pc small { display: block; color: #aaa; font-size: 11px; }
+  .lg { margin: 5px 0; } .lg .bar { height: 8px; background: #0006; border-radius: 4px; overflow: hidden; margin-top: 2px; } .lg .bar div { height: 100%; }
   .modeBtns { display: flex; gap: 6px; }
   .modeBtns button { padding: 10px 16px; font-size: 16px; font-weight: bold; background: #2a3423; color: #cfe0b8; border: 2px solid #4b5e38; border-radius: 8px; cursor: pointer; }
   .modeBtns button.sel { border-color: #ffd34d; color: #ffd34d; }
@@ -77,7 +89,6 @@
   .jq small { display: block; color: #b0a0c8; }
   .jc { padding: 8px 10px; margin: 5px 0; background: #2a2020; border-left: 3px solid #e0c0ff; border-radius: 4px; color: #ddd; line-height: 1.4; }
   #journalBody h3 { color: #cfe0b8; margin: 14px 0 4px; }
-  #startBtn { padding: 12px 28px; font-size: 20px; font-weight: bold; background: #ffd34d; border: 0; border-radius: 8px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -105,7 +116,7 @@
     <div class="keys">
       <kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> aim/shoot &nbsp; <kbd>R</kbd> reload &nbsp; <kbd>E</kbd> plant / harvest / loot &nbsp;
       <kbd>Space</kbd> dodge roll &nbsp; <kbd>Q</kbd> FUS RO DAH &nbsp; <kbd>1</kbd><kbd>2</kbd> swap &nbsp; <kbd>B</kbd> shop (day) &nbsp;
-      <kbd>K</kbd> skills &nbsp; <kbd>J</kbd> journal &nbsp; <kbd>Tab</kbd> scoreboard &nbsp; <kbd>Enter</kbd> chat
+      <kbd>K</kbd> skills &nbsp; <kbd>J</kbd> journal &nbsp; <kbd>C</kbd> build &nbsp; <kbd>F</kbd> ready &nbsp; <kbd>Tab</kbd> scoreboard &nbsp; <kbd>Enter</kbd> chat
     </div>
   </div>
 </div>
@@ -139,16 +150,22 @@
     <h3 style="margin:18px 0 6px;color:#cfe0b8">Dynasties</h3>
     <div id="overLineage"></div>
     <div class="modeBtns hidden" style="margin-top:14px"><button data-m="story">Story</button><button data-m="royale">Royale</button></div>
-    <button class="big hidden" id="again">Play again</button>
-    <div class="tag hidden" id="waitHost" style="margin-top:14px">Waiting for the host to start another round...</div>
+    <button class="readyBtn" id="overReady">Ready for another round</button>
+    <div class="tag" id="overReadyInfo" style="margin-top:8px"></div>
   </div>
 </div>
 
 <div id="chatbox" class="hidden"><input id="chatin" maxlength="120" placeholder="Say something (Enter to send, Esc to cancel)"></div>
-<div id="lobbyBar">
-  <div class="modeBtns hidden"><button data-m="story">Story</button><button data-m="royale">Royale</button></div>
-  <button id="startBtn" class="hidden">Start game</button>
+<div id="lobbyPanel" class="hidden">
+  <h3 id="lpTitle">Lobby</h3>
+  <div id="lpList"></div>
+  <div class="modeBtns hidden" style="margin-top:8px"><button data-m="story">Story</button><button data-m="royale">Royale</button></div>
+  <div class="lp-f" id="lpMode"></div>
+  <button class="readyBtn" id="readyBtn">Ready</button>
+  <div class="lp-cd" id="lpCd"></div>
+  <div class="lp-f">Press <b>F</b> to ready up. It starts when everyone is ready.</div>
 </div>
+<div id="buildBar" class="hidden"></div>
 
 <div id="dlg" class="hidden"></div>
 

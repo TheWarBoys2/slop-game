@@ -10,6 +10,7 @@ export const QUESTS = {
   mor_voice:    { npc: "morwen", title: "The Voice", desc: "Hit 20 of the dead with your shout.", stat: "shoutHits", goal: 20 },
   ald_labour:   { npc: "aldous", title: "Tithe of Labour", desc: "Repair the Hearth once, from the shop.", stat: "repairs", goal: 1 },
   vex_research: { npc: "vex", title: "Market Research", desc: "Open 2 Mystery Cases.", stat: "cases", goal: 2 },
+  chef_raw:     { npc: "chef", title: "Kitchen Nightmare", desc: "Harvest 4 crops before Gordon leaves at nightfall.", stat: "crops", goal: 4 },
 };
 
 export const CLUES = {
@@ -327,6 +328,61 @@ export const NPCS = {
       },
     },
   },
+  // A celebrity passing through for one day only. Any resemblance to a real shouty TV chef is entirely affectionate.
+  chef: {
+    name: "Gordon Rampage", role: "Celebrity chef. Filming a show.", color: "#f0d0b0", hat: "chef", guest: true,
+    nodes: {
+      start: {
+        text: (c) => c.p.flags.raw ? "\"YOU AGAIN. Look at me. LOOK AT ME. Are you going to be sensible this time, you walking turnip?\""
+          : "A man in chef's whites strides out of a pink limousine with a camera crew. \"Right. What IS this place? It smells like a bin had a baby with another bin. I'm here for one day for my new show, 'Nightmare Valley'. Impress me.\"",
+        opts: [
+          { label: "Welcome to the valley, Chef!", to: "welcome", if: (c) => !c.p.flags.raw },
+          { label: "Could you judge our crops?", to: "quest", if: (c) => !c.q.chef_raw },
+          { label: "Here's the harvest, Chef.", to: "questdone", if: (c) => ready(c, "chef_raw") },
+          { label: "Can you cook something for the Hearth?", to: "cook", if: (c) => !c.f.chefCooked },
+          { label: "Can I have your autograph?", to: "autograph", if: (c) => !c.p.flags.autograph },
+          { label: "What do you think of Vex's slop?", to: "slop" },
+          { label: "Your cooking is overrated, mate.", to: "insult" },
+          { label: "Bye, Chef.", to: null },
+        ],
+      },
+      welcome: {
+        text: () => "He sniffs the air, then sniffs you. \"Welcome, he says. WELCOME. The dead are walking about and the mayor's serving canapés made of what I can only describe as regret. Stunning. Absolutely stunning television.\"",
+        opts: [{ label: "Back.", to: "start", do: (c) => { c.aff.chef += 1; } }],
+      },
+      quest: {
+        text: () => "\"Crops? Go on then. Four of them, fresh out of the ground, before I leave tonight. And if even ONE of them is raw, I'm putting it in the bin, and then I'm putting YOU in the bin.\"",
+        opts: [{ label: "Yes, Chef!", to: "start", do: (c) => c.api.accept(c.p, "chef_raw") }, { label: "Maybe later.", to: "start" }],
+      },
+      questdone: {
+        text: () => "He bites a turnip. Chews. Closes his eyes. The camera crew holds its breath. \"...That. Is. BEAUTIFUL. Finally, some good food in this godforsaken valley. Take this. I use it for the really stubborn onions.\"",
+        opts: [{ label: "Thank you, Chef!", to: "start", do: (c) => { turnIn(c, "chef_raw"); c.api.crate(c.p, 3, "shotgun"); c.aff.chef += 2; c.api.deed("soil", 8); return "A Legendary Shotgun crate drops at your feet"; } }],
+      },
+      cook: {
+        text: () => "\"For the Hearth? A proper meal for the whole valley? Fine. FINE. Stand back, and nobody touch the pan.\" He produces a Wellington from absolutely nowhere and throws it into the fire.",
+        opts: [{ label: "Watch in awe.", to: "start", do: (c) => { c.f.chefCooked = true; c.api.healAll(); c.api.hearth(250); c.aff.chef += 1; c.api.story("Hearth Wellington", "Gordon Rampage cooks a Wellington in the Hearth. Everyone is healed, the Hearth grows by 250 and the whole valley smells incredible for about ten minutes."); return "Everyone healed. The Hearth grows by 250."; } }],
+      },
+      autograph: {
+        text: () => "\"Autograph. Right. Where? On the forehead? Brilliant, hold still.\" He signs your forehead with a marker that smells like truffle oil.",
+        opts: [{ label: "I'll never wash again.", to: "start", do: (c) => { c.p.flags.autograph = true; c.p.pts += 1; c.aff.chef += 1; return "+1 skill point. Your forehead reads 'IDIOT SANDWICH, LOVE GORDON'"; } }],
+      },
+      slop: {
+        text: () => "His eye twitches. \"Slop? SLOP? I tasted it this morning and I have NEVER been so offended by a liquid. It's got grave-dust in it. GRAVE DUST. Somebody's been seasoning the well, and it's not me, because I would have used salt.\"",
+        opts: [
+          { label: "Grave-dust? Are you sure?", to: "slop2", if: (c) => c.clues.has("dust") },
+          { label: "Back.", to: "start" },
+        ],
+      },
+      slop2: {
+        text: () => "\"Sure? I can taste the difference between four kinds of basil with my eyes shut. It's grave-dust and pig swill, and I'd bet my restaurants that whoever did it owns a very expensive handkerchief. You can always tell a man by his handkerchief.\"",
+        opts: [{ label: "Interesting...", to: "start", do: (c) => { c.aff.chef += 1; c.api.deed("word", 5); } }],
+      },
+      insult: {
+        text: () => "The whole camera crew gasps. Gordon goes very, very quiet. Then he takes a deep breath...",
+        opts: [{ label: "Uh oh.", to: null, do: (c) => { c.p.flags.raw = true; c.aff.chef -= 2; c.api.raw(c.p); c.api.deed("blood", 3); return "\"IT'S RAAAAAAW!\""; } }],
+      },
+    },
+  },
 };
 
 export function npcLines(f, aff) {
@@ -335,6 +391,8 @@ export function npcLines(f, aff) {
   if (aff.pell >= 3) lines.push("Old Pell got his wake early, and then lived another nine years out of spite.");
   if (aff.haddock >= 3) lines.push("Sergeant Haddock rebuilt the town watch. It has four members now, all of them wearing your old hats.");
   if (aff.vex >= 3) lines.push("Vex named his next shop after you. It sells mostly slop.");
+  if (aff.chef >= 3) lines.push("Gordon Rampage's show 'Nightmare Valley' won an award. You're in the trailer. So is the well.");
+  else if (aff.chef < 0) lines.push("Gordon Rampage's show aired. The only clip anyone shares is of him shouting you into a hedge.");
   if (f.exposed) lines.push("Mayor Grubb spent a month in the stocks and was re-elected anyway. Politics.");
   else if (f.blackmail) lines.push("Mayor Grubb is still paying. He always will be.");
   else if (f.pardoned) lines.push("Mayor Grubb kept his promise and paid for everything. He's a better mayor for it. Slightly.");
