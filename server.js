@@ -5,6 +5,7 @@ import gameJs from "./public/game.js" with { type: "text" };
 import os from "node:os";
 import { storyEvent, bossKind, BOSSES, ending, valleyName } from "./story.js";
 import { NPCS, QUESTS, CLUES, npcLines } from "./npcs.js";
+import { COSMETICS, FREE_HATS, rollCosmetic, WHEEL, spinWheel, deck, bjValue, pokerScore, handName, compareHands, dealerHolds } from "./casino.js";
 import { LEGENDS, legendOf, legendName, reckoning, legendLines } from "./legend.js";
 
 const PORT = Number(process.argv[2] || process.env.PORT || 7777);
@@ -92,11 +93,12 @@ const WEAPONS = {
   rifle:   { name: "Rifle",      dmg: 30,  rate: 7,   spread: 0.08,  range: 900,  pellets: 1, mag: 30, reload: 2.3, bloom: 0.2 },
   sniper:  { name: "Sniper",     dmg: 130, rate: 0.8, spread: 0.01,  range: 1600, pellets: 1, mag: 5,  reload: 3.0, bloom: 0, pierce: true },
   staff:   { name: "Fire Staff", dmg: 45,  rate: 1.5, spread: 0.03,  range: 700,  pellets: 1, mag: 10, reload: 2.0, bloom: 0.3, boom: 90 },
+  ak:      { name: "AK-Maybe",   dmg: 26,  rate: 9,   spread: 0.09,  range: 820,  pellets: 1, mag: 30, reload: 2.2, bloom: 0.18, gamble: true }, // every shot re-rolls the ammo count
 };
 const MYTHIC = {
-  smg: "The Hive", shotgun: "Farmer's Wrath", rifle: "Kingmaker", sniper: "The Last Word", staff: "Morwen's Spite", pistol: "Grubb's Gavel",
+  smg: "The Hive", shotgun: "Farmer's Wrath", rifle: "Kingmaker", sniper: "The Last Word", staff: "Morwen's Spite", pistol: "Grubb's Gavel", ak: "Lady Luck",
 };
-const LOOT_TYPES = ["smg", "shotgun", "rifle", "sniper", "staff"];
+const LOOT_TYPES = ["smg", "shotgun", "rifle", "sniper", "staff", "smg", "shotgun", "rifle", "sniper", "staff", "ak"]; // the AK is rarer
 const RARITY = ["Common", "Rare", "Epic", "Legendary", "Mythic"];
 const RARITY_MULT = [1, 1.2, 1.4, 1.7, 2.0];
 const ENH_NAMES = ["", "PRI", "DUO", "TRI", "TET", "PEN"];
@@ -155,6 +157,7 @@ const SHOP = {
   rifle:   { name: "Rifle", cost: 150 },
   sniper:  { name: "Sniper", cost: 220 },
   case:    { name: "Mystery Case", cost: 100 },
+  gcase:   { name: "Golden Case (wheel spins!)", cost: 150 },
   enhance: { name: "Enhance weapon", cost: 0 },
   repair:  { name: "Repair Hearth", cost: 75 },
 };
@@ -256,7 +259,7 @@ function makePlayer(ws, msg) {
     cls, gen: 1, trait: chosen || pick(TRAIT_KEYS), x: 0, y: 0, a: 0, keys: 0, firing: false,
     hp: 0, armor: 0, gold: 0, seeds: 0, dead: false, respawnAt: 0, weapons: [], active: 0,
     heat: 0, dashUntil: 0, dashCd: 0, dashDx: 0, dashDy: 0, shoutCd: 0, vx: 0, vy: 0, lastHurt: 0,
-    pe: [], lineage: [], champion: false,
+    pe: [], lineage: [], champion: false, cos: new Set(), trail: "", title: "", spunTotal: 0,
   };
   resetProgress(p);
   resetLoadout(p, true);
@@ -266,7 +269,7 @@ function resetProgress(p) {
   p.lvl = 1; p.xp = 0; p.pts = 0; p.sk = { ...(BACKGROUNDS[p.bg].sk || {}) };
   p.gen = 1; p.lineage = []; p.trait = p.chosenTrait || pick(TRAIT_KEYS); p.champion = false; p.heat = 0; p.dead = false;
   p.st = { kills: 0, deaths: 0, dmg: 0, crops: 0, tk: 0, gold: 0, bounty: 0, shots: 0, hits: 0, hs: 0, perfect: 0, cases: 0, shoutHits: 0, repairs: 0, pk: 0 };
-  p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.veh = 0;
+  p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.veh = 0; p.spins = 0; p.casino = null; p.spinning = false;
 }
 function resetLoadout(p, fresh) {
   p.hp = maxHp(p); p.armor = 0;
@@ -409,6 +412,7 @@ function shoot(p, w) {
   const t = now();
   w.nextShot = t + 1 / def.rate;
   w.ammo--;
+  if (def.gamble && w.ammo > 0) w.ammo = Math.floor(Math.random() * (w.rarity === 4 ? 150 : 100)); // could be 97, could be 0
   p.st.shots++;
   const myth = w.rarity === 4;
   const mult = dmgMult(p, w);
@@ -543,6 +547,12 @@ function buy(p, item) {
   else if (item === "medkit") p.hp = maxHp(p);
   else if (item === "kevlar") p.armor = 60;
   else if (item === "repair") { p.st.repairs++; deed("soil", 10); game.hearth = Math.min(game.hearthMax, game.hearth + 200); feed(`${fullName(p)} repaired the Hearth`, "#8f8"); }
+  else if (item === "gcase") {
+    const n = Math.random() < 0.15 + (traitOf(p).luck ? 0.1 : 0) ? 3 : Math.random() < 0.45 ? 2 : 1;
+    p.spins += n; p.st.cases++;
+    p.pe.push({ k: "case", type: "ak", rarity: n + 1, name: `${n} WHEEL SPIN${n > 1 ? "S" : ""}`, spins: 1 });
+    setTimeout(() => sendCasino(p), 3300);
+  }
   else if (item === "case") {
     const r = Math.random() * 100 - (traitOf(p).luck ? 8 : 0);
     const rarity = r < 0.8 ? 4 : r < 4 ? 3 : r < 15 ? 2 : r < 40 ? 1 : 0;
@@ -551,7 +561,7 @@ function buy(p, item) {
     p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) }); p.st.cases++;
     if (rarity >= 2) setTimeout(() => feed(`${fullName(p)} unboxed ${RARITY[rarity].toUpperCase()} ${wName(w)}`, ["", "", "#c070ff", "#ffc030", "#ff4b4b"][rarity]), 3200);
   } else if (WEAPONS[item]) giveWeapon(p, newWeapon(item));
-  if (item !== "case") toast(p, `Bought ${it.name}`, "#8f8");
+  if (item !== "case" && item !== "gcase") toast(p, `Bought ${it.name}`, "#8f8");
 }
 function enhance(p) {
   const w = p.weapons[p.active];
@@ -600,6 +610,93 @@ function doDodge(p) {
   if (!dx && !dy) { dx = Math.cos(p.a); dy = Math.sin(p.a); }
   const l = Math.hypot(dx, dy); p.dashDx = dx / l; p.dashDy = dy / l;
   p.dashUntil = t + 0.18; p.dashCd = t + (p.cls === "rogue" ? 0.8 : 1.3);
+}
+
+// ---------------------------------------------------------------- Vex's Casino (in-game gold only)
+function sendCasino(p) {
+  const c = p.casino;
+  p.pe.push({ k: "casino", spins: p.spins, game: c ? { ...c, deck: undefined, d: c.k === "bj" && c.hide ? [c.d[0], "??"] : c.k === "pk" && c.stage === "hold" ? null : c.d } : null });
+}
+function giveCosmetic(p, id, why) {
+  if (!id) { addGold(p, 30, "You own everything in that pool. Refund"); return; }
+  const had = p.cos.has(id);
+  p.cos.add(id);
+  p.pe.push({ k: "cos", list: [...p.cos] });
+  const c = COSMETICS[id];
+  toast(p, had ? `Duplicate ${c.name}. Vex gives you 30g for it.` : `New ${c.bad ? "(terrible) " : ""}cosmetic: ${c.name}! Press V to wear it.`, ["#ddd", "#4da6ff", "#c070ff", "#ffc030", "#ff4b4b"][c.rarity]);
+  if (had) addGold(p, 30);
+  else if (c.rarity >= 3) feed(`${fullName(p)} won the ${["", "", "", "LEGENDARY", "MYTHIC"][c.rarity]} ${c.name}${why ? " " + why : ""}`, c.rarity === 4 ? "#ff4b4b" : "#ffc030");
+}
+function casinoCrate(p, rarity, type) { giveWeapon(p, newWeapon(type || pick(LOOT_TYPES), rarity)); p.pe.push({ k: "case", type: p.weapons[p.active].type, rarity, name: wName(p.weapons[p.active]) }); }
+function doSpin(p) {
+  if (p.spinning || p.spins <= 0 || p.casino) return;
+  p.spins--; p.spinning = true; p.spunTotal++;
+  const i = process.env.SLOP_WHEEL ? WHEEL.findIndex((w) => w.id === process.env.SLOP_WHEEL) : spinWheel(), seg = WHEEL[i]; // SLOP_WHEEL: testing only
+  p.pe.push({ k: "wheel", seg: i });
+  if (p.spunTotal === 10) { feed(`${fullName(p)} has spun the wheel 10 times. Brother Aldous is organising an intervention.`, "#e0c0ff"); giveCosmetic(p, "degen"); }
+  setTimeout(() => {
+    p.spinning = false;
+    if (!players.has(p.id)) return;
+    if (seg.id === "jackpot") { addGold(p, 1000, "JACKPOT"); feed(`🎰 ${fullName(p)} HIT THE JACKPOT (1000g)`, "#ffd34d"); if (!p.cos.has("roller")) giveCosmetic(p, "roller", "for hitting the jackpot"); }
+    else if (seg.id === "g150") addGold(p, 150, "Wheel");
+    else if (seg.id === "g50") addGold(p, 50, "Wheel");
+    else if (seg.id === "lose") toast(p, "Nothing. The wheel doesn't care about you.", "#aaa");
+    else if (seg.id === "bankrupt") { const lost = Math.floor(p.gold * 0.25); p.gold -= lost; toast(p, `BANKRUPT! Vex takes ${lost}g. "Better luck next spin!"`, "#ff5050"); }
+    else if (seg.id === "cos") giveCosmetic(p, rollCosmetic(p.cos));
+    else if (seg.id === "crate") casinoCrate(p, 1 + (Math.random() < 0.5 ? 1 : 0) + (Math.random() < 0.2 ? 1 : 0));
+    else if (seg.id === "ak") { casinoCrate(p, Math.random() < 0.1 ? 4 : 3, "ak"); feed(`${fullName(p)} won an AK-Maybe on the wheel. Nobody knows how many bullets it has. Neither does it.`, "#ff9d2e"); }
+    else if (seg.id === "again") { p.spins += 2; toast(p, "Two more spins!", "#ff9d2e"); }
+    else if (seg.id === "skill") { p.pts++; toast(p, "+1 skill point. Press K.", "#9fe0ff"); }
+    else if (seg.id === "bj") { p.casino = { k: "bj", deck: deck(), p: [], d: [], w: 0, l: 0, hide: true, msg: "Blackjack! Win 2 hands out of 3." }; dealBj(p); }
+    else if (seg.id === "poker") { const dk = deck(); p.casino = { k: "pk", deck: dk, p: dk.splice(0, 5), d: dk.splice(0, 5), stage: "hold", msg: "Five-card draw. Click the cards you want to KEEP, then Draw." }; }
+    sendCasino(p);
+  }, 4200);
+}
+function dealBj(p) {
+  const c = p.casino;
+  if (c.deck.length < 15) c.deck = deck();
+  c.p = [c.deck.pop(), c.deck.pop()]; c.d = [c.deck.pop(), c.deck.pop()]; c.hide = true; c.over = false;
+  if (bjValue(c.p) === 21) finishBjHand(p);
+}
+function finishBjHand(p) {
+  const c = p.casino; c.hide = false;
+  const pv = bjValue(c.p);
+  if (pv <= 21) while (bjValue(c.d) < 17) c.d.push(c.deck.pop());
+  const dv = bjValue(c.d);
+  const res = pv > 21 ? -1 : dv > 21 ? 1 : Math.sign(pv - dv);
+  if (res > 0) c.w++; else if (res < 0) c.l++;
+  c.msg = `${res > 0 ? "You win the hand" : res < 0 ? "Dealer wins the hand" : "Push"} (${pv > 21 ? "bust" : pv} vs ${dv > 21 ? "bust" : dv}). Score ${c.w}-${c.l}.`;
+  if (c.w >= 2 || c.l >= 2) {
+    c.over = true;
+    if (c.w >= 2) { c.msg += " YOU BEAT THE HOUSE! 250g and a Legendary crate."; addGold(p, 250, "Blackjack"); casinoCrate(p, 3); if (!p.cos.has("bandit")) giveCosmetic(p, "bandit"); feed(`${fullName(p)} beat Vex at blackjack`, "#3fbf6f"); }
+    else { c.msg += " The house wins. It always does."; if (Math.random() < 0.5) giveCosmetic(p, rollCosmetic(p.cos, { bad: true })); }
+  } else c.next = true;
+}
+function casinoAct(p, m) {
+  const c = p.casino; if (!c) return;
+  if (m.a === "leave") { if (c.over || c.k === "pk" && c.stage === "done" || (c.k === "bj" && c.w === 0 && c.l === 0 && !c.p.length)) p.casino = null; else toast(p, "Finish the game first. Vex is watching.", "#f88"); return sendCasino(p); }
+  if (c.k === "bj" && !c.over) {
+    if (c.next && m.a === "deal") { c.next = false; dealBj(p); }
+    else if (!c.next && m.a === "hit") { c.p.push(c.deck.pop()); if (bjValue(c.p) >= 21) finishBjHand(p); }
+    else if (!c.next && m.a === "stand") finishBjHand(p);
+  } else if (c.k === "pk" && c.stage === "hold" && m.a === "draw" && Array.isArray(m.hold)) {
+    c.p = c.p.map((card, i) => (m.hold[i] ? card : c.deck.pop()));
+    const dh = dealerHolds(c.d); c.d = c.d.map((card, i) => (dh[i] ? card : c.deck.pop()));
+    c.stage = "done";
+    const res = compareHands(c.p, c.d), cat = pokerScore(c.p)[0];
+    c.msg = `You: ${handName(c.p)}. Vex: ${handName(c.d)}. `;
+    if (res > 0) {
+      c.msg += "YOU WIN!";
+      if (cat >= 5) { casinoCrate(p, 4); c.msg += " A MYTHIC crate!"; } else if (cat >= 3) { casinoCrate(p, 3); addGold(p, 250); c.msg += " Legendary crate and 250g."; } else if (cat === 2) { casinoCrate(p, 2); addGold(p, 200); c.msg += " Epic crate and 200g."; } else { addGold(p, 120); c.msg += " 120g."; }
+      if (cat >= 3 && !p.cos.has("shark")) giveCosmetic(p, "shark");
+      feed(`${fullName(p)} won at poker with ${handName(c.p)}`, "#4da6ff");
+    } else { c.msg += res < 0 ? "Vex wins. He always seems to." : "A tie. Vex keeps the pot anyway, on a technicality."; if (Math.random() < 0.35) giveCosmetic(p, rollCosmetic(p.cos, { bad: true })); }
+  }
+  sendCasino(p);
+}
+function equip(p, slot, id) {
+  if (slot === "hat" && (FREE_HATS.includes(id) || (COSMETICS[id]?.slot === "hat" && p.cos.has(id)))) p.hat = id;
+  else if ((slot === "trail" || slot === "title") && (id === "" || (COSMETICS[id]?.slot === slot && p.cos.has(id)))) p[slot] = id;
 }
 
 // ---------------------------------------------------------------- story
@@ -1261,7 +1358,7 @@ function snapshot() {
         rl: w.reloadUntil ? +(w.reloadUntil - t).toFixed(2) : 0, rt: w.reloadUntil ? +(w.reloadUntil - w.reloadStart).toFixed(2) : 0, rtr: w.tried ? 1 : 0,
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
         lv: p.lvl, xp: p.xp, xn: xpNeed(p.lvl), pts: p.pts, sk: p.sk, ch: p.champion ? 1 : 0,
-        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, out: p.out ? 1 : 0, pk: p.st.pk,
+        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, out: p.out ? 1 : 0, pk: p.st.pk,
         nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
         k: p.st.kills, de: p.st.deaths, cr: p.st.crops, tk: p.st.tk, hs: p.st.hs, acc: p.st.shots ? Math.round(p.st.hits / p.st.shots * 100) : 0,
       };
@@ -1324,6 +1421,9 @@ function onMessage(ws, raw) {
     case "shout": doShout(p); break;
     case "dodge": if (game.phase === "intro") game.skip.add(p.id); else if (p.air === "plane") jump(p); else doDodge(p); break;
     case "buy": buy(p, m.item); break;
+    case "spin": doSpin(p); break;
+    case "casino": casinoAct(p, m); break;
+    case "equip": equip(p, String(m.slot), String(m.id)); break;
     case "learn": learn(p, String(m.s)); break;
     case "vote": if (game.vote && Number.isInteger(m.i) && m.i >= 0 && m.i < game.vote.ev.choices.length) game.vote.votes.set(p.id, m.i); break;
     case "chat": { const text = String(m.text || "").slice(0, 120).trim(); if (text) chat(fullName(p), text, p.color), events.push({ k: "say", id: p.id, text }); break; }
@@ -1343,7 +1443,7 @@ const server = Bun.serve({
   websocket: {
     open(ws) {
       spectators.add(ws);
-      ws.send(JSON.stringify({ t: "hello", shop: SHOP, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS }));
+      ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS }));
       ws.send(JSON.stringify(mapMsg()));
     },
     message: onMessage,

@@ -15,8 +15,8 @@ addEventListener("resize", resize); resize();
 const RARITY_COL = ["#d8d8d8", "#4da6ff", "#c070ff", "#ffc030", "#ff4b4b"];
 const RARITY = ["Common", "Rare", "Epic", "Legendary", "Mythic"];
 const ENH = ["", "PRI", "DUO", "TRI", "TET", "PEN"];
-const WNAME = { pistol: "Pistol", smg: "SMG", shotgun: "Shotgun", rifle: "Rifle", sniper: "Sniper", staff: "Fire Staff" };
-const TRACER = { pistol: "#ffe9a0", smg: "#ffe9a0", shotgun: "#ffcf70", rifle: "#fff3b0", sniper: "#ffffff", staff: "#ff7a2a" };
+const WNAME = { pistol: "Pistol", smg: "SMG", shotgun: "Shotgun", rifle: "Rifle", sniper: "Sniper", staff: "Fire Staff", ak: "AK-Maybe" };
+const TRACER = { pistol: "#ffe9a0", smg: "#ffe9a0", shotgun: "#ffcf70", rifle: "#fff3b0", sniper: "#ffffff", staff: "#ff7a2a", ak: "#ffb0ff" };
 const COLORS = ["#e0b050", "#e05050", "#50a0e0", "#60c060", "#c070e0", "#f08040", "#f0f0f0", "#40d0c0"];
 const HATS = [["none", "None"], ["crown", "Crown"], ["cowboy", "Cowboy"], ["wizard", "Wizard"], ["horns", "Iron Helmet"], ["flower", "Flower"]];
 const CLASSES = [
@@ -75,6 +75,7 @@ $("go").onclick = () => {
 $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("go").click(); });
 
 // ---------------------------------------------------------------- network
+let WHEEL = [], COSM = {}, FREE_HATS = [], myCos = [];
 let ws, MAP = null, SHOP = null, ENH_COST = [], ENH_CHANCE = [], PIECES = {}, VEH = {}, LEGENDS = {};
 let S = null; // latest snapshot
 let me = 0, joined = false;
@@ -83,7 +84,7 @@ function connect() {
   ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
-    if (m.t === "hello") { SHOP = m.shop; ENH_COST = m.enhCost; ENH_CHANCE = m.enhChance; PIECES = m.pieces || {}; VEH = m.vehicles || {}; LEGENDS = m.legends || {}; renderBuildBar(); if (joined) send({ t: "join", ...choice }); return; }
+    if (m.t === "hello") { WHEEL = m.wheel || []; COSM = m.cosmetics || {}; FREE_HATS = m.freeHats || []; SHOP = m.shop; ENH_COST = m.enhCost; ENH_CHANCE = m.enhChance; PIECES = m.pieces || {}; VEH = m.vehicles || {}; LEGENDS = m.legends || {}; renderBuildBar(); if (joined) send({ t: "join", ...choice }); return; }
     if (m.t === "map") { MAP = m.map; buildDecor(); disp.clear(); return; }
     if (m.t === "s") onSnap(m);
   };
@@ -164,7 +165,11 @@ function handlePersonal(e) {
   else if (e.k === "hurt") { hurtFlash = t; shake = Math.max(shake, 5); sfx("hurt"); }
   else if (e.k === "wasted") { wasted = t; wastedPlace = e.place || 0; }
   else if (e.k === "dlg") showDlg(e);
+  else if (e.k === "wheel") { wheelAnim = { t0: t, from: wheelAngle, seg: e.seg }; sfx("banner"); toggleCasino(true); }
+  else if (e.k === "casino") { casinoState = e; if (e.game || (e.spins && wantCasino)) { wantCasino = false; toggleCasino(true); } renderCasino(); }
+  else if (e.k === "cos") { myCos = e.list; if (wardOpen) renderWardrobe(); }
   else if (e.k === "fog") fogT = t;
+  else if (e.k === "case" && e.spins) { wantCasino = true; caseAnim = { t0: t, type: e.type, rarity: e.rarity, name: e.name, reel: makeReel(e.type, e.rarity, e.name) }; }
   else if (e.k === "case") caseAnim = { t0: t, type: e.type, rarity: e.rarity, name: e.name, reel: makeReel(e.type, e.rarity, e.name) };
   else if (e.k === "enh") { enhAnim = { t0: t, ...e }; sfx(e.ok ? "lvl" : "jam"); }
 }
@@ -203,6 +208,9 @@ addEventListener("keydown", (e) => {
   if (k === "escape" && dlgOpen) { send({ t: "dlg", i: -1 }); return; }
   if (k === "k") { toggleSkills(); return; }
   if (k === "j") { toggleJournal(); return; }
+  if (k === "g") { toggleCasino(); return; }
+  if (k === "v") { toggleWardrobe(); return; }
+  if (k === "escape" && (casinoOpen || wardOpen)) { toggleCasino(false); toggleWardrobe(false); return; }
   if (k === "escape") { toggleShop(false); toggleSkills(false); toggleJournal(false); return; }
   if (shopOpen && /^[0-9]$/.test(k)) { const items = Object.keys(SHOP); const i = (Number(k) + 9) % 10; if (items[i]) send({ t: "buy", item: items[i] }); return; }
   if (e.repeat) return;
@@ -247,6 +255,82 @@ function renderLobby(m, hostId) {
   $("overReadyInfo").textContent = m.g.ph === "over" ? (m.g.cd >= 0 ? `Everyone's ready. Starting in ${Math.ceil(m.g.cd)}...` : `${ready}/${m.p.length} ready. The next round starts when everyone is.`) : "";
 }
 
+
+// ---------------------------------------------------------------- Vex's Casino
+let casinoOpen = false, casinoState = { spins: 0, game: null }, wheelAnim = null, wheelAngle = 0, wantCasino = false, pkHold = [false, false, false, false, false];
+const esc2 = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function toggleCasino(force) {
+  casinoOpen = force === undefined ? !casinoOpen : force;
+  $("casino").classList.toggle("hidden", !casinoOpen);
+  if (casinoOpen) { toggleShop(false); toggleSkills(false); keys.clear(); mouseDown = false; renderCasino(); }
+}
+$("casino").addEventListener("click", (e) => { if (e.target === $("casino")) toggleCasino(false); });
+$("cSpin").onclick = (e) => { e.target.blur(); send({ t: "spin" }); };
+const cardHtml = (c, i, pick) => { if (c === "??") return `<div class="card back"></div>`; const suit = { S: "♠", H: "♥", D: "♦", C: "♣" }[c[1]], r = c[0] === "T" ? "10" : c[0]; return `<div class="card${"HD".includes(c[1]) ? " red" : ""}${pick ? " pick" : ""}${pick && pkHold[i] ? " held" : ""}" data-i="${i}">${r}${suit}</div>`; };
+function bjVal(cards) { let v = 0, a = 0; for (const c of cards) { if (c === "??") continue; if (c[0] === "A") { v += 11; a++; } else v += "TJQK".includes(c[0]) ? 10 : +c[0]; } while (v > 21 && a) { v -= 10; a--; } return v; }
+function renderCasino() {
+  if (!casinoOpen) return;
+  const st = casinoState, g = st.game, spinning = !!wheelAnim;
+  $("cSpins").textContent = `You have ${st.spins} spin${st.spins === 1 ? "" : "s"}.`;
+  $("cSpin").disabled = !st.spins || spinning || !!g;
+  let h = "";
+  if (g && g.k === "bj") {
+    h = `<h3 style="color:#3fbf6f;margin:10px 0 0">Blackjack · ${g.w} - ${g.l}</h3><div class="tag">Vex (${g.hide ? "?" : bjVal(g.d)})</div><div class="cards">${g.d.map((c, i) => cardHtml(c, i)).join("")}</div><div class="tag">You (${bjVal(g.p)})</div><div class="cards">${g.p.map((c, i) => cardHtml(c, i)).join("")}</div><div class="cmsg">${esc2(g.msg)}</div>` +
+      (g.over ? `<button class="cbtn" data-a="leave">Leave the table</button>` : g.next ? `<button class="cbtn" data-a="deal">Next hand</button>` : `<button class="cbtn" data-a="hit">Hit</button><button class="cbtn alt" data-a="stand">Stand</button>`);
+  } else if (g && g.k === "pk") {
+    const hold = g.stage === "hold";
+    h = `<h3 style="color:#4da6ff;margin:10px 0 0">Poker · five-card draw</h3><div class="tag">Vex</div><div class="cards">${(g.d || ["??", "??", "??", "??", "??"]).map((c, i) => cardHtml(c, i)).join("")}</div><div class="tag">You</div><div class="cards" id="pkCards">${g.p.map((c, i) => cardHtml(c, i, hold)).join("")}</div><div class="cmsg">${esc2(g.msg)}</div>` +
+      (hold ? `<button class="cbtn" data-a="draw">Draw</button>` : `<button class="cbtn" data-a="leave">Leave the table</button>`);
+  } else pkHold = [false, false, false, false, false];
+  $("cGame").innerHTML = h;
+  for (const b of $("cGame").querySelectorAll("button[data-a]")) b.onclick = () => { const a = b.dataset.a; send(a === "draw" ? { t: "casino", a, hold: pkHold } : { t: "casino", a }); if (a === "draw" || a === "leave") pkHold = [false, false, false, false, false]; };
+  for (const c of $("cGame").querySelectorAll("#pkCards .card.pick")) c.onclick = () => { pkHold[+c.dataset.i] = !pkHold[+c.dataset.i]; renderCasino(); };
+}
+function wheelSlices() { const total = WHEEL.reduce((a, s) => a + s.w, 0); let a0 = 0; return WHEEL.map((s) => { const a = (s.w / total) * Math.PI * 2, r = { ...s, a0, a1: a0 + a }; a0 += a; return r; }); }
+function drawWheel(t) {
+  if (!casinoOpen || !WHEEL.length) return;
+  const cvw = $("wheelCv"), w = cvw.getContext("2d"), R = 320, cx = 340, cy = 340, sl = wheelSlices();
+  if (wheelAnim) {
+    const k = Math.min(1, (t - wheelAnim.t0) / 4), s = sl[wheelAnim.seg];
+    const target = -Math.PI / 2 - (s.a0 + s.a1) / 2, base = wheelAnim.from - (wheelAnim.from % (Math.PI * 2));
+    const end = base + Math.PI * 2 * 6 + ((target % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    wheelAngle = wheelAnim.from + (end - wheelAnim.from) * (1 - Math.pow(1 - k, 4));
+    const tick = Math.floor(wheelAngle / 0.35); if (tick !== wheelAnim.tick) { wheelAnim.tick = tick; if (k < 0.97) sfx("hit"); }
+    if (k >= 1) { wheelAnim = null; sfx(s.id === "jackpot" ? "lvl" : s.id === "bankrupt" || s.id === "lose" ? "jam" : "perfect"); pushLim(toasts, { text: `The wheel says: ${s.label}`, color: s.color === "#444" ? "#bbb" : s.color, t }, 4); renderCasino(); }
+  }
+  w.clearRect(0, 0, 680, 680);
+  w.save(); w.translate(cx, cy); w.rotate(wheelAngle);
+  for (const s of sl) {
+    w.fillStyle = s.color; w.beginPath(); w.moveTo(0, 0); w.arc(0, 0, R, s.a0, s.a1); w.closePath(); w.fill();
+    w.strokeStyle = "#1a1410"; w.lineWidth = 4; w.stroke();
+    w.save(); w.rotate((s.a0 + s.a1) / 2); w.fillStyle = s.id === "jackpot" ? "#3a2400" : "#fff"; w.font = "bold 26px Trebuchet MS"; w.textAlign = "right"; w.textBaseline = "middle"; w.fillText(s.label, R - 16, 0); w.restore();
+  }
+  w.restore();
+  w.fillStyle = "#1a1410"; w.beginPath(); w.arc(cx, cy, 44, 0, 7); w.fill(); w.fillStyle = "#ffd34d"; w.font = "bold 24px Trebuchet MS"; w.textAlign = "center"; w.textBaseline = "middle"; w.fillText("VEX", cx, cy);
+  w.strokeStyle = "#ffd34d"; w.lineWidth = 10; w.beginPath(); w.arc(cx, cy, R + 4, 0, 7); w.stroke();
+  for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; w.fillStyle = (Math.floor(t * 6) + i) % 2 ? "#fff6c0" : "#8a6a20"; w.beginPath(); w.arc(cx + Math.cos(a) * (R + 4), cy + Math.sin(a) * (R + 4), 6, 0, 7); w.fill(); }
+  w.fillStyle = "#fff"; w.beginPath(); w.moveTo(cx - 20, 4); w.lineTo(cx + 20, 4); w.lineTo(cx, 50); w.closePath(); w.fill(); w.strokeStyle = "#000"; w.lineWidth = 2; w.stroke();
+}
+
+// ---------------------------------------------------------------- wardrobe
+let wardOpen = false;
+function toggleWardrobe(force) {
+  wardOpen = force === undefined ? !wardOpen : force;
+  $("wardrobe").classList.toggle("hidden", !wardOpen);
+  if (wardOpen) { toggleShop(false); toggleSkills(false); keys.clear(); mouseDown = false; renderWardrobe(); }
+}
+$("wardrobe").addEventListener("click", (e) => { if (e.target === $("wardrobe")) toggleWardrobe(false); });
+function renderWardrobe() {
+  const mine = S?.p.find((p) => p.id === me); if (!mine) return;
+  const col = ["#d8d8d8", "#4da6ff", "#c070ff", "#ffc030", "#ff4b4b"];
+  const cur = { hat: mine.h, trail: mine.trl, title: Object.keys(COSM).find((k) => COSM[k].name === mine.ttl) || "" };
+  const HAT_NAME = Object.fromEntries(HATS);
+  const slot = (sl, label, items) => `<h3 style="color:#cfe0b8;margin:10px 0 4px">${label}</h3><div class="wslot">` + items.map(([id, name, rar, owned, bad]) => `<div class="wi${cur[sl] === id ? " sel" : ""}${owned ? "" : " lock"}" data-s="${sl}" data-id="${id}" style="color:${owned ? col[rar] : "#888"}" title="${owned ? "" : "Win it on the wheel"}">${owned ? esc2(name) : "???"}${bad && owned ? " 🤢" : ""}</div>`).join("") + `</div>`;
+  const list = (sl) => Object.entries(COSM).filter(([, c]) => c.slot === sl).map(([id, c]) => [id, c.name, c.rarity, myCos.includes(id), c.bad]);
+  $("wardBody").innerHTML = slot("hat", "Hats", [...FREE_HATS.map((h) => [h, HAT_NAME[h] || h, 0, true]), ...list("hat")]) + slot("trail", "Trails", [["", "No trail", 0, true], ...list("trail")]) + slot("title", "Titles", [["", "No title", 0, true], ...list("title")]) + `<div class="tag">${myCos.length}/${Object.keys(COSM).length} collected.</div>`;
+  for (const el of $("wardBody").querySelectorAll(".wi:not(.lock)")) el.onclick = () => { send({ t: "equip", slot: el.dataset.s, id: el.dataset.id }); setTimeout(renderWardrobe, 150); };
+}
+
 // ---------------------------------------------------------------- building
 let building = false, buildKind = "wall";
 function toggleBuild(force) {
@@ -274,7 +358,7 @@ function toggleShop(force) {
   shopOpen = force === undefined ? !shopOpen : force;
   if (shopOpen && S && S.g.ph === "night") { shopOpen = false; pushLim(toasts, { text: "The shop is shut at night.", color: "#f88", t: T() }, 4); }
   $("shop").classList.toggle("hidden", !shopOpen);
-  if (shopOpen) { keys.clear(); mouseDown = false; renderShop(); }
+  if (shopOpen) { if (casinoOpen) toggleCasino(false); if (wardOpen) toggleWardrobe(false); keys.clear(); mouseDown = false; renderShop(); }
 }
 function renderShop() {
   if (!SHOP) return;
@@ -413,11 +497,11 @@ function renderJournal() {
 setInterval(() => { if (journalOpen) renderJournal(); }, 500);
 
 function keyMask() {
-  if (chatting || shopOpen || skillsOpen || (S && S.g.ph === "intro")) return 0;
+  if (chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || (S && S.g.ph === "intro")) return 0;
   return (keys.has("w") ? 1 : 0) | (keys.has("a") ? 2 : 0) | (keys.has("s") ? 4 : 0) | (keys.has("d") ? 8 : 0);
 }
 function aimAngle() { return Math.atan2(mouseY - VH / 2, mouseX - VW / 2); }
-setInterval(() => { if (joined) send({ t: "in", k: keyMask(), a: aimAngle(), f: mouseDown && !chatting && !shopOpen && !skillsOpen && !building }); }, 33);
+setInterval(() => { if (joined) send({ t: "in", k: keyMask(), a: aimAngle(), f: mouseDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen }); }, 33);
 setInterval(() => { if (shopOpen) renderShop(); }, 250);
 
 // ---------------------------------------------------------------- prediction (own player)
@@ -600,6 +684,21 @@ function drawHat(hat, x, y, r) {
   else if (hat === "cowboy") { ctx.fillStyle = "#8a5a2b"; ctx.fillRect(-16, -3, 32, 5); ctx.fillRect(-9, -13, 18, 11); }
   else if (hat === "wizard") { ctx.fillStyle = "#4a3ab0"; ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(3, -26); ctx.lineTo(12, 0); ctx.fill(); ctx.fillStyle = "#ffd34d"; ctx.fillRect(-1, -12, 3, 3); }
   else if (hat === "horns") { ctx.fillStyle = "#999"; ctx.beginPath(); ctx.arc(0, 0, 11, Math.PI, 0); ctx.fill(); ctx.fillStyle = "#eee"; ctx.beginPath(); ctx.moveTo(-10, -4); ctx.lineTo(-18, -16); ctx.lineTo(-7, -8); ctx.fill(); ctx.beginPath(); ctx.moveTo(10, -4); ctx.lineTo(18, -16); ctx.lineTo(7, -8); ctx.fill(); }
+  else if (hat === "party") { ctx.fillStyle = "#ff5fa0"; ctx.beginPath(); ctx.moveTo(-9, 0); ctx.lineTo(0, -24); ctx.lineTo(9, 0); ctx.fill(); ctx.fillStyle = "#ffe14d"; for (const [x, y] of [[-3, -6], [2, -12], [-1, -17]]) { ctx.beginPath(); ctx.arc(x, y, 2, 0, 7); ctx.fill(); } ctx.beginPath(); ctx.arc(0, -25, 3, 0, 7); ctx.fill(); }
+  else if (hat === "bucket") { ctx.fillStyle = "#8a9aa8"; ctx.beginPath(); ctx.moveTo(-13, 2); ctx.lineTo(-10, -16); ctx.lineTo(10, -16); ctx.lineTo(13, 2); ctx.fill(); ctx.strokeStyle = "#5a6a78"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, -8, 14, Math.PI * 0.1, Math.PI * 0.9); ctx.stroke(); }
+  else if (hat === "cone") { ctx.fillStyle = "#ff7a1a"; ctx.beginPath(); ctx.moveTo(-12, 2); ctx.lineTo(0, -30); ctx.lineTo(12, 2); ctx.fill(); ctx.fillStyle = "#fff"; ctx.fillRect(-6, -14, 12, 4); ctx.fillStyle = "#ff7a1a"; ctx.fillRect(-15, 0, 30, 4); }
+  else if (hat === "tinfoil") { ctx.fillStyle = "#cfd6de"; ctx.beginPath(); ctx.moveTo(-12, 1); ctx.lineTo(-6, -12); ctx.lineTo(-1, -6); ctx.lineTo(3, -20); ctx.lineTo(7, -8); ctx.lineTo(12, 1); ctx.fill(); }
+  else if (hat === "fish") { ctx.fillStyle = "#6ab0c0"; ctx.beginPath(); ctx.ellipse(0, -5, 15, 6, 0.15, 0, 7); ctx.fill(); ctx.beginPath(); ctx.moveTo(13, -4); ctx.lineTo(22, -11); ctx.lineTo(21, 2); ctx.fill(); ctx.fillStyle = "#111"; ctx.beginPath(); ctx.arc(-9, -6, 1.8, 0, 7); ctx.fill(); }
+  else if (hat === "dunce") { ctx.fillStyle = "#f4f0e0"; ctx.beginPath(); ctx.moveTo(-10, 1); ctx.lineTo(0, -34); ctx.lineTo(10, 1); ctx.fill(); ctx.fillStyle = "#222"; ctx.font = "bold 7px sans-serif"; ctx.textAlign = "center"; ctx.fillText("D", 0, -8); }
+  else if (hat === "clown") { for (const [x, y, c] of [[-13, -2, "#ff4b4b"], [13, -2, "#4da6ff"], [0, -9, "#ffe14d"], [-7, -8, "#7fd34d"], [7, -8, "#c070ff"]]) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill(); } }
+  else if (hat === "propeller") { ctx.fillStyle = "#4da6ff"; ctx.beginPath(); ctx.arc(0, 0, 11, Math.PI, 0); ctx.fill(); ctx.fillStyle = "#ffe14d"; ctx.fillRect(-1, -16, 2, 6); const a = performance.now() / 60; ctx.fillStyle = "#ff4b4b"; ctx.fillRect(-12 * Math.cos(a), -17, 24 * Math.cos(a), 3); }
+  else if (hat === "pirate") { ctx.fillStyle = "#222"; ctx.beginPath(); ctx.moveTo(-18, 0); ctx.quadraticCurveTo(0, -24, 18, 0); ctx.fill(); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, -7, 3, 0, 7); ctx.fill(); }
+  else if (hat === "sombrero") { ctx.fillStyle = "#d8b060"; ctx.beginPath(); ctx.ellipse(0, -1, 24, 6, 0, 0, 7); ctx.fill(); ctx.beginPath(); ctx.moveTo(-8, -2); ctx.quadraticCurveTo(0, -24, 8, -2); ctx.fill(); ctx.fillStyle = "#c03030"; ctx.fillRect(-8, -5, 16, 3); }
+  else if (hat === "viking") { ctx.fillStyle = "#8a8a90"; ctx.beginPath(); ctx.arc(0, 0, 12, Math.PI, 0); ctx.fill(); ctx.fillStyle = "#f0e6c8"; ctx.beginPath(); ctx.moveTo(-11, -3); ctx.quadraticCurveTo(-22, -8, -18, -24); ctx.lineTo(-8, -8); ctx.fill(); ctx.beginPath(); ctx.moveTo(11, -3); ctx.quadraticCurveTo(22, -8, 18, -24); ctx.lineTo(8, -8); ctx.fill(); }
+  else if (hat === "antlers") { ctx.strokeStyle = "#d8cfae"; ctx.lineWidth = 3; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 5, -2); ctx.lineTo(s * 14, -22); ctx.moveTo(s * 10, -13); ctx.lineTo(s * 20, -15); ctx.moveTo(s * 12, -18); ctx.lineTo(s * 9, -28); ctx.stroke(); } }
+  else if (hat === "toque") { ctx.fillStyle = "#fff"; ctx.fillRect(-10, -7, 20, 7); for (const [cx, cy, r] of [[-7, -12, 7], [0, -16, 8], [7, -12, 7]]) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill(); } }
+  else if (hat === "halo") { ctx.strokeStyle = `rgba(255,220,90,${0.8 + Math.sin(performance.now() / 200) * 0.2})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(0, -16, 12, 4, 0, 0, 7); ctx.stroke(); }
+  else if (hat === "dicecrown") { ctx.fillStyle = "#ffd34d"; ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(-12, -12); ctx.lineTo(-6, -6); ctx.lineTo(0, -16); ctx.lineTo(6, -6); ctx.lineTo(12, -12); ctx.lineTo(12, 0); ctx.fill(); ctx.fillStyle = "#fff"; ctx.fillRect(-5, -26, 10, 10); ctx.fillStyle = "#c01818"; for (const [x, y] of [[-2.5, -23.5], [2.5, -18.5], [0, -21]]) { ctx.beginPath(); ctx.arc(x, y, 1.3, 0, 7); ctx.fill(); } }
   else if (hat === "flower") { for (let i = 0; i < 5; i++) { ctx.fillStyle = "#ff8fc8"; ctx.beginPath(); ctx.arc(Math.cos(i * 1.26) * 5, -6 + Math.sin(i * 1.26) * 5, 4, 0, 7); ctx.fill(); } ctx.fillStyle = "#ffd34d"; ctx.beginPath(); ctx.arc(0, -6, 3, 0, 7); ctx.fill(); }
   ctx.restore();
 }
@@ -666,12 +765,25 @@ function star(x, y, r) {
   ctx.fill();
 }
 
+
+// cosmetic trails: particles dropped behind a moving player
+const trailLast = new Map();
+function trailFx(p, d, t) {
+  const last = trailLast.get(p.id);
+  trailLast.set(p.id, { x: d.x, y: d.y });
+  if (!last || Math.hypot(d.x - last.x, d.y - last.y) < 1.5 || Math.random() > 0.55) return;
+  const x = d.x + (Math.random() - 0.5) * 12, y = d.y + 10 + (Math.random() - 0.5) * 6;
+  const k = p.trl, col = { bubbles: "#bfe8ff", slime: "#7dff5a", flies: "#222", loo: "#fff", hearts: "#ff6aa0", sparkle: "#fff6a0", fire: "#ff8a2a", money: "#7fd34d" }[k] || "#fff";
+  fx.push({ kind: "trail", t0: t, dur: k === "loo" ? 2.5 : 0.9, x, y, c: k === "rainbow" ? `hsl(${(t * 300) % 360},90%,60%)` : col, trl: k, r: Math.random() });
+}
+
 // ---------------------------------------------------------------- render
 let frameNo = 0, lastFrame = T();
 const dark = document.createElement("canvas"), dctx = dark.getContext("2d");
 function render() {
   requestAnimationFrame(render);
   const t = T(), dt = Math.min(0.05, t - lastFrame); lastFrame = t; frameNo++;
+  drawWheel(t);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = "#111"; ctx.fillRect(0, 0, VW, VH);
   if (!MAP || !S) { text("Connecting to the valley...", VW / 2, VH / 2, 24, "#ffd34d"); return; }
@@ -858,12 +970,13 @@ function render() {
       text(p.n, d.x, d.y + 32, 12, "#fff");
       continue;
     }
+    if (p.trl) trailFx(p, d, t);
     const a = p.id === me ? aimAngle() : p.a;
     if (p.cl === "gaffer") { ctx.strokeStyle = "#ffd34d33"; ctx.setLineDash([8, 8]); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(d.x, d.y, 260, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
     ctx.fillStyle = "#0004"; ctx.beginPath(); ctx.ellipse(d.x, d.y + 14, 16, 6, 0, 0, 7); ctx.fill();
     // gun
     ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(a);
-    const gl = { pistol: 20, smg: 26, shotgun: 30, rifle: 34, sniper: 42, staff: 36 }[p.w] || 24;
+    const gl = { pistol: 20, smg: 26, shotgun: 30, rifle: 34, sniper: 42, staff: 36, ak: 32 }[p.w] || 24;
     ctx.fillStyle = p.w === "staff" ? "#8b5a2b" : "#333"; ctx.fillRect(8, -3, gl, 6);
     if (p.w === "staff") { ctx.fillStyle = "#ff7a2a"; ctx.beginPath(); ctx.arc(8 + gl, 0, 5, 0, 7); ctx.fill(); }
     if (p.wr > 0) { ctx.fillStyle = RARITY_COL[p.wr]; ctx.fillRect(12, -1, gl - 8, 2); }
@@ -877,6 +990,7 @@ function render() {
     let topY = d.y - 34;
     if (p.st > 0) { ctx.fillStyle = "#ffcc00"; for (let i = 0; i < p.st; i++) star(d.x - (p.st - 1) * 7 + i * 14, topY - 2, 6); topY -= 14; }
     text(`${p.ch ? "♛ " : ""}${p.n} · ${p.lv}`, d.x, topY, 12, p.ch ? "#ffd34d" : p.id === me ? "#fff" : "#e8e8e8");
+    if (p.ttl) { topY -= 14; text(`« ${p.ttl} »`, d.x, topY, 10, "#ffc030"); }
     bar(d.x - 18, d.y + 21, 36, 4, p.hp / p.mh, "#5f5");
     if (p.ar > 0) bar(d.x - 18, d.y + 26, 36 * p.ar / 60, 2, 1, "#6cf", "#0000");
     if (p.id === me) { // plumbob
@@ -907,6 +1021,16 @@ function render() {
       if (!f.full) text(f.text || "FUS RO DAH!", f.x, f.y - 60 - k * 30, 26, `rgba(220,240,255,${1 - k})`);
     }
     else if (f.kind === "burn") { ctx.fillStyle = `rgba(255,${160 - k * 120},30,${1 - k})`; ctx.beginPath(); ctx.arc(f.x, f.y - k * 30, 5 * (1 - k) + 2, 0, 7); ctx.fill(); }
+    else if (f.kind === "trail") {
+      ctx.globalAlpha = 1 - k; ctx.fillStyle = f.c;
+      if (f.trl === "hearts") text("♥", f.x, f.y - k * 20, 12, f.c, "center", false);
+      else if (f.trl === "money") text("$", f.x, f.y - k * 16, 13, f.c);
+      else if (f.trl === "flies") { ctx.fillRect(f.x + Math.sin(t * 20 + f.r * 9) * 8, f.y - 10 + Math.cos(t * 17 + f.r * 5) * 8, 2, 2); }
+      else if (f.trl === "loo") { ctx.fillRect(f.x - 4, f.y - 1, 8, 3); }
+      else if (f.trl === "sparkle") { ctx.save(); ctx.translate(f.x, f.y - k * 10); ctx.rotate(k * 3); ctx.fillRect(-3, -0.8, 6, 1.6); ctx.fillRect(-0.8, -3, 1.6, 6); ctx.restore(); }
+      else { ctx.beginPath(); ctx.arc(f.x, f.y - (f.trl === "fire" || f.trl === "bubbles" ? k * 18 : 0), (f.trl === "fire" ? 5 : 4) * (f.trl === "bubbles" ? 0.6 + k : 1 - k * 0.5), 0, 7); if (f.trl === "bubbles") { ctx.strokeStyle = f.c; ctx.lineWidth = 1.5; ctx.stroke(); } else ctx.fill(); }
+      ctx.globalAlpha = 1;
+    }
     else if (f.kind === "text") { ctx.globalAlpha = 1 - k; text(f.text, f.x, f.y - k * 30, f.big ? 20 : 14, f.color); ctx.globalAlpha = 1; }
   }
   // the drop balloon
@@ -1073,6 +1197,7 @@ function drawHud(mine, t) {
   if (mine.ar > 0) bar(24, VH - 64, 300 * mine.ar / 60, 5, 1, "#6cf", "#0000");
   text(`${mine.g}g`, 24, VH - 45, 20, "#ffd34d", "left");
   text(`🌱 ${mine.sd}`, 110, VH - 45, 18, "#8f8", "left");
+  if (mine.spn) text(`🎰 ${mine.spn} spin${mine.spn > 1 ? "s" : ""} [G]`, 324, VH - 22, 13, "#ffd34d", "right");
   if (mine.st > 0) { ctx.fillStyle = "#ffcc00"; for (let i = 0; i < 5; i++) { ctx.globalAlpha = i < mine.st ? 1 : 0.2; star(190 + i * 22, VH - 45, 9); } ctx.globalAlpha = 1; }
   const sc = mine.sc;
   text(sc > 0 ? `Q  shout ${Math.ceil(sc)}s` : "Q  FUS RO DAH ready", 24, VH - 22, 13, sc > 0 ? "#888" : "#bfe0ff", "left");
