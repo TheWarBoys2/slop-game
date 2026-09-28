@@ -150,6 +150,7 @@ function handleEvent(e) {
   else if (e.k === "bhit") pieceHit.set(e.id, t);
   else if (e.k === "cd") sfx("lvl");
   else if (e.k === "legend") { legendT = t; legendKind = e.kind; sfx("banner"); }
+  else if (e.k === "mess") pushLim(messes, { ...e, t }, 60);
 }
 function handlePersonal(e) {
   const t = T();
@@ -172,7 +173,15 @@ function handlePersonal(e) {
   else if (e.k === "case" && e.spins) { wantCasino = true; caseAnim = { t0: t, type: e.type, rarity: e.rarity, name: e.name, reel: makeReel(e.type, e.rarity, e.name) }; }
   else if (e.k === "case") caseAnim = { t0: t, type: e.type, rarity: e.rarity, name: e.name, reel: makeReel(e.type, e.rarity, e.name) };
   else if (e.k === "enh") { enhAnim = { t0: t, ...e }; sfx(e.ok ? "lvl" : "jam"); }
+  else if (e.k === "sym") { symT = t; pushLim(toasts, { text: e.text, color: e.sym ? "#9fdc5a" : "#8f8", t }, 4); if (e.sym) { sfx("hurt"); keys.clear(); } }
+  else if (e.k === "accident") { shake = Math.max(shake, 6); sfx("jam"); }
+  else if (e.k === "unlucky") { banner = { text: "THE 0.004%", sub: `Level ${e.lv}, every skill point and every upgrade: gone. It was always going to be someone.`, t }; sfx("banner"); shake = 14; }
 }
+const messes = [];
+let symT = -9, adsDown = false, adsZoom = 1, watcher = null;
+const view = { cx: 0, cy: 0, z: 1, sx: 0, sy: 0 };
+const toScr = (x, y) => ({ x: (x - view.cx) * view.z + VW / 2 + view.sx, y: (y - view.cy) * view.z + VH / 2 + view.sy });
+function myScr() { return S && S.p.some((p) => p.id === me) ? toScr(pred.x, pred.y) : { x: VW / 2, y: VH / 2 }; }
 function pushLim(arr, v, n) { arr.push(v); while (arr.length > n) arr.shift(); }
 function nearShake(e, amt) { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 500) shake = Math.max(shake, amt); }
 let hearthHitT = 0, hsT = -9, localReloadTry = 0, wastedPlace = 0, fogT = -9, clueT = -9, legendT = -99, legendKind = null, intro = null;
@@ -213,8 +222,10 @@ addEventListener("keydown", (e) => {
   if (k === "escape" && (casinoOpen || wardOpen)) { toggleCasino(false); toggleWardrobe(false); return; }
   if (k === "escape") { toggleShop(false); toggleSkills(false); toggleJournal(false); return; }
   if (shopOpen && /^[0-9]$/.test(k)) { const items = Object.keys(SHOP); const i = (Number(k) + 9) % 10; if (items[i]) send({ t: "buy", item: items[i] }); return; }
+  if (k === "alt" || k === "insert") e.preventDefault();
   if (e.repeat) return;
   keys.add(k);
+  if (k === "x") send({ t: "go" });
   if (k === "r") { const mine = S?.p.find((p) => p.id === me); if (mine && mine.rl && !mine.rtr) localReloadTry = T(); send({ t: "reload" }); }
   if (k === "e") send({ t: "use" });
   if (k === "q") send({ t: "shout" });
@@ -222,14 +233,15 @@ addEventListener("keydown", (e) => {
   if (k === "1") send({ t: "swap", i: 0 });
   if (k === "2") send({ t: "swap", i: 1 });
 });
-addEventListener("keyup", (e) => { const k = e.key.toLowerCase(); keys.delete(k); if (k === "tab") showScores = false; });
-addEventListener("blur", () => { keys.clear(); mouseDown = false; showScores = false; });
+addEventListener("keyup", (e) => { const k = e.key.toLowerCase(); keys.delete(k); if (k === "alt") e.preventDefault(); if (k === "tab") showScores = false; });
+addEventListener("blur", () => { keys.clear(); mouseDown = false; adsDown = false; showScores = false; });
 cv.addEventListener("mousemove", (e) => { mouseX = e.clientX; mouseY = e.clientY; });
 cv.addEventListener("mousedown", (e) => {
   if (building) { if (e.button === 0) { const g = ghostCell(); send({ t: "build", kind: buildKind, x: g.x, y: g.y }); } else toggleBuild(false); return; }
   if (e.button === 0) mouseDown = true;
+  if (e.button === 2) adsDown = true;
 });
-addEventListener("mouseup", () => { mouseDown = false; });
+addEventListener("mouseup", (e) => { if (e.button === 2) adsDown = false; else mouseDown = false; });
 cv.addEventListener("wheel", () => send({ t: "swap" }), { passive: true });
 cv.addEventListener("contextmenu", (e) => e.preventDefault());
 $("readyBtn").onclick = (e) => { e.target.blur(); send({ t: "ready" }); };
@@ -348,7 +360,7 @@ function renderBuildBar() {
 }
 setInterval(() => { if (building) renderBuildBar(); }, 500);
 function ghostCell() {
-  const wx = mouseX - VW / 2 + pred.x, wy = mouseY - VH / 2 + pred.y;
+  const wx = (mouseX - VW / 2 - view.sx) / view.z + view.cx, wy = (mouseY - VH / 2 - view.sy) / view.z + view.cy;
   return { x: Math.round((wx - 20) / 40) * 40, y: Math.round((wy - 20) / 40) * 40 };
 }
 
@@ -498,10 +510,15 @@ setInterval(() => { if (journalOpen) renderJournal(); }, 500);
 
 function keyMask() {
   if (chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || (S && S.g.ph === "intro")) return 0;
+  const mine = S && S.p.find((p) => p.id === me);
+  if (mine && mine.go) return 0;
+  // infected: forward is P, back is INSERT, left is ALT. There is no right.
+  if (mine && mine.inf === "keys") return (keys.has("p") ? 1 : 0) | (keys.has("alt") ? 2 : 0) | (keys.has("insert") ? 4 : 0);
   return (keys.has("w") ? 1 : 0) | (keys.has("a") ? 2 : 0) | (keys.has("s") ? 4 : 0) | (keys.has("d") ? 8 : 0);
 }
-function aimAngle() { return Math.atan2(mouseY - VH / 2, mouseX - VW / 2); }
-setInterval(() => { if (joined) send({ t: "in", k: keyMask(), a: aimAngle(), f: mouseDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen }); }, 33);
+function aimAngle() { const o = myScr(); return Math.atan2(mouseY - o.y, mouseX - o.x); }
+const aiming = () => adsDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen;
+setInterval(() => { if (joined) send({ t: "in", k: keyMask(), a: aimAngle(), f: mouseDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen, ads: aiming() ? 1 : 0 }); }, 33);
 setInterval(() => { if (shopOpen) renderShop(); }, 250);
 
 // ---------------------------------------------------------------- prediction (own player)
@@ -793,9 +810,28 @@ function render() {
   let zoom = 1, shot = null;
   if (intro) { shot = introShot(t); cam = shot.cam; zoom = shot.z; }
   if (mine && mine.out && S.g.ph === "royale") { const alive = S.p.filter((p) => !p.d && !p.out); if (alive.length) { const f = alive[Math.floor(t / 8) % alive.length]; const d = smooth("spec", f.x, f.y, dt); cam = { x: d.x, y: d.y }; } }
+  // aim down sights: zoom in on where you're looking
+  adsZoom += ((!intro && mine && !mine.d && aiming() ? 1.35 : 1) - adsZoom) * Math.min(1, dt * 10);
+  if (!intro && Math.abs(adsZoom - 1) > 0.005) zoom = adsZoom;
+  // second person: the camera belongs to whoever is watching you
+  watcher = null;
+  if (!intro && mine && !mine.d && mine.inf === "second") {
+    // the nearest thing that's far enough away to have a view of you; failing that, something in the bushes
+    let best = null, bd = 900 * 900;
+    const far = (x, y) => { const d2 = (x - pred.x) ** 2 + (y - pred.y) ** 2; return d2 > 240 * 240 && d2 < bd ? d2 : 0; };
+    for (const q of S.p) { if (q.id === me || q.d) continue; const d2 = far(q.x, q.y); if (d2) { bd = d2; best = { x: q.x, y: q.y, who: q.n }; } }
+    for (const z of S.z) { const d2 = far(z[2], z[3]); if (d2) { bd = d2; best = { x: z[2], y: z[3], who: z[1] === "b" ? "the boss" : "a zombie" }; } }
+    if (!best) { const a = t * 0.15; best = { x: pred.x + Math.cos(a) * 320, y: pred.y + Math.sin(a) * 320, who: "something in the bushes" }; }
+    const w = smooth("watch", best.x, best.y, dt);
+    const lim = Math.min(VW, VH) * 0.34 / zoom, dx = pred.x - w.x, dy = pred.y - w.y, l = Math.hypot(dx, dy);
+    const k = l > lim ? (l - lim) / l : 0;
+    cam = { x: w.x + dx * k, y: w.y + dy * k };
+    watcher = { x: w.x, y: w.y, who: best.who };
+  }
   shake *= Math.pow(0.001, dt);
   const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
   const ox = Math.round(VW / 2 - cam.x + sx), oy = Math.round(VH / 2 - cam.y + sy);
+  Object.assign(view, zoom !== 1 ? { cx: cam.x, cy: cam.y, z: zoom, sx: 0, sy: 0 } : { cx: cam.x, cy: cam.y, z: 1, sx: ox - (VW / 2 - cam.x), sy: oy - (VH / 2 - cam.y) });
   ctx.save();
   const worldXf = () => { if (zoom !== 1) { ctx.translate(VW / 2, VH / 2); ctx.scale(zoom, zoom); ctx.translate(-cam.x, -cam.y); } else ctx.translate(ox, oy); };
   worldXf();
@@ -825,6 +861,20 @@ function render() {
       ctx.fillStyle = "#4cbf3a"; ctx.beginPath(); ctx.ellipse(pl.x - 5, pl.y - 12 + bob, 4, 9, -0.4, 0, 7); ctx.ellipse(pl.x + 5, pl.y - 12 + bob, 4, 9, 0.4, 0, 7); ctx.fill();
     }
   });
+
+  // messes. Someone has to clean these up. Nobody will.
+  for (const m of messes) {
+    const age = t - m.t; if (age > 90) continue;
+    ctx.globalAlpha = Math.min(1, (90 - age) / 10);
+    const s = m.big ? 1.6 : 1;
+    if (m.kind === "pee") { ctx.fillStyle = "#e8d84a99"; ctx.beginPath(); ctx.ellipse(m.x + 4, m.y + 14, 16 * s, 8 * s, 0.2, 0, 7); ctx.ellipse(m.x - 8 * s, m.y + 18, 8 * s, 5 * s, 0, 0, 7); ctx.fill(); }
+    else {
+      ctx.fillStyle = "#6b4520";
+      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(m.x, m.y + 14 - i * 5 * s, (9 - i * 2.5) * s, (5 - i) * s, 0, 0, 7); ctx.fill(); }
+      ctx.fillStyle = "#111"; for (let i = 0; i < 3; i++) { const a = t * 3 + i * 2.1; ctx.fillRect(m.x + Math.cos(a) * 14 * s, m.y + Math.sin(a * 1.3) * 8 + 2, 2, 2); }
+    }
+  }
+  ctx.globalAlpha = 1;
 
   // the old well
   if (MAP.well && S.g.mode !== "royale") {
@@ -991,6 +1041,9 @@ function render() {
     if (p.st > 0) { ctx.fillStyle = "#ffcc00"; for (let i = 0; i < p.st; i++) star(d.x - (p.st - 1) * 7 + i * 14, topY - 2, 6); topY -= 14; }
     text(`${p.ch ? "♛ " : ""}${p.n} · ${p.lv}`, d.x, topY, 12, p.ch ? "#ffd34d" : p.id === me ? "#fff" : "#e8e8e8");
     if (p.ttl) { topY -= 14; text(`« ${p.ttl} »`, d.x, topY, 10, "#ffc030"); }
+    if (p.go) { topY -= 16; text(p.go === "poo" ? "💩 busy" : "💦 busy", d.x, topY, 12, "#ffe7a0"); }
+    if (p.inf) { ctx.strokeStyle = "#9fdc5a88"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(d.x, d.y, 18 + Math.sin(t * 6 + p.id) * 2, 0, 7); ctx.stroke(); }
+    if (p.id === me && watcher) { topY -= 22; text("▼ YOU ▼", d.x, topY, 14, "#9fdc5a"); ctx.strokeStyle = "#9fdc5aaa"; ctx.setLineDash([4, 8]); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(watcher.x, watcher.y); ctx.lineTo(d.x, d.y); ctx.stroke(); ctx.setLineDash([]); }
     bar(d.x - 18, d.y + 21, 36, 4, p.hp / p.mh, "#5f5");
     if (p.ar > 0) bar(d.x - 18, d.y + 26, 36 * p.ar / 60, 2, 1, "#6cf", "#0000");
     if (p.id === me) { // plumbob
@@ -1073,7 +1126,7 @@ function render() {
   if (shot) { drawIntroOverlay(shot, t, worldXf); return; }
 
   // darkness
-  drawDarkness(ox, oy, t);
+  drawDarkness(t);
 
   // hurt vignette
   if (t - hurtFlash < 0.3) { const g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VH * 0.8); g.addColorStop(0, "#f000"); g.addColorStop(1, `rgba(200,0,0,${0.5 * (1 - (t - hurtFlash) / 0.3)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
@@ -1085,7 +1138,7 @@ function render() {
   for (const k of disp.keys()) if (disp.get(k).seen < frameNo - 30) disp.delete(k);
 }
 
-function drawDarkness(ox, oy, t) {
+function drawDarkness(t) {
   const ph = S.g.ph;
   let alpha = 0;
   if (ph === "night") alpha = 0.86;
@@ -1097,27 +1150,28 @@ function drawDarkness(ox, oy, t) {
   dctx.clearRect(0, 0, VW, VH);
   dctx.fillStyle = `rgba(5,8,25,${alpha})`; dctx.fillRect(0, 0, VW, VH);
   dctx.globalCompositeOperation = "destination-out";
-  const hole = (x, y, r, inner = 0.2) => { const g = dctx.createRadialGradient(x, y, r * inner, x, y, r); g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)"); dctx.fillStyle = g; dctx.beginPath(); dctx.arc(x, y, r, 0, 7); dctx.fill(); };
+  const Z = view.z;
+  const hole = (x, y, r, inner = 0.2) => { r *= Z; const g = dctx.createRadialGradient(x, y, r * inner, x, y, r); g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)"); dctx.fillStyle = g; dctx.beginPath(); dctx.arc(x, y, r, 0, 7); dctx.fill(); };
   const hw = MAP.hearth;
-  hole(hw.x + hw.w / 2 + ox, hw.y + hw.h / 2 + oy, 260 + Math.sin(t * 7) * 8);
+  { const c = toScr(hw.x + hw.w / 2, hw.y + hw.h / 2); hole(c.x, c.y, 260 + Math.sin(t * 7) * 8); }
   for (const p of S.p) {
     if (p.d) continue;
     const d = p.id === me ? { x: pred.x, y: pred.y } : disp.get("p" + p.id) || p;
     const a = p.id === me ? aimAngle() : p.a;
-    const x = d.x + ox, y = d.y + oy;
+    const { x, y } = toScr(d.x, d.y);
     hole(x, y, 110, 0.3);
     // flashlight cone
-    const g = dctx.createRadialGradient(x, y, 20, x, y, 480);
+    const g = dctx.createRadialGradient(x, y, 20 * Z, x, y, 480 * Z);
     g.addColorStop(0, "rgba(0,0,0,0.95)"); g.addColorStop(1, "rgba(0,0,0,0)");
-    dctx.fillStyle = g; dctx.beginPath(); dctx.moveTo(x, y); dctx.arc(x, y, 480, a - 0.42, a + 0.42); dctx.closePath(); dctx.fill();
+    dctx.fillStyle = g; dctx.beginPath(); dctx.moveTo(x, y); dctx.arc(x, y, 480 * Z, a - 0.42, a + 0.42); dctx.closePath(); dctx.fill();
   }
-  for (const f of fx) if (f.kind === "boom" || f.kind === "burn") hole(f.x + ox, f.y + oy, f.kind === "boom" ? 160 : 40);
-  for (const b of S.b) if (b[1] === "lamp") hole(b[2] + 20 + ox, b[3] + 20 + oy, 200 + Math.sin(t * 5 + b[0]) * 6, 0.3);
+  for (const f of fx) if (f.kind === "boom" || f.kind === "burn") { const c = toScr(f.x, f.y); hole(c.x, c.y, f.kind === "boom" ? 160 : 40); }
+  for (const b of S.b) if (b[1] === "lamp") { const c = toScr(b[2] + 20, b[3] + 20); hole(c.x, c.y, 200 + Math.sin(t * 5 + b[0]) * 6, 0.3); }
   for (const [id, , vx, vy, va, , drv] of S.vh) {
     if (!drv) continue;
-    const d = disp.get("v" + id) || { x: vx, y: vy }, x = d.x + ox, y = d.y + oy;
-    const g = dctx.createRadialGradient(x, y, 20, x, y, 520); g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)");
-    dctx.fillStyle = g; dctx.beginPath(); dctx.moveTo(x, y); dctx.arc(x, y, 520, va - 0.35, va + 0.35); dctx.closePath(); dctx.fill();
+    const d = disp.get("v" + id) || { x: vx, y: vy }, { x, y } = toScr(d.x, d.y);
+    const g = dctx.createRadialGradient(x, y, 20 * Z, x, y, 520 * Z); g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)");
+    dctx.fillStyle = g; dctx.beginPath(); dctx.moveTo(x, y); dctx.arc(x, y, 520 * Z, va - 0.35, va + 0.35); dctx.closePath(); dctx.fill();
   }
   ctx.drawImage(dark, 0, 0, VW, VH);
 }
@@ -1186,6 +1240,26 @@ function drawHud(mine, t) {
   });
 
   if (!mine) return;
+  // aim-down-sights vignette
+  if (adsZoom > 1.02) { const k = (adsZoom - 1) / 0.35, o = myScr(); const g = ctx.createRadialGradient(o.x, o.y, VH * 0.25, o.x, o.y, VH * 0.75); g.addColorStop(0, "#0000"); g.addColorStop(1, `rgba(0,0,0,${0.55 * k})`); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
+  // second person
+  if (watcher) {
+    ctx.fillStyle = "rgba(60,90,20,0.12)"; ctx.fillRect(0, 0, VW, VH);
+    text(`SECOND PERSON · you are seen through the eyes of ${watcher.who}`, VW / 2, VH - 232, 15, "#9fdc5a");
+  }
+  if (mine.inf) {
+    const lbl = { second: "Second person", keys: "P forward · INSERT back · ALT left · no right", runs: "The runs" }[mine.inf] || "";
+    ctx.fillStyle = "#1d2a0dcc"; ctx.beginPath(); ctx.roundRect(VW / 2 - 230, 104, 460, 40, 8); ctx.fill();
+    text(`🦠 INFECTED (${mine.il}s): ${lbl}`, VW / 2, 124, 15, t - symT < 1 && Math.floor(t * 8) % 2 ? "#fff" : "#9fdc5a");
+    text("Dawn or an Antidote from the shop will cure it.", VW / 2, 139, 10, "#9fdc5acc");
+  }
+  // bottom left: bladder and bowels
+  if (["day", "night", "royale"].includes(S.g.ph)) {
+    ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(12, VH - 176, 330, 26, 8); ctx.fill();
+    const nb = (x, lbl, v, col) => { text(lbl, x, VH - 162, 12, v >= 80 && Math.floor(t * 3) % 2 ? "#f55" : "#ddd", "left"); bar(x + 58, VH - 167, 90, 8, v / 100, v >= 80 ? "#e33" : col); };
+    nb(22, "💧 Pee", mine.bl, "#e8d84a"); nb(178, "💩 Poo", mine.bw, "#a0703a");
+    if (Math.max(mine.bl, mine.bw) >= 60) text("[X] go", 336, VH - 162, 11, "#ffc030", "right");
+  }
   // bottom left: vitals
   ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(12, VH - 146, 330, 134, 10); ctx.fill();
   bar(24, VH - 138, 300, 5, mine.xp / mine.xn, "#9fe0ff");
@@ -1340,7 +1414,7 @@ function showOver() {
 function drawCrosshair(mine, t) {
   if (!mine || mine.d || chatting || shopOpen || skillsOpen || S.g.ph === "over") { cv.style.cursor = "default"; return; }
   cv.style.cursor = "none";
-  const dist = Math.hypot(mouseX - VW / 2, mouseY - VH / 2);
+  const o = myScr(), dist = Math.hypot(mouseX - o.x, mouseY - o.y);
   const gap = 4 + Math.tan(mine.spr) * Math.max(60, dist);
   const col = t - hsT < 0.25 ? "#ff9d2e" : mine.hot ? "#7dffb0" : "#ffffff";
   ctx.strokeStyle = "#000a"; ctx.lineWidth = 4;
@@ -1359,6 +1433,6 @@ function drawCrosshair(mine, t) {
   }
 }
 
-window.slopDebug = { get S() { return S; }, get me() { return me; }, get MAP() { return MAP; } }; // for tools/ and curious people
+window.slopDebug = { get S() { return S; }, get me() { return me; }, get MAP() { return MAP; }, get mask() { return keyMask(); } }; // for tools/ and curious people
 requestAnimationFrame(render);
 })();

@@ -22,6 +22,9 @@ const ROYALE_ZONES = [ // [wait, shrink, radius]
 ].map(([w, s, r]) => [FAST ? w / 6 : w, FAST ? s / 4 : s, r]);
 const STORY_ZONE_R = [1700, 1350, 1100, 920, 800, 680];
 const TEST_DMG = Number(process.env.SLOP_DMG || 1); // testing only
+const UNLUCKY = process.env.SLOP_UNLUCKY ? 1 : 0.00004; // 0.004% per level-up or upgrade. As requested.
+const INFECT = process.env.SLOP_INFECT ? 1 : 0.08; // chance a bite infects you
+const FORCE_SYM = process.env.SLOP_SYM || ""; // testing only
 const INTRO_LEN = { story: FAST ? 3 : 25, royale: FAST ? 2 : 10 };
 const COUNTDOWN = FAST ? 1 : 4;
 
@@ -160,6 +163,7 @@ const SHOP = {
   gcase:   { name: "Golden Case (wheel spins!)", cost: 150 },
   enhance: { name: "Enhance weapon", cost: 0 },
   repair:  { name: "Repair Hearth", cost: 75 },
+  antidote: { name: "Antidote", cost: 40 },
 };
 
 const VEHICLES = {
@@ -270,6 +274,7 @@ function resetProgress(p) {
   p.gen = 1; p.lineage = []; p.trait = p.chosenTrait || pick(TRAIT_KEYS); p.champion = false; p.heat = 0; p.dead = false;
   p.st = { kills: 0, deaths: 0, dmg: 0, crops: 0, tk: 0, gold: 0, bounty: 0, shots: 0, hits: 0, hs: 0, perfect: 0, cases: 0, shoutHits: 0, repairs: 0, pk: 0 };
   p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.veh = 0; p.spins = 0; p.casino = null; p.spinning = false;
+  p.bl = 0; p.bw = 0; p.going = 0; p.goKind = ""; p.inf = null; p.soggy = 0; p.ads = false;
 }
 function resetLoadout(p, fresh) {
   p.hp = maxHp(p); p.armor = 0;
@@ -291,7 +296,19 @@ function addXp(p, amt) {
     p.xp -= xpNeed(p.lvl); p.lvl++; p.pts++;
     p.pe.push({ k: "lvl", lvl: p.lvl });
     if (p.lvl % 5 === 0) feed(`${fullName(p)} reached level ${p.lvl}`, "#9fe0ff");
+    if (unlucky(p)) break;
   }
+}
+// the 0.004%: every level-up and upgrade rolls it. Almost nobody will ever see this.
+function unlucky(p) {
+  if (Math.random() >= UNLUCKY) return false;
+  const lv = p.lvl;
+  p.lvl = 1; p.xp = 0; p.pts = 0; p.sk = { ...(BACKGROUNDS[p.bg].sk || {}) };
+  for (const w of p.weapons) w.enh = 0;
+  p.hp = Math.min(p.hp, maxHp(p));
+  feed(`The 0.004% happened to ${fullName(p)}. Level ${lv}, every skill and every upgrade: gone.`, "#ff4b4b");
+  p.pe.push({ k: "unlucky", lv });
+  return true;
 }
 function gaffers() { return [...players.values()].filter((q) => q.cls === "gaffer" && !q.dead); }
 function addGold(p, amt, reason) {
@@ -304,6 +321,8 @@ function speedOf(p) {
   let s = 210 * CLASSES[p.cls].speed * (1 + (traitOf(p).speed || 0)) * (1 + 0.06 * sk(p, "fleet")) * game.mods.speed;
   if (inAura(p)) s *= 1.1;
   if (p.weapons[p.active]?.type === "sniper") s *= 0.85;
+  if (p.ads) s *= 0.6;
+  if (now() < p.soggy) s *= 0.8;
   return s;
 }
 function inAura(p) { return gaffers().some((g) => g !== p && dist2(g, p) < 260 * 260); }
@@ -323,7 +342,61 @@ function spreadOf(p, w) {
   let s = def.spread * (0.3 + w.bloom) * (1 + (traitOf(p).spread || 0));
   if (moving) s *= w.type === "sniper" ? 8 : 1.7;
   if (w.type === "shotgun") s = def.spread * (moving ? 1.15 : 1);
+  if (p.ads) s *= w.type === "shotgun" ? 0.75 : 0.4;
   return s;
+}
+
+// ---------------------------------------------------------------- infection and bodily needs
+// A bite can infect you. Infection cycles through symptoms until dawn, an antidote, or it wears off.
+// "second": you see yourself through someone else's eyes. "keys": your controls rearrange themselves. "runs": self-explanatory.
+const SYMPTOMS = {
+  second: "Second person. You are no longer the main character. You are being watched.",
+  keys: "Your fingers forget. Forward is P, back is INSERT, left is ALT. There is no right.",
+  runs: "Your stomach makes a noise like a drain. Find somewhere private. Soon.",
+};
+function infect(p) {
+  if (p.inf || p.dead) return;
+  p.inf = { until: now() + 70, sym: "", next: 0 };
+  nextSymptom(p);
+  feed(`${fullName(p)} got bitten and doesn't look well.`, "#9fdc5a");
+}
+function nextSymptom(p) {
+  const opts = Object.keys(SYMPTOMS).filter((k) => k !== p.inf.sym);
+  p.inf.sym = SYMPTOMS[FORCE_SYM] ? FORCE_SYM : pick(opts); p.inf.next = now() + 20;
+  p.pe.push({ k: "sym", sym: p.inf.sym, text: SYMPTOMS[p.inf.sym] });
+}
+function cure(p, why) { if (!p.inf) return; p.inf = null; p.pe.push({ k: "sym", sym: "", text: why }); }
+function needs(p, dt, t) {
+  if (t < p.going) return;
+  const k = FAST ? 5 : 1; // bladder fills in ~3.5 min, bowels ~6 min (the runs: under a minute)
+  p.bl = Math.min(100, p.bl + dt * k * 100 / 210);
+  p.bw = Math.min(100, p.bw + dt * k * 100 / 340 * (p.inf && p.inf.sym === "runs" ? 8 : 1));
+  for (const [k, name] of [["bl", "bladder"], ["bw", "bowels"]]) {
+    const v = p[k];
+    if (v >= 80 && !p["warn" + k]) { p["warn" + k] = true; toast(p, `Your ${name} is at ${Math.round(v)}%. Press X to go.`, "#ffc030"); }
+    if (v >= 100) accident(p, k === "bl" ? "pee" : "poo");
+  }
+}
+function accident(p, kind) {
+  if (kind === "pee") { p.bl = 0; p.warnbl = false; p.soggy = now() + 20; feed(`${fullName(p)} wet themselves in front of everyone.`, "#e8d84a"); }
+  else { p.bw = 0; p.warnbw = false; p.soggy = now() + 35; feed(`${fullName(p)} soiled themselves. The flies have found a new favourite.`, "#a0703a"); }
+  events.push({ k: "mess", x: Math.round(p.x), y: Math.round(p.y), kind, big: 1 });
+  p.pe.push({ k: "accident", kind });
+}
+function relieve(p) {
+  const t = now();
+  if (p.dead || p.air || p.veh || t < p.going || game.phase === "intro") return;
+  const kind = p.bw >= p.bl ? "poo" : "pee";
+  if (Math.max(p.bl, p.bw) < 25) return toast(p, "You don't need to go. You try anyway. Nothing.", "#bbb");
+  p.going = t + (kind === "poo" ? 2.2 : 1.4); p.goKind = kind;
+  setTimeout(() => {
+    if (p.dead || !players.has(p.id)) return;
+    if (kind === "pee") { p.bl = 0; p.warnbl = false; } else { p.bw = 0; p.warnbw = false; }
+    events.push({ k: "mess", x: Math.round(p.x), y: Math.round(p.y), kind });
+    const plot = PLOTS.find((pl) => (pl.stage === 1 || pl.stage === 2) && dist2(pl, p) < 60 * 60);
+    if (plot && kind === "poo") { plot.stage++; plot.prog = 0; deed("soil", 3); toast(p, "Fertilised. The crop grows a whole stage. Nature is disgusting.", "#7fd34d"); }
+    else toast(p, kind === "pee" ? "Ahh. Relief." : "Much better. Don't look behind you.", "#8f8");
+  }, (p.going - t) * 1000);
 }
 
 // ---------------------------------------------------------------- combat
@@ -368,7 +441,7 @@ function hurtPlayer(v, dmg, attacker, cause) {
 function killPlayer(v, attacker, cause) {
   if (v.dead) return;
   if (v.veh) exitVehicle(v);
-  v.dead = true; v.hp = 0; v.respawnAt = now() + 5; v.st.deaths++; v.champion = false; v.dlg = null;
+  v.dead = true; v.hp = 0; v.inf = null; v.going = 0; v.ads = false; v.respawnAt = now() + 5; v.st.deaths++; v.champion = false; v.dlg = null;
   const prim = v.weapons.find((w) => w.type !== "pistol");
   if (prim) crates.push({ id: nextId++, x: v.x, y: v.y, w: { ...prim, ammo: WEAPONS[prim.type].mag, reloadUntil: 0, hot: false }, grave: true });
   const vStars = Math.min(5, Math.floor(v.heat / 40));
@@ -546,6 +619,7 @@ function buy(p, item) {
   if (item === "seeds") p.seeds += 3;
   else if (item === "medkit") p.hp = maxHp(p);
   else if (item === "kevlar") p.armor = 60;
+  else if (item === "antidote") { if (p.inf) cure(p, "The antidote tastes like pennies. The infection is gone."); else toast(p, "Bought an antidote. You drink it anyway. Nothing happens.", "#bbb"); }
   else if (item === "repair") { p.st.repairs++; deed("soil", 10); game.hearth = Math.min(game.hearthMax, game.hearth + 200); feed(`${fullName(p)} repaired the Hearth`, "#8f8"); }
   else if (item === "gcase") {
     const n = Math.random() < 0.15 + (traitOf(p).luck ? 0.1 : 0) ? 3 : Math.random() < 0.45 ? 2 : 1;
@@ -561,7 +635,7 @@ function buy(p, item) {
     p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) }); p.st.cases++;
     if (rarity >= 2) setTimeout(() => feed(`${fullName(p)} unboxed ${RARITY[rarity].toUpperCase()} ${wName(w)}`, ["", "", "#c070ff", "#ffc030", "#ff4b4b"][rarity]), 3200);
   } else if (WEAPONS[item]) giveWeapon(p, newWeapon(item));
-  if (item !== "case" && item !== "gcase") toast(p, `Bought ${it.name}`, "#8f8");
+  if (item !== "case" && item !== "gcase" && item !== "antidote") toast(p, `Bought ${it.name}`, "#8f8");
 }
 function enhance(p) {
   const w = p.weapons[p.active];
@@ -573,6 +647,7 @@ function enhance(p) {
     w.enh++;
     p.pe.push({ k: "enh", ok: true, lvl: w.enh });
     if (w.enh >= 4) feed(`${fullName(p)} hit ${ENH_NAMES[w.enh]} ${wName(w)}!!`, "#ffc030");
+    unlucky(p);
   } else {
     const down = w.enh >= 2;
     if (down) w.enh--;
@@ -584,6 +659,7 @@ function learn(p, s) {
   if (!def || p.pts <= 0 || sk(p, s) >= def.max) return;
   p.pts--; p.sk[s] = sk(p, s) + 1;
   if (s === "tough") p.hp += 20;
+  unlucky(p);
 }
 function doShout(p) {
   const t = now();
@@ -1121,7 +1197,7 @@ function startNight() {
 }
 function startDay() {
   game.phase = "day"; game.ends = now() + DAY_LEN;
-  for (const p of players.values()) p.talked.clear();
+  for (const p of players.values()) { p.talked.clear(); cure(p, "The sunrise burns the infection out of you."); }
   for (const z of zombies) if (z.type !== "elite") z.burn = true;
   spawnCrates();
   events.push({ k: "banner", text: `DAY ${game.night + 1}`, sub: `The sun burns the dead. ${LAST_NIGHT - game.night} night${LAST_NIGHT - game.night === 1 ? "" : "s"} left. Shop open [B].` });
@@ -1242,12 +1318,17 @@ function tick() {
       if (p.dead) continue;
     }
     if (p.dlg) { const n = NPC_POS.find((q) => q.id === p.dlg.npc); if (!n || dist2(n, p) > 150 * 150) { p.dlg = null; sendDlg(p); } }
+    if (playing) {
+      needs(p, dt, t);
+      if (p.inf) { if (t > p.inf.until) cure(p, "The infection passes. You feel almost normal."); else if (t > p.inf.next) nextSymptom(p); }
+    }
     const veh = vehOf(p);
     if (p.veh && !veh) p.veh = 0;
     if (!veh) {
       let mx = ((p.keys & 8) ? 1 : 0) - ((p.keys & 2) ? 1 : 0), my = ((p.keys & 4) ? 1 : 0) - ((p.keys & 1) ? 1 : 0);
       if (mx && my) { mx *= Math.SQRT1_2; my *= Math.SQRT1_2; }
       const sp = speedOf(p);
+      if (t < p.going) { mx = 0; my = 0; }
       if (t < p.dashUntil) { mx = p.dashDx * 3.1; my = p.dashDy * 3.1; }
       p.x += (mx * sp + p.vx) * dt; p.y += (my * sp + p.vy) * dt;
       p.vx *= Math.pow(0.02, dt); p.vy *= Math.pow(0.02, dt);
@@ -1261,7 +1342,7 @@ function tick() {
     const w = p.weapons[p.active];
     w.bloom = Math.max(0, w.bloom - dt * 2.2);
     if (w.reloadUntil && t >= w.reloadUntil) { w.reloadUntil = 0; w.ammo = WEAPONS[w.type].mag; }
-    if (p.firing && !p.dlg && !(veh && veh.seats[0] === p.id) && (playing || game.phase === "lobby") && !w.reloadUntil && t >= w.nextShot) {
+    if (p.firing && !p.dlg && !(t < p.going) && !(veh && veh.seats[0] === p.id) && (playing || game.phase === "lobby") && !w.reloadUntil && t >= w.nextShot) {
       if (w.ammo > 0) shoot(p, w);
       else startReload(p, w);
     }
@@ -1305,7 +1386,7 @@ function tick() {
       if (piece) { hurtPiece(piece, def.dmg * (z.type === "boss" ? 3 : 1)); z.atk = t + 0.8; }
     }
     if (t > z.atk) {
-      if (target && Math.sqrt(bd) < z.r + 20) { hurtPlayer(target, def.dmg, null, z.type === "boss" ? `folded by ${B.name.toLowerCase().replace("the ", "the ")}` : "eaten"); z.atk = t + 0.8; }
+      if (target && Math.sqrt(bd) < z.r + 20) { hurtPlayer(target, def.dmg, null, z.type === "boss" ? `folded by ${B.name.toLowerCase().replace("the ", "the ")}` : "eaten"); z.atk = t + 0.8; if (target.id && Math.random() < INFECT) infect(target); }
       else if (!target && touchingHearth && game.phase !== "over") { game.hearth -= def.dmg * (z.type === "boss" ? 1.5 : 0.6); z.atk = t + 0.8; events.push({ k: "hhit" }); }
     }
     for (const pl of PLOTS) if (pl.stage > 0 && (pl.x - z.x) ** 2 + (pl.y - z.y) ** 2 < 22 * 22) { pl.stage = 0; pl.prog = 0; events.push({ k: "trample", x: pl.x, y: pl.y }); }
@@ -1358,7 +1439,7 @@ function snapshot() {
         rl: w.reloadUntil ? +(w.reloadUntil - t).toFixed(2) : 0, rt: w.reloadUntil ? +(w.reloadUntil - w.reloadStart).toFixed(2) : 0, rtr: w.tried ? 1 : 0,
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
         lv: p.lvl, xp: p.xp, xn: xpNeed(p.lvl), pts: p.pts, sk: p.sk, ch: p.champion ? 1 : 0,
-        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, out: p.out ? 1 : 0, pk: p.st.pk,
+        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, out: p.out ? 1 : 0, pk: p.st.pk,
         nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
         k: p.st.kills, de: p.st.deaths, cr: p.st.crops, tk: p.st.tk, hs: p.st.hs, acc: p.st.shots ? Math.round(p.st.hits / p.st.shots * 100) : 0,
       };
@@ -1408,7 +1489,7 @@ function onMessage(ws, raw) {
   if (!p) return;
   switch (m.t) {
     case "in":
-      p.keys = m.k | 0; p.a = +m.a || 0; p.firing = !!m.f && !p.dead;
+      p.keys = m.k | 0; p.a = +m.a || 0; p.firing = !!m.f && !p.dead; p.ads = !!m.ads && !p.dead;
       break;
     case "reload": { const w = p.weapons[p.active]; if (w.reloadUntil) tryActiveReload(p, w); else startReload(p, w); break; }
     case "swap": if (p.weapons.length > 1) { p.active = m.i === 0 || m.i === 1 ? Math.min(m.i, p.weapons.length - 1) : 1 - p.active; } break;
@@ -1419,6 +1500,7 @@ function onMessage(ws, raw) {
     case "dlg": pickDlg(p, m.i | 0); break;
     case "mode": if (p.id === hostId() && game.phase !== "day" && game.phase !== "night" && game.phase !== "royale" && (m.m === "story" || m.m === "royale")) { game.mode = m.m; broadcastRaw(JSON.stringify(mapMsg())); } break;
     case "shout": doShout(p); break;
+    case "go": relieve(p); break;
     case "dodge": if (game.phase === "intro") game.skip.add(p.id); else if (p.air === "plane") jump(p); else doDodge(p); break;
     case "buy": buy(p, m.item); break;
     case "spin": doSpin(p); break;
