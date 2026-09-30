@@ -23,11 +23,14 @@ const VOTE_LEN = FAST ? 3 : 25;
 const LAST_NIGHT = 5; // the earliest the final night can come. In the story it waits until the mystery is solved.
 const ENDLESS_BOSS_EVERY = 5;
 const FOG_NIGHT = process.env.SLOP_FOGNIGHT ? 1 : 0.3; // chance a night (from night 2) is a fog night
+const DINO_NIGHT = process.env.SLOP_DINO ? 1 : 0.2; // chance a night (from night 3) brings dinosaurs through the well
+const DISASTER = process.env.SLOP_DISASTER || ""; // testing only: force a disaster every phase
+const DISASTER_CHANCE = 0.3;
 const DROP_LEN = FAST ? 4 : 12; // seconds the balloon takes to cross the valley
 const ROYALE_ZONES = [ // [wait, shrink, radius]
-  [60, 40, 1000], [40, 30, 650], [30, 25, 380], [25, 20, 180], [20, 20, 0],
+  [60, 45, 1400], [40, 35, 900], [30, 25, 520], [25, 20, 240], [20, 20, 0],
 ].map(([w, s, r]) => [FAST ? w / 6 : w, FAST ? s / 4 : s, r]);
-const STORY_ZONE_R = [1700, 1350, 1100, 920, 800, 680];
+const STORY_ZONE_R = [2300, 1850, 1450, 1180, 980, 820];
 const TEST_DMG = Number(process.env.SLOP_DMG || 1); // testing only
 const UNLUCKY = process.env.SLOP_UNLUCKY ? 1 : 0.00004; // 0.004% per level-up or upgrade. As requested.
 const INFECT = process.env.SLOP_INFECT ? 1 : 0.08; // chance a bite infects you
@@ -45,33 +48,63 @@ const now = () => performance.now() / 1000;
 function mulberry(seed) { return () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
 // ---------------------------------------------------------------- map (procedural)
-const W = 2400, H = 1800;
-const HEARTH = { x: 1120, y: 840, w: 160, h: 120, kind: "hearth", z0: 0, z1: 90 };
+const W = 3400, H = 2600; // the Hearth sits in the middle, the farm either side of it
+const HEARTH = { x: 1620, y: 1240, w: 160, h: 120, kind: "hearth", z0: 0, z1: 90 };
 let WALLS = [HEARTH];
 let MAP_SEED = 1;
 let VALLEY = "Slopholm";
 const PLOTS = [];
-for (const baseX of [830, 1390]) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++)
-  PLOTS.push({ x: baseX + c * 64 + 28, y: 800 + r * 64 + 28, stage: 0, prog: 0, rate: 1, owner: 0 });
+for (const baseX of [1330, 1890]) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++)
+  PLOTS.push({ x: baseX + c * 64 + 28, y: 1200 + r * 64 + 28, stage: 0, prog: 0, rate: 1, owner: 0 });
 const BASE_PLOTS = PLOTS.length;
 // the hoe: till new plots anywhere on open ground. Each upgrade lets you till more, grows faster and sells for more.
 const HOES = ["", "Hoe", "Steel Hoe", "Golden Hoe"];
 const HOE_COST = [40, 90, 160];
 const hoeLimit = (lvl) => 3 + 3 * lvl;
 
+const WALL_HP = { house: 1100, fence: 160, crate: 180, tree: 320, rock: 800 };
+const WOODEN = new Set(["house", "fence", "crate", "tree"]);
+let wallId = 1, mapVer = 0, mapDirty = false, PITCH = null;
+const BALL = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, last: 0, resetAt: 0 };
+function damageWall(w, dmg) {
+  if (w.kind === "built") { const b = builds.find((q) => q === w); if (b) hurtPiece(b, dmg * 0.5); return; }
+  if (!w.hp || w.hp <= 0) return;
+  w.hp -= dmg;
+  if (w.hp > 0) return;
+  WALLS = WALLS.filter((o) => o !== w);
+  events.push({ k: "collapse", x: Math.round(w.x + w.w / 2), y: Math.round(w.y + w.h / 2), w: Math.round(w.w), h: Math.round(w.h), z: w.z1 || 40, kind: w.kind });
+  if (w.kind === "house") WALLS.push({ id: wallId++, x: w.x + 10, y: w.y + 10, w: w.w - 20, h: w.h - 20, kind: "rubble", roof: w.roof, z0: 0, z1: 22 });
+  if (w.kind === "crate" && Math.random() < 0.3) crates.push({ id: nextId++, x: w.x + w.w / 2, y: w.y + w.h / 2, w: newWeapon(pick(LOOT_TYPES), lootRarity(game.night)) });
+  mapVer++; mapDirty = true;
+}
+// the distance from a point to a box, in 3D
+function boxDist(w, x, y, z) {
+  const dx = Math.max(w.x - x, 0, x - (w.x + w.w)), dy = Math.max(w.y - y, 0, y - (w.y + w.h)), dz = Math.max((w.z0 || 0) - z, 0, z - (w.z1 || 60));
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
 function generateMap(seed) {
   MAP_SEED = seed;
   const rng = mulberry(seed);
   const R = (a, b) => a + rng() * (b - a);
   VALLEY = valleyName(rng);
   const walls = [HEARTH];
-  const clear = { x: 760, y: 700, w: 880, h: 400 }; // farm + hearth stay open
+  const clear = { x: 1260, y: 1100, w: 880, h: 400 }; // farm + hearth stay open
   const overlaps = (r, pad) => {
     if (r.x < 60 || r.y < 60 || r.x + r.w > W - 60 || r.y + r.h > H - 60) return true;
     const hit = (o) => r.x < o.x + o.w + pad && r.x + r.w + pad > o.x && r.y < o.y + o.h + pad && r.y + r.h + pad > o.y;
-    return hit(clear) || walls.some(hit);
+    return hit(clear) || (pitch && hit(pitch)) || walls.some(hit);
   };
+  let pitch = null;
   const place = (n, mk, pad) => { for (let i = 0, tries = 0; i < n && tries < 400; tries++) { const r = mk(); if (!overlaps(r, pad)) { walls.push(r); i++; } } };
+  // a football pitch, for stress relief. Goals at each end.
+  for (let tries = 0; tries < 200 && !pitch; tries++) {
+    const pw = 640, ph = 360, r = { x: Math.round(R(120, W - pw - 120)), y: Math.round(R(120, H - ph - 120)), w: pw, h: ph };
+    if (overlaps(r, 80)) continue;
+    pitch = r;
+    const cy = r.y + ph / 2;
+    for (const gx of [r.x - 12, r.x + pw + 2]) walls.push({ x: gx, y: cy - 70, w: 10, h: 10, kind: "post", z0: 0, z1: 70 }, { x: gx, y: cy + 60, w: 10, h: 10, kind: "post", z0: 0, z1: 70 }, { x: gx, y: cy - 70, w: 10, h: 140, kind: "post", z0: 62, z1: 70 });
+  }
+  PITCH = pitch;
   // verticality first, so the big stuff gets room: watchtowers joined by catwalks, each with a staircase
   const stairs = (tx, ty, tw, th, top, dir) => { // a solid staircase climbing towards one face of a box
     const n = Math.ceil(top / 20), d = 30, wd = 44, out = [];
@@ -86,7 +119,7 @@ function generateMap(seed) {
     return out;
   };
   const group = (list, pad) => { if (list.every((r) => !overlaps(r, pad))) { walls.push(...list); return true; } return false; };
-  for (let i = 0, tries = 0; i < 2 + ((rng() * 2) | 0) && tries < 300; tries++) { // pairs of towers with a catwalk between them
+  for (let i = 0, tries = 0; i < 3 + ((rng() * 3) | 0) && tries < 400; tries++) { // pairs of towers with a catwalk between them
     const top = Math.round(R(170, 230)), tw = 76, gap = Math.round(R(220, 420)), horiz = rng() < 0.5;
     const ax = R(100, W - 700), ay = R(100, H - 600);
     const a = { x: ax, y: ay, w: tw, h: tw, kind: "tower", z0: 0, z1: top };
@@ -95,7 +128,7 @@ function generateMap(seed) {
     const st = stairs(a.x, a.y, tw, tw, top, horiz ? 1 : 3);
     if (group([a, b, br, ...st], 60)) i++;
   }
-  place(4 + ((rng() * 4) | 0), () => ({ x: R(80, W - 320), y: R(80, H - 260), w: R(170, 280), h: R(120, 180), kind: "house", roof: (rng() * 4) | 0, z0: 0, z1: Math.round(R(96, 136)) }), 90);
+  place(8 + ((rng() * 6) | 0), () => ({ x: R(80, W - 320), y: R(80, H - 260), w: R(170, 280), h: R(120, 180), kind: "house", roof: (rng() * 4) | 0, z0: 0, z1: Math.round(R(96, 136)) }), 90);
   // some houses get an outside staircase to the roof
   for (const h of walls.filter((w) => w.kind === "house")) {
     if (rng() < 0.35) continue;
@@ -105,18 +138,21 @@ function generateMap(seed) {
     walls.push(h);
   }
   // floating ledges, each with a jump pad beside it
-  for (let i = 0, tries = 0; i < 3 && tries < 200; tries++) {
+  for (let i = 0, tries = 0; i < 5 && tries < 300; tries++) {
     const x = R(120, W - 320), y = R(120, H - 320), z0 = Math.round(R(130, 170));
     const ledge = { x, y, w: 120, h: 120, kind: "ledge", z0, z1: z0 + 16 };
     const pad = { x: x + 140, y: y + 40, w: 40, h: 40, kind: "pad", z0: 0, z1: 4 };
     if (!overlaps({ x: x - 10, y: y - 10, w: 200, h: 140 }, 50)) { walls.push(ledge, pad); i++; }
   }
-  place(5 + ((rng() * 5) | 0), () => { const s = R(55, 95); return { x: R(80, W - 160), y: R(80, H - 160), w: s, h: s * R(0.7, 1.1), kind: "rock", z0: 0, z1: Math.round(R(30, 64)) }; }, 70);
-  place(8 + ((rng() * 8) | 0), () => { const s = R(40, 56); return { x: R(80, W - 120), y: R(80, H - 120), w: s, h: s, kind: "tree", z0: 0, z1: 260 }; }, 50);
-  place(3 + ((rng() * 4) | 0), () => rng() < 0.5 ? { x: R(80, W - 260), y: R(80, H - 80), w: R(120, 220), h: 18, kind: "fence", z0: 0, z1: 34 } : { x: R(80, W - 80), y: R(80, H - 260), w: 18, h: R(120, 220), kind: "fence", z0: 0, z1: 34 }, 70);
-  place(3 + ((rng() * 3) | 0), () => ({ x: R(80, W - 140), y: R(80, H - 140), w: 44, h: 44, kind: "pad", z0: 0, z1: 4 }), 60); // jump pads out in the open
-  place(4 + ((rng() * 4) | 0), () => ({ x: R(80, W - 140), y: R(80, H - 140), w: 50, h: 50, kind: "crate", z0: 0, z1: 50 }), 50); // hay bales to hop on
-  WALLS = walls;
+  place(10 + ((rng() * 8) | 0), () => { const s = R(55, 95); return { x: R(80, W - 160), y: R(80, H - 160), w: s, h: s * R(0.7, 1.1), kind: "rock", z0: 0, z1: Math.round(R(30, 64)) }; }, 70);
+  place(18 + ((rng() * 14) | 0), () => { const s = R(40, 56); return { x: R(80, W - 120), y: R(80, H - 120), w: s, h: s, kind: "tree", z0: 0, z1: 260 }; }, 50);
+  place(6 + ((rng() * 6) | 0), () => rng() < 0.5 ? { x: R(80, W - 260), y: R(80, H - 80), w: R(120, 220), h: 18, kind: "fence", z0: 0, z1: 34 } : { x: R(80, W - 80), y: R(80, H - 260), w: 18, h: R(120, 220), kind: "fence", z0: 0, z1: 34 }, 70);
+  place(5 + ((rng() * 4) | 0), () => ({ x: R(80, W - 140), y: R(80, H - 140), w: 44, h: 44, kind: "pad", z0: 0, z1: 4 }), 60); // jump pads out in the open
+  place(8 + ((rng() * 6) | 0), () => ({ x: R(80, W - 140), y: R(80, H - 140), w: 50, h: 50, kind: "crate", z0: 0, z1: 50 }), 50); // hay bales to hop on
+  // most things can be blown up (or burnt down)
+  walls.forEach((w, i) => { w.id = i + 1; const hp = WALL_HP[w.kind]; if (hp) w.hp = w.maxHp = hp; });
+  wallId = walls.length + 1;
+  WALLS = walls; mapVer++;
 }
 generateMap((Math.random() * 1e9) | 0);
 let NPC_POS = [];
@@ -137,8 +173,8 @@ function placeNpcs() {
 }
 placeNpcs();
 function npcList() { return game.mode !== "story" ? [] : NPC_POS.map((n) => ({ ...n, name: NPCS[n.id].name, role: NPCS[n.id].role, color: NPCS[n.id].color, hat: NPCS[n.id].hat })); }
-const WELL = { x: 1275, y: 745 };
-function mapMsg() { return { t: "map", map: { W, H, walls: WALLS.filter((w) => w.kind !== "built"), hearth: HEARTH, well: WELL, plots: PLOTS.map((p) => ({ x: p.x, y: p.y })), seed: MAP_SEED, valley: VALLEY, npcs: npcList() } }; }
+const WELL = { x: 1775, y: 1145 };
+function mapMsg() { return { t: "map", map: { W, H, ver: mapVer, walls: WALLS.filter((w) => w.kind !== "built"), hearth: HEARTH, well: WELL, pitch: PITCH, plots: PLOTS.map((p) => ({ x: p.x, y: p.y })), seed: MAP_SEED, valley: VALLEY, npcs: npcList() } }; }
 
 // ---------------------------------------------------------------- data
 const WEAPONS = {
@@ -207,6 +243,8 @@ const ZTYPES = {
   flyer:    { r: 13, hp: 40,  speed: 150, dmg: 8,  gold: 14, xp: 12, code: "f" }, // circles overhead and dives
   boomer:   { r: 24, hp: 80,  speed: 55,  dmg: 6,  gold: 18, xp: 14, code: "x" }, // pops in a cloud of bile that makes the horde hunt you
   screamer: { r: 14, hp: 65,  speed: 105, dmg: 5,  gold: 20, xp: 16, code: "s" }, // keeps its distance and screams for help
+  raptor:   { r: 16, hp: 110, speed: 185, dmg: 14, gold: 22, xp: 16, code: "d" }, // hunts in packs and pounces
+  rex:      { r: 40, hp: 1800, speed: 82, dmg: 45, gold: 160, xp: 90, code: "y" }, // roars, stomps through fences
 };
 const zCode = (z) => ZTYPES[z.type].code || z.type[0];
 
@@ -352,7 +390,7 @@ function resetProgress(p) {
   p.st = { kills: 0, deaths: 0, dmg: 0, crops: 0, tk: 0, gold: 0, bounty: 0, shots: 0, hits: 0, hs: 0, perfect: 0, cases: 0, shoutHits: 0, repairs: 0, pk: 0 };
   p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.veh = 0; p.spins = 0; p.casino = null; p.spinning = false;
   p.bl = 0; p.bw = 0; p.going = 0; p.goKind = ""; p.inf = null; p.soggy = 0; p.ads = false;
-  p.hoe = p.cls === "farmer" ? 1 : 0;
+  p.hoe = p.cls === "farmer" ? 1 : 0; p.stress = 0; p.meltdown = 0; p.elem = "force";
 }
 function resetLoadout(p, fresh) {
   p.hp = maxHp(p); p.armor = 0;
@@ -396,12 +434,14 @@ function addGold(p, amt, reason) {
   for (const g of gaffers()) if (g !== p) { const fee = Math.max(1, Math.round(amt * 0.1)); g.gold += fee; g.st.gold += fee; }
   if (reason) p.pe.push({ k: "gold", amt, reason });
 }
+const wading = (e) => game.disaster && game.disaster.kind === "flood" && (e.z || 0) < game.disaster.water - 6;
 function speedOf(p) {
   let s = 210 * CLASSES[p.cls].speed * (1 + (traitOf(p).speed || 0)) * (1 + 0.06 * sk(p, "fleet")) * game.mods.speed;
   if (inAura(p)) s *= 1.1;
   if (p.weapons[p.active]?.type === "sniper") s *= 0.85;
   if (p.ads) s *= 0.6;
   if (now() < p.soggy) s *= 0.8;
+  if (wading(p)) s *= 0.55;
   return s;
 }
 function inAura(p) { return gaffers().some((g) => g !== p && dist2(g, p) < 260 * 260); }
@@ -422,6 +462,7 @@ function spreadOf(p, w) {
   if (moving) s *= w.type === "sniper" ? 8 : 1.7;
   if (w.type === "shotgun") s = def.spread * (moving ? 1.15 : 1);
   if (p.ads) s *= w.type === "shotgun" ? 0.75 : 0.4;
+  if (p.stress > 60) s *= 1 + (p.stress - 60) / 50; // shaky hands
   return s;
 }
 
@@ -445,6 +486,54 @@ function nextSymptom(p) {
   p.pe.push({ k: "sym", sym: p.inf.sym, text: SYMPTOMS[p.inf.sym] });
 }
 function cure(p, why) { if (!p.inf) return; p.inf = null; p.pe.push({ k: "sym", sym: "", text: why }); }
+// stress: nights, wounds, screams and dead friends wind you up. Football is the only real cure.
+function stress(p, dt, t) {
+  const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
+  let d = 0;
+  if (game.phase === "night") d += 0.35 + (game.fog ? 0.25 : 0) + (game.dino ? 0.2 : 0);
+  else if (game.phase === "royale") d += 0.25;
+  else d -= 0.15;
+  if (dist2(p, hc) < 260 * 260) d -= 0.3;
+  p.stress = clamp((p.stress || 0) + d * dt * (FAST ? 4 : 1), 0, 100);
+  if (p.stress >= 60 && !p.warnStress) { p.warnStress = true; toast(p, "You're getting stressed. Your aim is shaking. Go and kick a football about.", "#ff9a60"); }
+  if (p.stress < 45) p.warnStress = false;
+  if (p.stress >= 100 && !(t < p.meltdown)) {
+    p.meltdown = t + 6; p.stress = 75;
+    feed(`${fullName(p)} is having a complete meltdown.`, "#ff9a60");
+    events.push({ k: "say", id: p.id, text: pick(["I CAN'T DO THIS ANYMORE", "WHY ARE THERE SO MANY OF THEM", "I JUST WANTED TO GROW TURNIPS", "AAAAAAAAAAAAAA"]) });
+    toast(p, "MELTDOWN. Your hands are shaking too much to shoot. Play some football.", "#ff6040");
+  }
+}
+function addStress(p, n) { if (p && !p.dead) p.stress = clamp((p.stress || 0) + n, 0, 100); }
+function ballTick(t, dt) {
+  if (!PITCH) return;
+  const cx = PITCH.x + PITCH.w / 2, cy = PITCH.y + PITCH.h / 2;
+  if (BALL.resetAt && t > BALL.resetAt || (!BALL.x && !BALL.y)) { Object.assign(BALL, { x: cx, y: cy, z: 40, vx: 0, vy: 0, vz: 0, resetAt: 0 }); }
+  BALL.vz -= MV.GRAV * 0.8 * dt;
+  const nx = BALL.x + BALL.vx * dt, ny = BALL.y + BALL.vy * dt, nz = BALL.z + BALL.vz * dt;
+  if (nx < 10 || nx > W - 10 || insideWall(nx, BALL.y, nz + 8)) BALL.vx = -BALL.vx * 0.7; else BALL.x = nx;
+  if (ny < 10 || ny > H - 10 || insideWall(BALL.x, ny, nz + 8)) BALL.vy = -BALL.vy * 0.7; else BALL.y = ny;
+  const fl = MV.floorAt(BALL.x, BALL.y, 6, BALL.z + 4, WALLS).h;
+  if (nz <= fl) { BALL.z = fl; BALL.vz = Math.abs(BALL.vz) > 80 ? -BALL.vz * 0.55 : 0; const f = Math.pow(0.35, dt); BALL.vx *= f; BALL.vy *= f; } else BALL.z = nz;
+  for (const p of players.values()) {
+    if (p.dead || p.air || p.veh || t < (p.kickAt || 0)) continue;
+    const dx = BALL.x - p.x, dy = BALL.y - p.y, d = Math.hypot(dx, dy);
+    if (d > 30 || BALL.z > p.z + 40 || BALL.z + 12 < p.z) continue;
+    const spd = Math.max(260, Math.hypot(p.vx, p.vy) * 1.7), ux = dx / (d || 1), uy = dy / (d || 1);
+    BALL.vx = ux * spd; BALL.vy = uy * spd; BALL.vz = 150 + (p.gr ? 0 : 120); BALL.last = p.id;
+    p.kickAt = t + 0.25; addStress(p, -5); p.st.kicks = (p.st.kicks || 0) + 1;
+    events.push({ k: "ballkick", x: Math.round(BALL.x), y: Math.round(BALL.y) });
+  }
+  // goal?
+  if (!BALL.resetAt && BALL.z < 62 && Math.abs(BALL.y - cy) < 60 && (BALL.x < PITCH.x - 2 || BALL.x > PITCH.x + PITCH.w + 2) && BALL.x > PITCH.x - 60 && BALL.x < PITCH.x + PITCH.w + 60) {
+    BALL.resetAt = t + 2.5;
+    const sc = players.get(BALL.last);
+    events.push({ k: "banner", text: "GOOOOAL!", sub: sc ? `${fullName(sc)} scores! Everyone on the pitch feels much calmer.` : "Nobody knows who scored. Calming, somehow." });
+    events.push({ k: "goal", x: Math.round(BALL.x), y: Math.round(BALL.y) });
+    for (const q of players.values()) if (Math.hypot(q.x - cx, q.y - cy) < 700) addStress(q, -35);
+    if (sc) { sc.stress = 0; addGold(sc, 20, "Goal!"); sc.st.goals = (sc.st.goals || 0) + 1; }
+  }
+}
 function needs(p, dt, t) {
   if (t < p.going) return;
   const k = FAST ? 5 : 1; // bladder fills in ~3.5 min, bowels ~6 min (the runs: under a minute)
@@ -509,7 +598,7 @@ function bile(x, y, z, r) {
   events.push({ k: "bile", x: Math.round(x), y: Math.round(y), z: Math.round(z), r });
   for (const q of players.values()) if (!q.dead && !q.air && (q.x - x) ** 2 + (q.y - y) ** 2 < r * r && Math.abs(q.z - z) < 90) {
     if (!(q.bile > now())) toast(q, "You're covered in boomer bile. Every zombie in the valley can smell you.", "#b8e04a");
-    q.bile = now() + 9;
+    q.bile = now() + 9; addStress(q, 10);
   }
 }
 function hurtPlayer(v, dmg, attacker, cause) {
@@ -522,16 +611,17 @@ function hurtPlayer(v, dmg, attacker, cause) {
   const veh = vehOf(v);
   if (veh && cause !== "blown up in a vehicle") { hurtVehicle(veh, dmg * 0.7, attacker); dmg *= 0.35; if (v.dead) return; }
   if (v.armor > 0) { const soak = Math.min(v.armor, dmg * 0.5); v.armor -= soak; dmg -= soak; }
-  v.hp -= dmg; v.lastHurt = now();
+  v.hp -= dmg; v.lastHurt = now(); addStress(v, dmg * 0.12);
   v.pe.push({ k: "hurt" });
   if (v.hp <= 0) killPlayer(v, attacker, cause);
 }
 function killPlayer(v, attacker, cause) {
   if (v.dead) return;
   if (v.veh) exitVehicle(v);
-  v.dead = true; v.hp = 0; v.inf = null; v.going = 0; v.ads = false; v.respawnAt = now() + 5; v.st.deaths++; v.champion = false; v.dlg = null;
+  for (const q of players.values()) if (q !== v && dist2(q, v) < 600 * 600) addStress(q, 10);
+  v.dead = true; v.hp = 0; v.inf = null; v.stress = 0; v.going = 0; v.ads = false; v.respawnAt = now() + 5; v.st.deaths++; v.champion = false; v.dlg = null;
   const prim = v.weapons.find((w) => w.type !== "pistol");
-  if (prim) crates.push({ id: nextId++, x: v.x, y: v.y, w: { ...prim, ammo: WEAPONS[prim.type].mag, reloadUntil: 0, hot: false }, grave: true });
+  if (prim) crates.push({ id: nextId++, x: v.x, y: v.y, w: { ...prim, ammo: WEAPONS[prim.type].mag, reloadUntil: 0, hot: false, stage: "", waiting: false, jam: false }, grave: true });
   const vStars = Math.min(5, Math.floor(v.heat / 40));
   if (game.mode === "royale") {
     v.out = true;
@@ -597,7 +687,7 @@ function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
     const f = 1 - (d / r) * 0.6;
     hurtZombie(zb, dmg * f, owner, "");
     const hd = Math.hypot(zb.x - x, zb.y - y) || 1;
-    if (zb.type !== "boss" && zb.type !== "elite") { zb.vx += (zb.x - x) / hd * 320 * f; zb.vy += (zb.y - y) / hd * 320 * f; if (zb.type !== "flyer") { zb.vz = Math.max(zb.vz, 260 * f); zb.gr = false; } }
+    if (zb.type !== "boss" && zb.type !== "elite" && zb.type !== "rex") { zb.vx += (zb.x - x) / hd * 320 * f; zb.vy += (zb.y - y) / hd * 320 * f; if (zb.type !== "flyer") { zb.vz = Math.max(zb.vz, 260 * f); zb.gr = false; } }
   }
   for (const q of players.values()) {
     if (q.dead || q.air) continue;
@@ -611,6 +701,8 @@ function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
     kick(q, nx * push * 0.9, ny * push * 0.9, push * Math.max(0.55, nz));
   }
   for (const b of builds) if ((b.x + 20 - x) ** 2 + (b.y + 20 - y) ** 2 < (r + 20) ** 2) hurtPiece(b, dmg * 0.5);
+  { const d = Math.hypot(BALL.x - x, BALL.y - y, BALL.z - z); if (d < r) { const f = (1 - d / r) * 900; BALL.vx += (BALL.x - x) / (d || 1) * f; BALL.vy += (BALL.y - y) / (d || 1) * f; BALL.vz += f * 0.7; } }
+  for (const w of [...WALLS]) if (w.hp && w.kind !== "built") { const d = boxDist(w, x, y, z); if (d < r) damageWall(w, dmg * 1.4 * (1 - d / r * 0.5)); }
   for (const v of vehicles) if ((v.x - x) ** 2 + (v.y - y) ** 2 < (r + VEHICLES[v.kind].r) ** 2) hurtVehicle(v, dmg * 0.5, owner);
 }
 const insideWall = (x, y, z) => WALLS.some((w) => x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h && z < w.z1 - 2 && z > (w.z0 || 0) - 2);
@@ -702,6 +794,10 @@ function fireTick(t, dt) {
     const inCell = (e, r, ez) => Math.abs(e.x - f.x) < FIRE_CELL / 2 + r * 0.5 && Math.abs(e.y - f.y) < FIRE_CELL / 2 + r * 0.5 && Math.abs((ez || 0) - f.z) < 26;
     for (const zb of zombies) if (zb.hp > 0 && zb.type !== "flyer" && inCell(zb, zb.r, zb.z)) { zb.fireUntil = t + 3; zb.fireBy = f.owner; }
     for (const q of players.values()) if (!q.dead && !q.air && !q.veh && inCell(q, 16, q.z)) { q.fireUntil = t + 1.5; q.fireBy = q.id === f.owner ? 0 : f.owner; }
+    for (const w of [...WALLS]) if (w.hp && WOODEN.has(w.kind) && boxDist(w, f.x, f.y, f.z) < 26) {
+      damageWall(w, 60 * step);
+      if (Math.random() < 0.15) ignite(f.x + (w.x + w.w / 2 - f.x) * 0.2, f.y + (w.y + w.h / 2 - f.y) * 0.2, f.z + 20, f.owner, Math.max(0, f.gen - 1), true);
+    }
     for (const b of builds) if (PIECES[b.bk].solid && b.x < f.x + 20 && b.x + 40 > f.x - 20 && b.y < f.y + 20 && b.y + 40 > f.y - 20) hurtPiece(b, 40 * step);
     for (const pl of PLOTS) if (pl.stage > 0 && Math.abs(pl.x - f.x) < 24 && Math.abs(pl.y - f.y) < 24) { pl.stage = 0; pl.prog = 0; events.push({ k: "trample", x: pl.x, y: pl.y, burnt: 1 }); }
     for (const v of vehicles) if (Math.abs(v.x - f.x) < 30 && Math.abs(v.y - f.y) < 30) hurtVehicle(v, 20 * step, owner);
@@ -823,23 +919,79 @@ function shoot(p, w) {
   if (anyHit) p.st.hits++;
   if (w.ammo <= 0) w.hot = false;
 }
-function startReload(p, w) {
-  if (w.reloadUntil || w.ammo >= WEAPONS[w.type].mag) return;
-  const t = now();
-  w.reloadStart = t; w.reloadUntil = t + reloadTime(p, w); w.tried = false; w.hot = false;
+// Staged reloads. Magazine guns go mag out, mag in, rack, and each stage waits for you to press R again.
+// Press R just as a stage finishes for a smooth reload (all smooth = an empowered mag); press too early and you fumble.
+// Shotguns load a shell at a time and keep going until full or until you fire. Staffs and rockets are one stage.
+const STAGES = { mag: [["out", 0.3], ["in", 0.45], ["rack", 0.25]], shell: [["shell", 1]], one: [["load", 1]] };
+const STAGE_NAME = { out: "MAG OUT", in: "MAG IN", rack: "RACK", shell: "SHELL", load: "LOAD", clear: "CLEAR JAM" };
+const reloadKind = (type) => type === "shotgun" ? "shell" : type === "staff" || type === "rocket" ? "one" : "mag";
+// guns get dirty as you shoot them, and dirty guns jam
+const DIRT = { pistol: 0.3, smg: 0.22, rifle: 0.28, ak: 0.45, shotgun: 0.6, sniper: 0.8, staff: 0, rocket: 0.5, sword: 0 };
+function stageLen(p, w, name) {
+  const def = WEAPONS[w.type], base = reloadTime(p, w);
+  if (name === "clear") return 0.8;
+  if (name === "shell") return base / def.mag * 1.1;
+  if (name === "load") return base;
+  return base * STAGES.mag.find((s) => s[0] === name)[1];
 }
-// active reload: press R again inside the sweet spot for an instant, empowered reload
-function tryActiveReload(p, w) {
-  if (!w.reloadUntil || w.tried) return;
-  w.tried = true;
-  const t = now(), total = w.reloadUntil - w.reloadStart, k = (t - w.reloadStart) / total;
-  if (k >= 0.45 && k <= 0.62) {
-    w.reloadUntil = 0; w.ammo = WEAPONS[w.type].mag; w.hot = true; p.st.perfect++;
-    p.pe.push({ k: "perfect" });
-  } else {
-    w.reloadUntil += 0.6;
-    p.pe.push({ k: "jam" });
+function beginStage(p, w, name, t) { w.stage = name; w.reloadStart = t; w.reloadUntil = t + stageLen(p, w, name); w.waiting = false; }
+function startReload(p, w) {
+  const def = WEAPONS[w.type];
+  if (def.melee) return;
+  const t = now();
+  if (w.jam && !w.reloadUntil && !w.waiting) { beginStage(p, w, "clear", t); w.smooth = false; return; }
+  if (w.reloadUntil || w.waiting || w.ammo >= def.mag + (reloadKind(w.type) === "mag" && w.ammo > 0 ? 1 : 0)) return;
+  w.hot = false; w.smooth = true; w.chambered = w.ammo > 0;
+  const k = reloadKind(w.type);
+  beginStage(p, w, k === "mag" ? "out" : k === "shell" ? "shell" : "load", t);
+  if (k === "mag") w.ammo = w.chambered ? 1 : 0; // the mag's out; one stays in the chamber
+}
+function pressReload(p, w) {
+  const t = now();
+  if (w.jam && !w.reloadUntil && !w.waiting) return startReload(p, w);
+  if (w.waiting) { // on to the next stage
+    const smooth = t - w.readyAt < 0.35;
+    if (!smooth) w.smooth = false;
+    if (w.stage === "out") return beginStage(p, w, "in", t);
+    if (w.stage === "in") return beginStage(p, w, "rack", t);
+    return;
   }
+  if (w.reloadUntil) { // too early
+    if (reloadKind(w.type) !== "mag" || w.stage === "clear") return;
+    w.reloadUntil += 0.4; w.smooth = false; p.pe.push({ k: "jam", text: "Fumbled it" });
+    return;
+  }
+  startReload(p, w);
+}
+function reloadTick(p, w, t) {
+  if (!w.reloadUntil || t < w.reloadUntil) return;
+  const def = WEAPONS[w.type];
+  w.reloadUntil = 0;
+  if (w.stage === "clear") { w.jam = false; w.stage = ""; p.pe.push({ k: "toast", text: "Jam cleared.", color: "#8f8" }); return; }
+  if (w.stage === "shell") { w.ammo++; if (w.ammo < def.mag) beginStage(p, w, "shell", t); else w.stage = ""; return; }
+  if (w.stage === "load") { w.ammo = def.mag; w.stage = ""; return; }
+  if (w.stage === "out") { w.waiting = true; w.readyAt = t; return; }
+  if (w.stage === "in") {
+    w.ammo = def.mag + (w.chambered ? 1 : 0);
+    if (w.chambered) return finishReload(p, w); // one already in the chamber: no need to rack
+    w.waiting = true; w.readyAt = t; return;
+  }
+  if (w.stage === "rack") return finishReload(p, w);
+}
+function finishReload(p, w) {
+  w.stage = ""; w.waiting = false;
+  if (w.smooth) { w.hot = true; p.st.perfect++; p.pe.push({ k: "perfect" }); }
+}
+function cleanWeapon(p, m) {
+  const w = p.weapons[p.active], t = now();
+  if (m.start) { p.cleaning = t; return; }
+  if (!p.cleaning) return;
+  const took = t - p.cleaning; p.cleaning = 0;
+  if (m.cancel || took < 2) return;
+  const mistakes = clamp(m.mistakes | 0, 0, 20);
+  w.jam = false;
+  if (mistakes >= 3) { w.dirt = 55; toast(p, `You put your ${wName(w)} back together with a spring left over. It'll probably be fine.`, "#ffb070"); }
+  else { w.dirt = mistakes * 12; toast(p, mistakes ? `Cleaned, mostly. (${mistakes} mistake${mistakes > 1 ? "s" : ""})` : `Stripped, cleaned and reassembled perfectly. Your ${wName(w)} is spotless.`, "#8f8"); if (!mistakes) addXp(p, 5); }
 }
 
 // ---------------------------------------------------------------- actions
@@ -847,6 +999,7 @@ function interact(p) {
   if (p.air) return;
   if (p.veh) return exitVehicle(p);
   if (p.z > 40) return toast(p, "You'll have to come down first.", "#bbb");
+  { const c = caches.find((q) => dist2(q, p) < 62 * 62); if (c) return startHack(p, c); }
   let best = null, bd = 60 * 60;
   for (const c of crates) { const d = dist2(c, p); if (d < bd) { bd = d; best = c; } }
   if (best) {
@@ -966,23 +1119,85 @@ function learn(p, s) {
   if (s === "tough") p.hp += 20;
   unlucky(p);
 }
+// The Thu'um: four elements, unlocked as you level. Every kind of monster is weak to one and shrugs off another.
+const ELEMENTS = {
+  force: { name: "Force", word: "FUS RO DAH", lvl: 1, color: "#c8e6ff" },
+  fire:  { name: "Fire",  word: "YOL TOOR SHUL", lvl: 2, color: "#ff8a2a" },
+  frost: { name: "Frost", word: "FO KRAH DIIN", lvl: 3, color: "#8fe0ff" },
+  storm: { name: "Storm", word: "STRUN BAH QO", lvl: 4, color: "#e0d0ff" },
+};
+const ELEM_ORDER = Object.keys(ELEMENTS);
+const MATCHUP = { // [weak to, resists]
+  walker: ["fire", "frost"], runner: ["frost", "fire"], tank: ["storm", "force"], charger: ["frost", "force"], flyer: ["storm", "frost"],
+  boomer: ["fire", "storm"], screamer: ["force", "storm"], elite: ["fire", "frost"], raptor: ["frost", "fire"], rex: ["storm", "fire"],
+};
+const BOSS_MATCH = { leshen: ["fire", "frost"], drowned: ["storm", "fire"], golem: ["frost", "force"] };
+function matchOf(z) { return z.type === "boss" ? BOSS_MATCH[game.bossKind] || [] : MATCHUP[z.type] || []; }
+function elemsFor(p) { return ELEM_ORDER.filter((e) => p.lvl >= ELEMENTS[e].lvl || p.gen > 1 && ELEMENTS[e].lvl <= 2); }
+function cycleElement(p) {
+  const list = elemsFor(p);
+  if (list.length < 2) return toast(p, "You only know one Word of Power so far. More come with levels (Fire at 2, Frost at 3, Storm at 4).", "#bfe0ff");
+  p.elem = list[(list.indexOf(p.elem) + 1) % list.length];
+  toast(p, `Thu'um: ${ELEMENTS[p.elem].name.toUpperCase()} (${ELEMENTS[p.elem].word})`, ELEMENTS[p.elem].color);
+}
 function doShout(p) {
   const t = now();
   if (p.dead || p.air || p.veh || t < p.shoutCd) return;
-  p.shoutCd = t + 15 * (1 - (traitOf(p).shout || 0)) * (1 - 0.15 * sk(p, "thuum")) * game.mods.shoutCd * p.shoutMult;
-  const range = 280 * (1 + 0.15 * sk(p, "thuum"));
-  events.push({ k: "shout", x: p.x, y: p.y, a: p.a, id: p.id, r: range });
-  const hit = (e, mass) => {
+  if (!elemsFor(p).includes(p.elem)) p.elem = "force";
+  const el = p.elem;
+  p.shoutCd = t + (el === "force" ? 15 : 18) * (1 - (traitOf(p).shout || 0)) * (1 - 0.15 * sk(p, "thuum")) * game.mods.shoutCd * p.shoutMult;
+  const range = 280 * (1 + 0.15 * sk(p, "thuum")), pow = 1 + 0.2 * sk(p, "thuum");
+  events.push({ k: "shout", x: p.x, y: p.y, z: p.z, a: p.a, id: p.id, r: range, el });
+  const inCone = (e) => {
     const dx = e.x - p.x, dy = e.y - p.y, d = Math.hypot(dx, dy);
-    if (d > range || d < 1) return false;
+    if (d > range || d < 1) return 0;
     let da = Math.atan2(dy, dx) - p.a; da = Math.atan2(Math.sin(da), Math.cos(da));
-    if (Math.abs(da) > 0.7) return false;
-    e.vx = (dx / d) * 700 / mass; e.vy = (dy / d) * 700 / mass;
-    return true;
+    return Math.abs(da) > 0.7 ? 0 : d;
   };
-  const mass = { boss: game.bossKind === "golem" ? 99 : 5, elite: 3, tank: 2 };
-  for (const z of zombies) if (hit(z, mass[z.type] || 1)) { z.stun = t + 1.2; hurtZombie(z, 10, p); p.st.shoutHits++; }
-  for (const q of players.values()) if (q !== p && !q.dead) hit(q, 1);
+  // how well the element lands on this monster, like a certain pocket monster game
+  const eff = (z) => { const [weak, res] = matchOf(z); const m = weak === el ? 2 : res === el ? 0.5 : 1; if (m !== 1) p.pe.push({ k: "eff", x: Math.round(z.x), y: Math.round(z.y), z: Math.round((z.z || 0) + zHeight(z) + 20), m }); return m; };
+  const mass = { boss: game.bossKind === "golem" ? 99 : 5, elite: 3, tank: 2, rex: 6, raptor: 1.2 };
+  if (el === "storm") {
+    // chain lightning: the nearest thing in front of you, then whatever's closest to that, and on
+    const hit = new Set(), pts = [[Math.round(p.x), Math.round(p.y), Math.round(p.z + 40)]];
+    let cur = null, bd = Infinity;
+    for (const z of zombies) { const d = inCone(z); if (d && d < bd) { bd = d; cur = z; } }
+    let dmg = 55 * pow;
+    for (let n = 0; cur && n < 6; n++) {
+      hit.add(cur); const m = eff(cur);
+      hurtZombie(cur, dmg * m, p, m > 1 ? "crit" : ""); cur.stun = Math.max(cur.stun, t + 0.4 * m); p.st.shoutHits++;
+      pts.push([Math.round(cur.x), Math.round(cur.y), Math.round((cur.z || 0) + zHeight(cur) / 2)]);
+      let next = null, nd = 220 * 220;
+      for (const z of zombies) if (!hit.has(z) && z.hp > 0) { const d = dist2(z, cur); if (d < nd) { nd = d; next = z; } }
+      cur = next; dmg *= 0.85;
+    }
+    if (pts.length === 1) { const a = p.a; pts.push([Math.round(p.x + Math.cos(a) * range), Math.round(p.y + Math.sin(a) * range), Math.round(p.z + 40)]); }
+    events.push({ k: "zap", pts });
+    for (const q of players.values()) if (q !== p && !q.dead && inCone(q) && inCone(q) < 120) hurtPlayer(q, 12, p, "struck by lightning");
+    return;
+  }
+  for (const z of zombies) {
+    const d = inCone(z); if (!d) continue;
+    const m = eff(z); p.st.shoutHits++;
+    if (el === "force") {
+      const dx = z.x - p.x, dy = z.y - p.y;
+      z.vx = (dx / d) * 700 * m / (mass[z.type] || 1); z.vy = (dy / d) * 700 * m / (mass[z.type] || 1);
+      z.stun = t + 1.2 * m; hurtZombie(z, 10 * m * pow, p, m > 1 ? "crit" : "");
+    } else if (el === "fire") {
+      hurtZombie(z, 22 * m * pow, p, m > 1 ? "crit" : ""); z.fireUntil = t + 2.5 * m; z.fireBy = p.id;
+    } else if (el === "frost") {
+      hurtZombie(z, 14 * m * pow, p, m > 1 ? "crit" : ""); z.stun = Math.max(z.stun, t + 2.2 * m); z.frozen = t + 2.2 * m; z.fireUntil = 0;
+    }
+  }
+  if (el === "fire") for (let k = 1; k <= 4; k++) ignite(p.x + Math.cos(p.a) * k * 60, p.y + Math.sin(p.a) * k * 60, p.z + 30, p.id, 3);
+  if (el === "frost") for (const [key, f] of fires) if (inCone(f)) fires.delete(key); // puts out fires
+  for (const q of players.values()) {
+    if (q === p || q.dead) continue;
+    const d = inCone(q); if (!d) continue;
+    if (el === "force") kick(q, (q.x - p.x) / d * 600, (q.y - p.y) / d * 600, 120);
+    else if (el === "fire") q.fireUntil = t + 1.2, q.fireBy = p.id;
+    else if (el === "frost") { q.frozen = t + 1.2; q.fireUntil = 0; q.pe.push({ k: "toast", text: "You've been frozen solid by a teammate.", color: "#8fe0ff" }); }
+  }
 }
 function doDodge(p) {
   const t = now();
@@ -1235,7 +1450,7 @@ function outsideZone(e) { const z = game.zone; return z && (e.x - z.cx) ** 2 + (
 function startDrop(through) {
   let a = rand(0, Math.PI * 2);
   const cx = through ? through.x : rand(700, W - 700), cy = through ? through.y : rand(500, H - 500);
-  const L = 1900;
+  const L = 2600;
   game.drop = { x0: cx - Math.cos(a) * L, y0: cy - Math.sin(a) * L, x1: cx + Math.cos(a) * L, y1: cy + Math.sin(a) * L, t0: now(), dur: DROP_LEN };
   for (const p of players.values()) if (!p.dead) { p.air = "plane"; p.dlg = null; }
 }
@@ -1384,12 +1599,13 @@ function setupRoyale() {
   game.night = 0; game.ends = Infinity; game.result = null; game.ending = null;
   game.flags = { valley: VALLEY }; game.mods = freshMods(); game.vote = null; game.story = null; game.bossId = 0;
   game.hearthMax = game.hearth = 1e9;
-  zombies = []; crates = [];
+  zombies = []; crates = []; caches = [];
   for (const pl of PLOTS) { pl.stage = 0; pl.prog = 0; }
   for (const p of players.values()) { resetProgress(p); resetLoadout(p, true); p.weapons = [newWeapon("pistol")]; p.active = 0; p.gold = 0; }
-  const n = 18 + 5 * players.size;
+  const n = 30 + 6 * players.size;
   for (let i = 0; i < n; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon(pick(LOOT_TYPES), lootRarity(2)) });
-  for (let i = 0; i < 12; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon("pistol", lootRarity(1)) });
+  spawnCaches(4);
+  for (let i = 0; i < 18; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon("pistol", lootRarity(1)) });
   spawnVehicles(["tractor", "buggy", "buggy", ...Array(Math.floor(players.size / 2)).fill("buggy")]);
 }
 function endRoyale() {
@@ -1413,11 +1629,12 @@ function endRoyale() {
 // launched from the lobby once everyone is ready: build the world, play the opening, then drop everyone in
 function startGame() {
   PLOTS.length = BASE_PLOTS; // tilled plots belong to the last game
+  BALL.x = BALL.y = 0;
   generateMap((Math.random() * 1e9) | 0);
   vehicles = []; builds = []; game.zone = null; game.drop = null; game.countdown = 0; game.skip = new Set(); game.pendingVote = null;
   game.deeds = freshDeeds(); game.legend = null;
   if (game.mode === "story") placeNpcs(); else NPC_POS = [];
-  projs = []; fires.clear(); scorched.clear();
+  projs = []; fires.clear(); scorched.clear(); game.disaster = null; game.dino = false;
   broadcastRaw(JSON.stringify(mapMsg()));
   if (game.mode === "royale") setupRoyale(); else setupStory();
   for (const p of players.values()) { p.air = "wait"; p.ready = false; p.dlg = null; }
@@ -1428,7 +1645,7 @@ function beginPlay() {
   game.phase = game.mode === "royale" ? "royale" : "day";
   for (const p of players.values()) if (p.air === "wait") p.air = null;
   if (game.mode === "royale") {
-    zoneInit(W / 2, H / 2, 1700, ROYALE_ZONES.map((z) => [...z]));
+    zoneInit(W / 2, H / 2, 2300, ROYALE_ZONES.map((z) => [...z]));
     startDrop(null);
     events.push({ k: "banner", text: `SLOP ROYALE: ${VALLEY.toUpperCase()}`, sub: "Jump with SPACE. Loot up. Build [C]. Steal a ride [E]. Last farmer standing wins." });
     return;
@@ -1448,7 +1665,7 @@ function setupStory() {
   game.flags = { valley: VALLEY }; game.mods = freshMods(); game.vote = null; game.story = null; game.bossId = 0;
   const n = Math.max(1, players.size);
   game.hearthMax = game.hearth = 800 + 250 * n;
-  zombies = []; crates = [];
+  zombies = []; crates = []; caches = [];
   for (const pl of PLOTS) { pl.stage = 0; pl.prog = 0; }
   for (const p of players.values()) { resetProgress(p); resetLoadout(p, true); }
   spawnCrates();
@@ -1478,9 +1695,145 @@ function lootRarity(bonus = 0) {
   const r = Math.random() * 100;
   return r < 0.5 + bonus * 0.3 ? 4 : r < 6 + bonus * 2 ? 3 : r < 22 + bonus * 3 ? 2 : r < 55 ? 1 : 0;
 }
+// ---------------------------------------------------------------- Slop-Tech caches: hack them open
+let caches = [];
+const HEX = ["1C", "55", "BD", "E9", "7A", "FF"];
+function spawnCaches(n) {
+  for (let i = 0; i < n; i++) { const sp = freeSpot(40); caches.push({ id: nextId++, x: sp.x, y: sp.y }); }
+  caches = caches.slice(-6);
+}
+function startHack(p, c) {
+  const t = now();
+  if (c.busy && c.busy !== p.id && players.get(c.busy)?.hack) return toast(p, "Someone's already hacking that.", "#bbb");
+  const g = Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => pick(HEX.slice(0, 5))));
+  // build the target sequences from a real path through the grid, so every puzzle can be solved
+  const path = []; let row = 0, col = (Math.random() * 5) | 0, used = new Set();
+  for (let i = 0; i < 7; i++) {
+    if (i % 2 === 0) { let c2; do c2 = (Math.random() * 5) | 0; while (used.has(row + "," + c2)); col = c2; }
+    else { let r2; do r2 = (Math.random() * 5) | 0; while (used.has(r2 + "," + col)); row = r2; }
+    used.add(row + "," + col); path.push(g[row][col]);
+  }
+  const seqs = [path.slice(0, 2), path.slice(1, 4), path.slice(2, 6)];
+  c.busy = p.id;
+  p.hack = { cache: c.id, g, seqs, buf: 7, until: t + 30 };
+  p.pe.push({ k: "hack", g, seqs, buf: 7, time: 30 });
+}
+function finishHack(p, m) {
+  const h = p.hack; if (!h) return;
+  p.hack = null;
+  const c = caches.find((q) => q.id === h.cache); if (!c) return;
+  c.busy = 0;
+  if (m.cancel) return;
+  // check the picks follow the rules: row 0 first, then alternate column / row, no cell twice
+  const picks = Array.isArray(m.picks) ? m.picks.slice(0, h.buf) : [];
+  let ok = true, r = 0, col = -1; const used = new Set(), codes = [];
+  picks.forEach((pk, i) => {
+    const [pr, pc] = Array.isArray(pk) ? pk.map((v) => v | 0) : [-1, -1];
+    if (pr < 0 || pr > 4 || pc < 0 || pc > 4 || used.has(pr + "," + pc)) ok = false;
+    if (i % 2 === 0 && pr !== r) ok = false;
+    if (i % 2 === 1 && pc !== col) ok = false;
+    used.add(pr + "," + pc); r = pr; col = pc; codes.push(h.g[pr]?.[pc]);
+  });
+  const late = now() > h.until + 1;
+  const str = codes.join(" ");
+  const solved = ok && !late ? h.seqs.filter((sq) => str.includes(sq.join(" "))).length : 0;
+  if (!solved) {
+    feed(`${fullName(p)} tripped a Slop-Tech alarm.`, "#ff6060");
+    events.push({ k: "alarm", x: Math.round(c.x), y: Math.round(c.y) });
+    if (game.mode !== "royale" || true) { for (let i = 0; i < 3 + players.size; i++) spawnZombie(Math.random() < 0.3 ? "runner" : "walker", c); spawnZombie("screamer", c); }
+    return toast(p, late ? "Too slow. ALARM." : "Access denied. ALARM.", "#ff6060");
+  }
+  caches = caches.filter((q) => q !== c);
+  events.push({ k: "hacked", x: Math.round(c.x), y: Math.round(c.y), n: solved });
+  addXp(p, 10 * solved); deed("word", 3 * solved);
+  addGold(p, 40 * solved, "Hacked a cache");
+  p.gren = Math.min(9, p.gren + 1);
+  if (solved >= 2) crates.push({ id: nextId++, x: c.x, y: c.y, w: newWeapon(pick(LOOT_TYPES), solved === 3 ? (Math.random() < 0.3 ? 3 : 2) : 1) });
+  if (solved === 3) { p.molo = Math.min(9, p.molo + 2); feed(`${fullName(p)} cracked a Slop-Tech cache wide open.`, "#7dffb0"); }
+  toast(p, `ACCESS GRANTED (${solved}/3 daemons). ${solved >= 2 ? "Something good dropped out." : ""}`, "#7dffb0");
+}
 function spawnCrates() {
   const n = 3 + players.size;
+  spawnCaches(game.mode === "royale" ? 4 : 2);
   for (let i = 0; i < n; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon(pick(LOOT_TYPES), lootRarity(game.night)) });
+}
+// ---------------------------------------------------------------- natural disasters
+const DISASTERS = {
+  meteor: { name: "METEOR SHOWER", sub: "Look up. Watch for the red circles. Get out of them.", len: 28 },
+  flood:  { name: "FLASH FLOOD", sub: "The river's burst its banks. Get to high ground. Crops won't survive it.", len: 45 },
+  tornado: { name: "TORNADO", sub: "It picks up anything that isn't nailed down. Including you.", len: 32 },
+  quake:  { name: "EARTHQUAKE", sub: "Stay out of the houses. They might not stay up.", len: 10 },
+};
+function maybeDisaster() {
+  if (game.mode === "royale" || game.disaster) return;
+  const forced = DISASTER && DISASTERS[DISASTER] ? DISASTER : DISASTER === "any" ? pick(Object.keys(DISASTERS)) : "";
+  if (!forced && (game.night < 2 || Math.random() > DISASTER_CHANCE)) return;
+  const kind = forced || pick(Object.keys(DISASTERS)), t = now(), D = DISASTERS[kind];
+  game.disaster = { kind, t0: t, until: t + D.len, next: t + 1, meteors: [], water: 0, drowned: false };
+  if (kind === "tornado") { const sp = freeSpot(40); Object.assign(game.disaster, { x: sp.x, y: sp.y, vx: 0, vy: 0 }); }
+  events.push({ k: "banner", text: D.name, sub: D.sub });
+  events.push({ k: "disaster", kind });
+  feed(`${D.name}!`, "#ff9a40");
+}
+function disasterTick(t, dt) {
+  const D = game.disaster; if (!D) return;
+  if (t > D.until && !(D.kind === "flood" && D.water > 0) && !D.meteors.length) { game.disaster = null; events.push({ k: "feed", text: "The disaster has passed.", color: "#9fe0ff" }); return; }
+  const live = [...players.values()].filter((p) => !p.dead && !p.air);
+  if (D.kind === "meteor") {
+    if (t < D.until && t > D.next) {
+      D.next = t + rand(0.5, 1.1);
+      const near = live.length && Math.random() < 0.7 ? pick(live) : null;
+      const x = clamp(near ? near.x + rand(-420, 420) : rand(100, W - 100), 40, W - 40), y = clamp(near ? near.y + rand(-420, 420) : rand(100, H - 100), 40, H - 40);
+      D.meteors.push({ x, y, at: t + 1.8 });
+    }
+    for (const m of D.meteors) if (t >= m.at) {
+      m.done = true;
+      const z = MV.floorAt(m.x, m.y, 4, 2000, WALLS).h;
+      explode(m.x, m.y, z + 10, 170, 150, null, "flattened by a meteor", 1);
+      for (let i = 0; i < 3; i++) ignite(m.x + rand(-60, 60), m.y + rand(-60, 60), z + 30, 0, 2, true);
+      events.push({ k: "meteor", x: Math.round(m.x), y: Math.round(m.y), z: Math.round(z) });
+    }
+    D.meteors = D.meteors.filter((m) => !m.done);
+  } else if (D.kind === "flood") {
+    const rise = 8, peak = 30, k = t < D.t0 + rise ? (t - D.t0) / rise : t < D.until - rise ? 1 : Math.max(0, (D.until - t) / rise);
+    D.water = peak * k;
+    if (D.water > 12 && !D.drowned) { D.drowned = true; let n = 0; for (const pl of PLOTS) if (pl.stage > 0) { pl.stage = 0; pl.prog = 0; n++; } if (n) feed(`The flood drowned ${n} crop${n > 1 ? "s" : ""}.`, "#6ab0e0"); }
+    for (const [key, f] of fires) if (f.z < D.water) fires.delete(key);
+    for (const p of players.values()) if (p.z < D.water - 4) p.fireUntil = 0;
+  } else if (D.kind === "tornado") {
+    // it wanders towards people, and throws everything it touches
+    const tgt = live.length ? live.reduce((a, b) => (dist2(a, D) < dist2(b, D) ? a : b)) : null;
+    if (tgt) { const d = Math.hypot(tgt.x - D.x, tgt.y - D.y) || 1; D.vx += ((tgt.x - D.x) / d * 110 - D.vx) * dt * 0.5; D.vy += ((tgt.y - D.y) / d * 110 - D.vy) * dt * 0.5; }
+    D.vx += rand(-60, 60) * dt; D.vy += rand(-60, 60) * dt;
+    D.x = clamp(D.x + D.vx * dt, 60, W - 60); D.y = clamp(D.y + D.vy * dt, 60, H - 60);
+    const pull = (e, isP) => {
+      const dx = D.x - e.x, dy = D.y - e.y, d = Math.hypot(dx, dy);
+      if (d > 280 || d < 1) return;
+      const k = 1 - d / 280, tx = -dy / d, ty = dx / d; // swirl + suck in
+      if (isP) {
+        if (e.veh || e.air || e.dead) return;
+        e.vx += (dx / d * 500 + tx * 700) * k * dt; e.vy += (dy / d * 500 + ty * 700) * k * dt;
+        if (d < 90 && e.gr) { kick(e, tx * 300, ty * 300, 650); hurtPlayer(e, 8, null, "carried off by a tornado"); }
+      } else {
+        e.vx += (dx / d * 400 + tx * 600) * k * dt; e.vy += (dy / d * 400 + ty * 600) * k * dt;
+        if (d < 90 && e.gr && e.type !== "boss" && e.type !== "rex") { e.vz = 600; e.gr = false; e.hp -= 6; }
+      }
+    };
+    for (const p of players.values()) pull(p, true);
+    for (const z of zombies) if (z.type !== "flyer") pull(z, false);
+    for (const b of builds) if (Math.hypot(b.x + 20 - D.x, b.y + 20 - D.y) < 90) hurtPiece(b, 400 * dt);
+    for (const w of [...WALLS]) if (w.hp && (w.kind === "fence" || w.kind === "crate" || w.kind === "tree") && boxDist(w, D.x, D.y, 0) < 70) damageWall(w, 250 * dt);
+    { const d = Math.hypot(BALL.x - D.x, BALL.y - D.y); if (d < 280) { BALL.vx += (-(BALL.y - D.y) / (d || 1)) * 900 * dt; BALL.vy += ((BALL.x - D.x) / (d || 1)) * 900 * dt; if (d < 90) BALL.vz = 500; } }
+  } else if (D.kind === "quake") {
+    if (t > D.next) {
+      D.next = t + 0.5;
+      const houses = WALLS.filter((w) => w.hp && (w.kind === "house" || w.kind === "rock"));
+      if (houses.length && Math.random() < 0.35) damageWall(pick(houses), 700);
+      for (const z of zombies) if (z.gr && Math.random() < 0.3) z.stun = Math.max(z.stun, t + 0.6);
+      for (const p of live) if (p.gr) { addStress(p, 2); if (Math.random() < 0.3) kick(p, rand(-120, 120), rand(-120, 120), 120); }
+      events.push({ k: "quake" });
+    }
+  }
 }
 function startNight() {
   if (game.vote) resolveVote();
@@ -1497,6 +1850,9 @@ function startNight() {
   const final = game.mode === "story" && game.night >= LAST_NIGHT && solved();
   const endlessBoss = game.mode === "endless" && game.night % ENDLESS_BOSS_EVERY === 0;
   game.fog = !final && !endlessBoss && game.night >= 2 && Math.random() < FOG_NIGHT;
+  game.dino = !final && !endlessBoss && !game.fog && game.night >= 3 && Math.random() < DINO_NIGHT; game.dinoRex = false;
+  game.spawnTotal = game.spawnLeft;
+  maybeDisaster();
   if (endlessBoss) {
     game.ends = Infinity;
     game.bossKind = pick(Object.keys(BOSSES));
@@ -1514,12 +1870,13 @@ function startNight() {
     events.push({ k: "banner", text: `CONTRACT: ${B.name}`, sub: "Slay it to save the valley. Reward: 150g each." });
   } else {
     game.ends = now() + NIGHT_LEN;
-    const sub = game.fog ? "FOG NIGHT. You can't see a thing. Listen for the screamers." : game.night === 1 ? "Protect the Hearth. Don't shoot your friends (much)." : game.mode === "story" && game.night >= LAST_NIGHT ? "The dead won't stop until someone solves the mystery. Check your journal [J]." : "They're getting hungrier.";
-    events.push({ k: "banner", text: game.fog ? `NIGHT ${game.night}: THE FOG` : `NIGHT ${game.night}`, sub });
+    const sub = game.dino ? "Something older than the dead has crawled out of the well. DINOSAURS." : game.fog ? "FOG NIGHT. You can't see a thing. Listen for the screamers." : game.night === 1 ? "Protect the Hearth. Don't shoot your friends (much)." : game.mode === "story" && game.night >= LAST_NIGHT ? "The dead won't stop until someone solves the mystery. Check your journal [J]." : "They're getting hungrier.";
+    events.push({ k: "banner", text: game.dino ? `NIGHT ${game.night}: THE RIFT` : game.fog ? `NIGHT ${game.night}: THE FOG` : `NIGHT ${game.night}`, sub });
   }
 }
 function startDay() {
-  game.phase = "day"; game.ends = now() + DAY_LEN; game.fog = false;
+  game.phase = "day"; game.ends = now() + DAY_LEN; game.fog = false; game.dino = false;
+  maybeDisaster();
   for (const p of players.values()) { p.talked.clear(); cure(p, "The sunrise burns the infection out of you."); }
   for (const z of zombies) if (z.type !== "elite") z.burn = true;
   spawnCrates();
@@ -1566,10 +1923,13 @@ function endGame(win) {
 function nightType(n, fog) {
   const w = { walker: 10, runner: n >= 2 ? 5 : 0, tank: n >= 3 ? 1.2 : 0, charger: n >= 2 ? 1.1 : 0, flyer: n >= 2 ? 1.4 : 0, boomer: n >= 2 ? 1 : 0, screamer: fog ? 1.8 : n >= 3 ? 0.5 : 0 };
   if (n >= 6) { w.tank += 0.6; w.charger += 0.6; w.flyer += 0.6; }
+  if (n >= 4) w.raptor = 0.8;
+  if (game.dino) { w.raptor = 6; w.walker = 4; }
   let r = Math.random() * Object.values(w).reduce((a, b) => a + b, 0);
   for (const [k, v] of Object.entries(w)) { r -= v; if (r <= 0) return k; }
   return "walker";
 }
+function spawnRaptors(at) { for (let i = 0; i < 3; i++) spawnZombie("raptor", at); }
 function spawnZombie(type, at) {
   const def = ZTYPES[type];
   let x, y;
@@ -1611,7 +1971,7 @@ function tick() {
   if (game.story && t > game.story.until) game.story = null;
   zoneTick(t);
   if (game.phase === "royale") {
-    const target = 10 + 3 * players.size;
+    const target = 16 + 4 * players.size;
     if (zombies.length < target && Math.random() < dt * 1.5) {
       const r = Math.random();
       const z = spawnZombie(r < 0.08 ? "tank" : r < 0.14 ? "charger" : r < 0.2 ? "flyer" : r < 0.25 ? "boomer" : r < 0.5 ? "runner" : "walker");
@@ -1625,7 +1985,10 @@ function tick() {
     if (!qs.done && !qs.told && npcApi.progress(p, id) >= QUESTS[id].goal) { qs.told = true; toast(p, `Quest complete: ${QUESTS[id].title}. Go and see ${NPCS[QUESTS[id].npc].name}.`, "#e0c0ff"); }
   }
   if (game.phase === "night" && game.spawnLeft > 0 && t > game.spawnNext) {
-    spawnZombie(nightType(game.night, game.fog));
+    const kind = nightType(game.night, game.fog);
+    if (kind === "raptor") { const z = spawnZombie("raptor"); spawnZombie("raptor", z); spawnZombie("raptor", z); game.spawnLeft -= 2; } // packs
+    else spawnZombie(kind);
+    if (game.dino && !game.dinoRex && game.spawnLeft < game.spawnTotal * 0.6) { game.dinoRex = true; spawnZombie("rex"); events.push({ k: "banner", text: "T. REX", sub: "It's coming for the Hearth. Storm is super effective." }); }
     game.spawnLeft--;
     const len = game.ends === Infinity ? 50 : NIGHT_LEN * 0.8;
     game.spawnNext = t + len / Math.max(10, game.spawnLeft + 10) * 0.9;
@@ -1634,7 +1997,8 @@ function tick() {
   if ((game.phase === "day" || game.phase === "night") && game.mods.hearthRegen) game.hearth = Math.min(game.hearthMax, game.hearth + game.mods.hearthRegen * dt);
 
   const playing = game.phase === "day" || game.phase === "night" || game.phase === "royale";
-  if (playing) { vehicleTick(t, dt); buildTick(t); projTick(t, dt); fireTick(t, dt); }
+  if (playing || game.phase === "lobby") ballTick(t, dt);
+  if (playing) { vehicleTick(t, dt); buildTick(t); projTick(t, dt); fireTick(t, dt); disasterTick(t, dt); }
 
   // players
   const alive = [...players.values()].filter((p) => !p.dead && !p.air);
@@ -1662,13 +2026,13 @@ function tick() {
     }
     if (p.dlg) { const n = NPC_POS.find((q) => q.id === p.dlg.npc); if (!n || dist2(n, p) > 150 * 150) { p.dlg = null; sendDlg(p); } }
     if (playing) {
-      needs(p, dt, t);
+      needs(p, dt, t); stress(p, dt, t);
       if (p.inf) { if (t > p.inf.until) cure(p, "The infection passes. You feel almost normal."); else if (t > p.inf.next) nextSymptom(p); }
     }
     const veh = vehOf(p);
     if (p.veh && !veh) p.veh = 0;
     if (!veh) {
-      const ev = MV.step(p, { keys: p.keys, yaw: p.a, rel: p.rel }, dt, { sp: speedOf(p), boxes: WALLS, W, H, frozen: t < p.going || !!p.dlg });
+      const ev = MV.step(p, { keys: p.keys, yaw: p.a, rel: p.rel }, dt, { sp: speedOf(p), boxes: WALLS, W, H, frozen: t < p.going || !!p.dlg || t < p.frozen });
       if (ev === "pad") events.push({ k: "pad", x: Math.round(p.x), y: Math.round(p.y) });
       if (p.z > 1400) p.z = 1400;
     } else { p.z = 0; p.vz = 0; p.vx = 0; p.vy = 0; p.gr = true; }
@@ -1679,10 +2043,18 @@ function tick() {
     if (p.hp > mh) p.hp = mh;
     const w = p.weapons[p.active];
     w.bloom = Math.max(0, w.bloom - dt * 2.2);
-    if (w.reloadUntil && t >= w.reloadUntil) { w.reloadUntil = 0; w.ammo = WEAPONS[w.type].mag; }
-    if (p.firing && !p.dlg && !(t < p.going) && !(veh && veh.seats[0] === p.id) && (playing || game.phase === "lobby") && !w.reloadUntil && t >= w.nextShot) {
-      if (w.ammo > 0) shoot(p, w);
-      else startReload(p, w);
+    reloadTick(p, w, t);
+    if (p.firing && !p.dlg && !p.cleaning && !(t < p.going) && !(t < p.meltdown) && !(veh && veh.seats[0] === p.id) && (playing || game.phase === "lobby") && t >= w.nextShot) {
+      if (w.stage === "shell" && w.ammo > 0) { w.reloadUntil = 0; w.stage = ""; } // firing interrupts loading shells
+      if (w.reloadUntil || w.waiting) { /* busy reloading */ }
+      else if (w.jam) { w.nextShot = t + 0.4; p.pe.push({ k: "click" }); }
+      else if (w.ammo > 0) {
+        shoot(p, w);
+        w.dirt = Math.min(100, (w.dirt || 0) + (DIRT[w.type] || 0) * (game.phase === "lobby" ? 0 : 1));
+        const jam = w.dirt < 35 ? 0 : ((w.dirt - 35) / 65) ** 2 * 0.2;
+        if (w.ammo > 0 && Math.random() < jam) { w.jam = true; p.pe.push({ k: "jammed" }); }
+      }
+      else { startReload(p, w); p.pe.push({ k: "click" }); }
     }
   }
 
@@ -1710,7 +2082,8 @@ function tick() {
     const d = Math.hypot(dx, dy) || 1;
     dx /= d; dy /= d;
     if (z.steer) { const c = Math.cos(z.steer), s = Math.sin(z.steer); [dx, dy] = [dx * c - dy * s, dx * s + dy * c]; }
-    let sp = (z.type === "boss" ? B.speed : def.speed) * (z.type === "runner" ? 1 : 1 + 0.03 * game.night);
+    let sp = (z.type === "boss" ? B.speed : def.speed) * (z.type === "runner" ? 1 : 1 + 0.03 * Math.min(game.night, 12));
+    if (z.type !== "flyer" && wading(z)) sp *= 0.6;
     if ((z.type === "boss" || z.type === "elite") && t < z.charge) sp = 380;
     if (z.type === "charger") {
       // wind up, then a straight-line charge that sends people flying. Hitting a wall stuns it.
@@ -1720,13 +2093,28 @@ function tick() {
       if (t < z.charge) { dx = Math.cos(z.chDir); dy = Math.sin(z.chDir); sp = 560; }
     }
     if (z.type === "screamer" && target && bd < 280 * 280) { dx = -dx; dy = -dy; sp *= 0.8; } // keeps its distance
+    if (z.type === "raptor" && target && z.gr && t > z.special && bd < 190 * 190 && bd > 50 * 50 && !(t < z.stun)) {
+      // pounce
+      z.special = t + rand(2.5, 3.5); z.pounce = t + 1;
+      const d = Math.sqrt(bd); z.vx = (target.x - z.x) / d * 480; z.vy = (target.y - z.y) / d * 480; z.vz = 360; z.gr = false;
+      events.push({ k: "roar", x: z.x, y: z.y, small: 1 });
+    }
+    if (z.type === "raptor" && t < z.pounce) sp *= 0.3;
+    if (z.type === "rex" && target && t > z.special && bd < 320 * 320) {
+      // ROAR: everyone nearby freezes up for a moment
+      z.special = t + 9; z.stun = t + 0.9;
+      events.push({ k: "roar", x: z.x, y: z.y, rex: 1 });
+      for (const q of alive) if (dist2(q, z) < 340 * 340) { q.frozen = t + 0.8; addStress(q, 12); q.pe.push({ k: "deaf" }); }
+    }
     if (t < z.stun) sp = 0;
+    if (t < z.frozen) { z.atk = Math.max(z.atk, z.frozen); }
     const ox = z.x, oy = z.y;
     z.x += (dx * sp + z.vx) * dt; z.y += (dy * sp + z.vy) * dt;
     z.vx *= Math.pow(0.03, dt); z.vy *= Math.pow(0.03, dt);
     const touchingHearth = game.mode !== "royale" && z.z < HEARTH.z1 && z.x + z.r > HEARTH.x - 4 && z.x - z.r < HEARTH.x + HEARTH.w + 4 && z.y + z.r > HEARTH.y - 4 && z.y - z.r < HEARTH.y + HEARTH.h + 4;
     // the dead climb: walls, roofs, towers. Not trees, not the Hearth, not your barricades (those they chew).
     const hit = MV.pushOut(z, z.r, WALLS, W, H, z.z, zHeight(z));
+    if ((z.type === "charger" || z.type === "boss" || z.type === "rex") && t < z.charge && hit && hit !== "edge") damageWall(hit, z.type === "charger" ? 90 : 220);
     if (z.type === "charger" && t < z.charge && hit && hit !== "edge") { z.charge = 0; z.stun = t + 1.6; events.push({ k: "boom", x: z.x, y: z.y, z: z.z, r: 40, dust: 1 }); }
     if (z.type === "flyer") {
       // flyers circle high, then dive on whoever they're after
@@ -1748,6 +2136,10 @@ function tick() {
       const piece = builds.find((b) => PIECES[b.bk].solid && rectHitsCircle(b, z, z.r + 6));
       if (piece) { hurtPiece(piece, def.dmg * (z.type === "boss" ? 3 : 1)); z.atk = t + 0.8; }
     }
+    if (z.type === "rex" && hit && hit !== "edge") damageWall(hit, 350 * dt); // it walks through things
+    if (z.type === "raptor" && t < z.pounce && !z.gr) for (const q of alive) if (dist2(q, z) < (z.r + 22) ** 2 && Math.abs(q.z - z.z) < 60) {
+      hurtPlayer(q, 22, null, "eaten by a velociraptor"); q.frozen = t + 0.5; z.pounce = 0; z.atk = t + 0.8;
+    }
     if (z.type === "charger" && t < z.charge) {
       for (const q of alive) if (dist2(q, z) < (z.r + 22) ** 2 && Math.abs(q.z - z.z) < 60) {
         hurtPlayer(q, def.dmg * 1.3, null, "flattened by a charger");
@@ -1762,7 +2154,7 @@ function tick() {
       events.push({ k: "scream", x: Math.round(z.x), y: Math.round(z.y), z: Math.round(z.z) });
       for (const o of zombies) if (o !== z && dist2(o, z) < 700 * 700) { o.aggro = target.id; o.aggroUntil = t + 8; }
       if (zombies.length < 160) for (let i = 0; i < 1 + Math.ceil(players.size / 2); i++) spawnZombie("runner", z);
-      for (const q of alive) if (dist2(q, z) < 380 * 380) q.pe.push({ k: "deaf" });
+      for (const q of alive) if (dist2(q, z) < 380 * 380) { q.pe.push({ k: "deaf" }); addStress(q, 8); }
     }
     if (t > z.atk) {
       if (target && Math.sqrt(bd) < z.r + 20 && Math.abs(target.z - z.z) < 60) {
@@ -1799,6 +2191,7 @@ function tick() {
   }
   if ((game.phase === "night" || game.phase === "day") && game.hearth <= 0) { game.hearth = 0; endGame(false); }
 
+  if (mapDirty && tickN % 6 === 0) { mapDirty = false; broadcastRaw(JSON.stringify(mapMsg())); }
   if (tickN % SNAP_EVERY === 0) broadcast();
 }
 
@@ -1814,7 +2207,8 @@ function snapshot() {
       zone: game.zone ? [r(game.zone.cx), r(game.zone.cy), r(game.zone.r), r(game.zone.tcx), r(game.zone.tcy), r(game.zone.tr), game.zone.t0 > t ? r(game.zone.t0 - t) : -1] : null,
       drop: game.drop && t - game.drop.t0 < game.drop.dur + 3 ? [r(game.drop.x0), r(game.drop.y0), r(game.drop.x1), r(game.drop.y1), +dropPos(t).k.toFixed(3)] : null,
       clues: [...game.clues].map((c) => CLUES[c]),
-      ph: game.phase, n: game.night, left: game.ends === Infinity ? -1 : Math.max(0, r(game.ends - t)), hh: r(game.hearth), hm: game.hearthMax, res: game.result, boss: game.bossId, bk: game.bossKind, valley: VALLEY, fog: game.fog ? 1 : 0, solved: solved() ? 1 : 0 },
+      ph: game.phase, n: game.night, left: game.ends === Infinity ? -1 : Math.max(0, r(game.ends - t)), hh: r(game.hearth), hm: game.hearthMax, res: game.result, boss: game.bossId, bk: game.bossKind, valley: VALLEY, fog: game.fog ? 1 : 0, solved: solved() ? 1 : 0, dino: game.dino ? 1 : 0,
+      dis: game.disaster ? { k: game.disaster.kind, w: +game.disaster.water.toFixed(1), x: r(game.disaster.x || 0), y: r(game.disaster.y || 0), m: game.disaster.meteors.map((m) => [r(m.x), r(m.y), +(m.at - t).toFixed(2)]), left: r(game.disaster.until - t) } : null },
     vote: v ? { title: v.ev.title, text: v.ev.text, ch: v.ev.choices.map((c) => [c.label, c.desc]), votes: Object.fromEntries(v.votes), left: Math.max(0, r(v.ends - t)) } : null,
     story: game.story ? { title: game.story.title, pick: game.story.pick, text: game.story.text } : null,
     p: [...players.values()].map((p) => {
@@ -1823,18 +2217,21 @@ function snapshot() {
         id: p.id, n: fullName(p), x: r(p.x), y: r(p.y), z: r(p.z), mv: [r(p.vx), r(p.vy), r(p.vz), p.gr ? 1 : 0], pt: p.pt == null ? 0 : +p.pt.toFixed(2), a: +p.a.toFixed(2), hp: r(p.hp), mh: maxHp(p), ar: r(p.armor),
         c: p.color, h: p.hat, ey: p.eyes, cl: p.cls, bg: p.bg, d: p.dead ? 1 : 0, g: p.gold, sd: p.seeds, st: Math.min(5, Math.floor(p.heat / 40)),
         w: w.type, wn: wName(w), wr: w.rarity, we: w.enh, am: w.ammo, hot: w.hot ? 1 : 0, sec: p.weapons.length > 1 ? 1 : 0,
-        rl: w.reloadUntil ? +(w.reloadUntil - t).toFixed(2) : 0, rt: w.reloadUntil ? +(w.reloadUntil - w.reloadStart).toFixed(2) : 0, rtr: w.tried ? 1 : 0,
+        rl: w.reloadUntil ? +(w.reloadUntil - t).toFixed(2) : 0, rt: w.reloadUntil ? +(w.reloadUntil - w.reloadStart).toFixed(2) : 0, rtr: 0,
+        rs: w.stage || "", rw: w.waiting ? 1 : 0, rk: reloadKind(w.type), jam: w.jam ? 1 : 0, dirt: Math.round(w.dirt || 0), cln: p.cleaning ? 1 : 0,
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
         lv: p.lvl, xp: p.xp, xn: xpNeed(p.lvl), pts: p.pts, sk: p.sk, ch: p.champion ? 1 : 0,
-        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, out: p.out ? 1 : 0, pk: p.st.pk, hoe: p.hoe || 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
+        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, out: p.out ? 1 : 0, pk: p.st.pk, ss: r(p.stress || 0), el: p.elem || "force", els: elemsFor(p).join(","), fz: p.frozen > t ? 1 : 0, md: p.meltdown > t ? 1 : 0, hoe: p.hoe || 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
         nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
         k: p.st.kills, de: p.st.deaths, cr: p.st.crops, tk: p.st.tk, hs: p.st.hs, acc: p.st.shots ? Math.round(p.st.hits / p.st.shots * 100) : 0,
       };
     }),
-    z: zombies.map((z) => [z.id, zCode(z), r(z.x), r(z.y), r((z.hp / z.maxHp) * 100), z.burn || z.fireUntil > t ? 1 : 0, r(z.z), z.wind > t || z.charge > t ? 1 : 0]),
+    z: zombies.map((z) => [z.id, zCode(z), r(z.x), r(z.y), r((z.hp / z.maxHp) * 100), z.burn || z.fireUntil > t ? 1 : 0, r(z.z), z.wind > t || z.charge > t ? 1 : 0, z.frozen > t ? 1 : 0]),
+    ball: PITCH && (BALL.x || BALL.y) ? [r(BALL.x), r(BALL.y), r(BALL.z)] : null,
     pr: projs.map((q) => [q.id, q.kind, r(q.x), r(q.y), r(q.z)]),
     fi: [...fires.values()].map((f) => [f.cx, f.cy, r(f.z)]),
     pl: PLOTS.map((p) => p.stage),
+    ca: caches.map((c) => [c.id, r(c.x), r(c.y), c.busy ? 1 : 0]),
     cr: crates.map((c) => [c.id, r(c.x), r(c.y), c.w.rarity, c.grave ? 1 : 0]),
     vh: vehicles.map((v) => [v.id, v.kind, r(v.x), r(v.y), +v.a.toFixed(2), r((v.hp / VEHICLES[v.kind].hp) * 100), v.seats[0], v.seats[1], r(v.v)]),
     b: builds.map((b) => [b.id, b.bk, b.x, b.y, r((b.hp / b.maxHp) * 100), +b.a.toFixed(2), b.owner]),
@@ -1881,7 +2278,9 @@ function onMessage(ws, raw) {
       p.keys = m.k | 0; p.a = +m.a || 0; p.firing = !!m.f && !p.dead; p.ads = !!m.ads && !p.dead;
       p.pt = typeof m.pt === "number" && isFinite(m.pt) ? clamp(m.pt, -1.5, 1.5) : null; p.rel = !!m.rel;
       break;
-    case "reload": { const w = p.weapons[p.active]; if (w.reloadUntil) tryActiveReload(p, w); else startReload(p, w); break; }
+    case "reload": pressReload(p, p.weapons[p.active]); break;
+    case "clean": cleanWeapon(p, m); break;
+    case "hack": finishHack(p, m); break;
     case "swap": if (p.weapons.length > 1) { p.active = m.i === 0 || m.i === 1 ? Math.min(m.i, p.weapons.length - 1) : 1 - p.active; } break;
     case "use": if (game.phase === "intro") game.skip.add(p.id); else if (p.air === "plane") jump(p); else if (!p.dead) interact(p); break;
     case "skip": if (game.phase === "intro") game.skip.add(p.id); break;
@@ -1890,6 +2289,7 @@ function onMessage(ws, raw) {
     case "dlg": pickDlg(p, m.i | 0); break;
     case "mode": if (p.id === hostId() && game.phase !== "day" && game.phase !== "night" && game.phase !== "royale" && (m.m === "story" || m.m === "royale" || m.m === "endless")) { game.mode = m.m; broadcastRaw(JSON.stringify(mapMsg())); } break;
     case "shout": doShout(p); break;
+    case "elem": cycleElement(p); break;
     case "go": relieve(p); break;
     case "throw": throwIt(p, m.k === "molo" ? "molo" : "gren"); break;
     case "dodge": if (game.phase === "intro") game.skip.add(p.id); else if (p.air === "plane") jump(p); else doDodge(p); break;
@@ -1925,7 +2325,7 @@ const server = Bun.serve({
       spectators.delete(ws);
       const p = players.get(ws.data.pid);
       if (p) { if (p.veh) exitVehicle(p); players.delete(p.id); feed(`${fullName(p)} left the valley`, "#aaa"); if (game.vote) game.vote.votes.delete(p.id); }
-      if (players.size === 0 && game.phase !== "lobby") { game.phase = "lobby"; zombies = []; projs = []; fires.clear(); crates = []; vehicles = []; builds = []; WALLS = WALLS.filter((w) => w.kind !== "built"); game.vote = null; game.zone = null; game.drop = null; game.pendingVote = null; }
+      if (players.size === 0 && game.phase !== "lobby") { game.phase = "lobby"; zombies = []; projs = []; caches = []; fires.clear(); crates = []; vehicles = []; builds = []; WALLS = WALLS.filter((w) => w.kind !== "built"); game.vote = null; game.zone = null; game.drop = null; game.pendingVote = null; }
     },
   },
 });
