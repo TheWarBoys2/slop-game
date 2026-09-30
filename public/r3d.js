@@ -1,6 +1,8 @@
 // SLOP VALLEY — the 3D view (first and third person). Uses three.js, which index.html loads onto window.THREE.
 // Game coordinates are (x, y) on the ground and z for height; three.js is y-up, so a game point (x, y, z) sits at (x, z, y).
 // game.js owns the game state and the camera maths; this file only turns that state into a scene.
+// zombie sizes by the one-letter code the server sends (game.js uses this too)
+var ZR = { b: 48, e: 34, t: 26, r: 12, w: 15, c: 20, f: 13, x: 24, s: 14 };
 var R3D = (function () {
   let T = null, R = null, scene = null, cam = null, gl = null, ok = false, vw = 0, vh = 0;
   let level = null, levelKey = "";
@@ -148,7 +150,7 @@ var R3D = (function () {
   }
 
   // ---------------------------------------------------------------- models
-  const WEAPON_LEN = { pistol: 18, smg: 24, shotgun: 30, rifle: 34, sniper: 44, staff: 40, ak: 32, sword: 44 };
+  const WEAPON_LEN = { pistol: 18, smg: 24, shotgun: 30, rifle: 34, sniper: 44, staff: 40, ak: 32, sword: 44, rocket: 42 };
   const RAR = [0xd8d8d8, 0x4da6ff, 0xc070ff, 0xffc030, 0xff4b4b];
   function weaponMesh(type, rar) {
     const g = new T.Group(), len = WEAPON_LEN[type] || 24;
@@ -156,6 +158,11 @@ var R3D = (function () {
       g.add(mesh(new T.BoxGeometry(len, 5, 1.6), mat(0xdfe4ea, rar === 4 ? 0x802020 : 0x202428), len / 2 + 6, 0, 0));
       g.add(mesh(new T.BoxGeometry(3, 3, 14), mat(RAR[rar] || 0xd8d8d8), 5, 0, 0));
       g.add(mesh(new T.BoxGeometry(9, 3, 3), mat(0x5a3a1e), 0, 0, 0));
+    } else if (type === "rocket") {
+      const tube = mesh(new T.CylinderGeometry(4, 4, len, 12), mat(0x4a5a32), len / 2 - 6, 1, 0); tube.rotation.z = Math.PI / 2; g.add(tube);
+      const tip = mesh(new T.ConeGeometry(3.5, 9, 10), mat(rar === 4 ? 0xff4b4b : 0xb03a2a), len + 1, 1, 0); tip.rotation.z = -Math.PI / 2; g.add(tip);
+      g.add(mesh(new T.BoxGeometry(5, 9, 3.5), mat(0x2a2a2a), 6, -6, 0));
+      if (rar > 0) g.add(mesh(new T.BoxGeometry(len - 10, 1.4, 8.4), mat(RAR[rar], RAR[rar]), len / 2 - 4, 1, 0));
     } else if (type === "staff") {
       const shaft = mesh(new T.CylinderGeometry(1.8, 1.8, len, 6), mat(0x8b5a2b), len / 2, 0, 0); shaft.rotation.z = Math.PI / 2; g.add(shaft);
       g.add(mesh(new T.SphereGeometry(4.5, 10, 8), mat(0xff7a2a, 0xff5a10), len, 0, 0));
@@ -220,18 +227,37 @@ var R3D = (function () {
     g.userData.body = body;
     return g;
   }
+  const ZCOL = { e: 0x3a6a8a, t: 0x3f6b3a, r: 0xa0d070, w: 0x6fa35a, c: 0x7a5a3a, f: 0x4a3a5a, x: 0x8aa04a, s: 0xd8d0c0 };
   function zombieMesh(type, bk) {
-    const r = type === "b" ? 48 : type === "e" ? 34 : type === "t" ? 26 : type === "r" ? 12 : 15;
+    const r = ZR[type] || 15;
     const bossCol = { leshen: 0x3a5a2a, drowned: 0x3a6a8a, golem: 0xb08a3a }[bk] || 0x3a5a2a;
-    const col = type === "b" ? bossCol : type === "e" ? 0x3a6a8a : type === "t" ? 0x3f6b3a : type === "r" ? 0xa0d070 : 0x6fa35a;
+    const col = type === "b" ? bossCol : ZCOL[type] || 0x6fa35a;
     const g = new T.Group(), k = r / 15;
     const skin = mat(col);
-    g.add(mesh(new T.CylinderGeometry(10 * k, 12 * k, 30 * k, 10), skin, 0, 17 * k, 0));
-    g.add(mesh(new T.SphereGeometry(11 * k, 12, 10), skin, 2 * k, 42 * k, 0));
-    const eye = type === "b" ? (bk === "golem" ? 0xff8a20 : 0xff2020) : type === "e" ? 0xbfe8ff : 0xffec40;
-    for (const s of [-1, 1]) g.add(mesh(new T.SphereGeometry(2.4 * k, 8, 6), mat(eye, eye), 11 * k, 44 * k, s * 4.5 * k));
+    const eye = type === "b" ? (bk === "golem" ? 0xff8a20 : 0xff2020) : type === "e" || type === "s" ? 0xbfe8ff : type === "f" ? 0xff3030 : 0xffec40;
     const arms = [];
-    for (const s of [-1, 1]) { const a = mesh(new T.BoxGeometry(24 * k, 5 * k, 5 * k), skin, 12 * k, 30 * k, s * 12 * k); g.add(a); arms.push(a); }
+    if (type === "f") { // a flying thing: a body, a head and two big leathery wings
+      g.add(mesh(new T.SphereGeometry(10 * k, 10, 8), skin, 0, 24 * k, 0));
+      g.add(mesh(new T.SphereGeometry(7 * k, 10, 8), skin, 9 * k, 30 * k, 0));
+      for (const s of [-1, 1]) g.add(mesh(new T.SphereGeometry(1.8 * k, 6, 5), mat(eye, eye), 15 * k, 31 * k, s * 3 * k));
+      const wings = [];
+      for (const s of [-1, 1]) { const piv = new T.Group(); piv.position.set(0, 26 * k, s * 6 * k); const w = mesh(new T.BoxGeometry(18 * k, 1.5, 30 * k), mat(0x2a2030), 0, 0, s * 15 * k); piv.add(w); g.add(piv); wings.push(piv); }
+      g.userData.wings = wings;
+    } else {
+      const fat = type === "x" ? 1.7 : type === "s" ? 0.7 : 1, tall = type === "s" ? 1.3 : type === "c" ? 0.85 : 1;
+      g.add(mesh(new T.CylinderGeometry(10 * k * fat, 12 * k * fat, 30 * k * tall, 12), skin, 0, 17 * k * tall, 0));
+      const headY = (type === "c" ? 36 : 42) * k * tall;
+      g.add(mesh(new T.SphereGeometry(11 * k * (type === "s" ? 0.8 : 1), 12, 10), skin, (type === "c" ? 8 : 2) * k, headY, 0));
+      for (const s of [-1, 1]) g.add(mesh(new T.SphereGeometry(2.4 * k, 8, 6), mat(eye, eye), (type === "c" ? 17 : 11) * k, headY + 2 * k, s * 4.5 * k));
+      if (type === "s") g.add(mesh(new T.SphereGeometry(3.5 * k, 8, 6), mat(0x100808), 10 * k, headY - 5 * k, 0)); // the mouth, always open
+      if (type === "x") for (let i = 0; i < 6; i++) g.add(mesh(new T.SphereGeometry((3 + (i % 3)) * k, 8, 6), mat(0xc8e060, 0x405010), Math.cos(i * 1.1) * 15 * k, (12 + (i * 5) % 20) * k, Math.sin(i * 1.1) * 15 * k));
+      for (const s of [-1, 1]) {
+        const big = type === "c" && s === 1; // the charger has one enormous arm
+        const a = mesh(new T.BoxGeometry((big ? 30 : 24) * k, (big ? 12 : 5) * k, (big ? 12 : 5) * k), skin, 12 * k, 30 * k * tall, s * (big ? 16 : 12) * k); g.add(a); arms.push(a);
+      }
+    }
+    const fire = mesh(new T.ConeGeometry(12 * k, 40 * k, 8, 1, true), new T.MeshBasicMaterial({ color: 0xff8a20, transparent: true, opacity: 0.55, depthWrite: false }), 0, 26 * k, 0);
+    fire.visible = false; g.add(fire); g.userData.fire = fire;
     if (type === "b" && bk === "leshen") for (const s of [-1, 1]) { const a = mesh(new T.CylinderGeometry(3, 4, 70, 6), mat(0xd8cfae), 0, 90, s * 26); a.rotation.x = s * 0.6; g.add(a); const b2 = mesh(new T.CylinderGeometry(2, 3, 34, 6), mat(0xd8cfae), 0, 104, s * 50); b2.rotation.x = s * 1.3; g.add(b2); }
     if (type === "b" && bk === "golem") for (const s of [-1, 1]) g.add(mesh(new T.CylinderGeometry(7, 7, 40, 8), mat(0x6b5220), -10, 60, s * 30));
     if (type === "e" || (type === "b" && bk === "drowned")) { const c = mesh(new T.TorusGeometry(10 * k, 1.5 * k, 6, 20), mat(0xffd34d, 0x806010), 4 * k, 32 * k, 0); c.rotation.y = Math.PI / 2; c.rotation.x = 0.4; g.add(c); }
@@ -318,6 +344,7 @@ var R3D = (function () {
     const sky = new T.Color(0x8fc4e8).lerp(new T.Color(0x070a18), n);
     scene.background.copy(sky); scene.fog.color.copy(sky);
     scene.fog.near = lerp(1500, 120, n); scene.fog.far = lerp(4200, 1300, n);
+    if (S.g.fog && n > 0) { sky.lerp(new T.Color(0x2a2636), n); scene.background.copy(sky); scene.fog.color.copy(sky); scene.fog.near = 20; scene.fog.far = lerp(1300, 480, n); }
     L.hemi.intensity = lerp(1.7, 0.16, n); L.sun.intensity = lerp(2.2, 0.12, n);
     L.sun.color.setHex(n > 0.5 ? 0x8090ff : 0xfff2d8);
     // the Hearth
@@ -385,7 +412,7 @@ var R3D = (function () {
     // the dead
     const bk = S.g.bk;
     for (const zz of S.z) {
-      const [id, type, zx, zy, , burn, zh] = zz;
+      const [id, type, zx, zy, , burn, zh, charging] = zz;
       const e = pooled(`z:${id}:${type}:${type === "b" ? bk : ""}`, () => zombieMesh(type, bk));
       const px = e.x, py = e.y;
       smoothTo(e, zx, zy, zh || 0, dt);
@@ -394,7 +421,35 @@ var R3D = (function () {
       at(e.obj, e.x, e.y, e.z); e.obj.rotation.y = -(e.a || 0);
       const sw = Math.sin(t * 8 + id) * 0.25;
       e.obj.userData.arms.forEach((a, i) => { a.rotation.y = i ? sw : -sw; });
-      if (burn) e.obj.userData.arms[0].parent.children[0].material = mat(0xd0602a, 0x803010);
+      const fr = e.obj.userData.fire; fr.visible = !!burn; if (burn) { fr.scale.set(1, 0.8 + Math.sin(t * 20 + id) * 0.2, 1); fr.rotation.y = t * 3; }
+      if (e.obj.userData.wings) e.obj.userData.wings.forEach((w, i) => { w.rotation.x = (i ? 1 : -1) * Math.sin(t * 14 + id) * 0.7; });
+      if (charging) { e.obj.userData.arms.forEach((a) => { a.rotation.z = 0.5; }); e.obj.rotation.z = -0.25; } else e.obj.rotation.z = 0;
+    }
+    // grenades, molotovs and rockets in flight
+    for (const [id, kind, x, y, z] of S.pr || []) {
+      const e = pooled(`pr:${id}`, () => {
+        const g = new T.Group();
+        if (kind === "rocket") { const b = mesh(new T.CylinderGeometry(2.5, 2.5, 16, 8), mat(0x5a6a3a)); b.rotation.z = Math.PI / 2; g.add(b); const tail = mesh(new T.SphereGeometry(5, 8, 6), new T.MeshBasicMaterial({ color: 0xffb040 }), -10, 0, 0); g.add(tail); }
+        else if (kind === "molo") { g.add(mesh(new T.CylinderGeometry(3, 3.5, 11, 8), mat(0x6a4a1a))); g.add(mesh(new T.SphereGeometry(3, 6, 5), new T.MeshBasicMaterial({ color: 0xff9a20 }), 0, 8, 0)); }
+        else { g.add(mesh(new T.SphereGeometry(4.5, 10, 8), mat(0x3a5a2a))); g.add(mesh(new T.BoxGeometry(2, 3, 2), mat(0x999999), 0, 5, 0)); }
+        return g;
+      });
+      const px = e.px ?? x, py = e.py ?? y, pz = e.pz ?? z;
+      at(e.obj, x, y, z);
+      if (kind === "rocket" && (x !== px || y !== py)) { const hd = Math.hypot(x - px, y - py); e.obj.rotation.set(0, -Math.atan2(y - py, x - px), Math.atan2(z - pz, hd)); }
+      else e.obj.rotation.x = t * 12;
+      e.px = x; e.py = y; e.pz = z;
+    }
+    // fire on the ground
+    for (const [cx, cy, fz] of S.fi || []) {
+      const e = pooled(`fire:${cx}:${cy}`, () => {
+        const g = new T.Group(), flames = [];
+        for (let i = 0; i < 4; i++) { const f = mesh(new T.ConeGeometry(7 + (i % 2) * 3, 26 + i * 4, 6), new T.MeshBasicMaterial({ color: i % 2 ? 0xffd040 : 0xff6a10, transparent: true, opacity: 0.85, depthWrite: false }), (i % 2 ? 1 : -1) * (6 + i * 2), 12, ((i >> 1) ? 1 : -1) * 8); g.add(f); flames.push(f); }
+        const scorch = mesh(new T.CircleGeometry(22, 12), basic(0x2a1a10, 0.6)); scorch.rotation.x = -Math.PI / 2; scorch.position.y = 0.8; g.add(scorch);
+        g.userData.flames = flames; return g;
+      });
+      at(e.obj, (cx + 0.5) * 40, (cy + 0.5) * 40, fz);
+      e.obj.userData.flames.forEach((f, i) => { const k = 0.75 + Math.abs(Math.sin(t * (9 + i) + cx * 3 + cy)) * 0.5; f.scale.set(1, k, 1); f.position.y = 12 * k; });
     }
     // players
     let si = 0;
@@ -461,8 +516,8 @@ var R3D = (function () {
       let o = fxObjs.get(f);
       if (!o) {
         if (f.kind === "tr") { const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute([f.x1, f.z1 ?? 36, f.y1, f.x2, f.z2 ?? 36, f.y2], 3)); o = new T.Line(g, new T.LineBasicMaterial({ color: f.m ? 0xff4b4b : f.col, transparent: true })); }
-        else if (f.kind === "boom") o = mesh(new T.SphereGeometry(1, 14, 10), new T.MeshBasicMaterial({ color: f.dust ? 0xc8b48c : 0xff8a28, transparent: true, depthWrite: false }));
-        else if (f.kind === "shout") o = mesh(new T.TorusGeometry(1, 0.08, 6, 32), new T.MeshBasicMaterial({ color: 0xc8e6ff, transparent: true, depthWrite: false }));
+        else if (f.kind === "boom") o = mesh(new T.SphereGeometry(1, 14, 10), new T.MeshBasicMaterial({ color: f.col ?? (f.dust ? 0xc8b48c : 0xff8a28), transparent: true, depthWrite: false }));
+        else if (f.kind === "shout") o = mesh(new T.TorusGeometry(1, 0.08, 6, 32), new T.MeshBasicMaterial({ color: f.col ?? 0xc8e6ff, transparent: true, depthWrite: false }));
         else if (f.kind === "burn") o = mesh(new T.SphereGeometry(4, 6, 5), new T.MeshBasicMaterial({ color: 0xff9a20, transparent: true, depthWrite: false }));
         else if (f.kind === "slash") { o = mesh(new T.TorusGeometry(56, 3, 4, 20, 2.2), new T.MeshBasicMaterial({ color: f.m ? 0xff6a6a : 0xf0f6ff, transparent: true, depthWrite: false, side: T.DoubleSide })); }
         else continue;
