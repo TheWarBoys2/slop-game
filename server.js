@@ -1,12 +1,18 @@
 // SLOP VALLEY — game server. Run with `bun server.js [port]`.
 // Serves the browser client and runs the whole game authoritatively.
 import indexHtml from "./public/index.html" with { type: "text" };
-import gameJs from "./public/game.js" with { type: "text" };
+import gameSrc from "./public/game.js" with { type: "text" };
+import moveJs from "./public/move.js" with { type: "text" };
+import r3dJs from "./public/r3d.js" with { type: "text" };
+import threeJs from "./public/vendor/three.module.min.js" with { type: "text" };
 import os from "node:os";
 import { storyEvent, bossKind, BOSSES, ending, valleyName } from "./story.js";
 import { NPCS, QUESTS, CLUES, npcLines } from "./npcs.js";
+import { COSMETICS, FREE_HATS, rollCosmetic, WHEEL, spinWheel, deck, bjValue, pokerScore, handName, compareHands, dealerHolds } from "./casino.js";
 import { LEGENDS, legendOf, legendName, reckoning, legendLines } from "./legend.js";
 
+const MV = new Function(moveJs + "\nreturn MV;")(); // the same movement code the browser predicts with
+const gameJs = moveJs + "\n" + r3dJs + "\n" + gameSrc;
 const PORT = Number(process.argv[2] || process.env.PORT || 7777);
 const TICK_RATE = 30;
 const SNAP_EVERY = 2; // 15 snapshots/sec
@@ -21,6 +27,9 @@ const ROYALE_ZONES = [ // [wait, shrink, radius]
 ].map(([w, s, r]) => [FAST ? w / 6 : w, FAST ? s / 4 : s, r]);
 const STORY_ZONE_R = [1700, 1350, 1100, 920, 800, 680];
 const TEST_DMG = Number(process.env.SLOP_DMG || 1); // testing only
+const UNLUCKY = process.env.SLOP_UNLUCKY ? 1 : 0.00004; // 0.004% per level-up or upgrade. As requested.
+const INFECT = process.env.SLOP_INFECT ? 1 : 0.08; // chance a bite infects you
+const FORCE_SYM = process.env.SLOP_SYM || ""; // testing only
 const INTRO_LEN = { story: FAST ? 3 : 25, royale: FAST ? 2 : 10 };
 const COUNTDOWN = FAST ? 1 : 4;
 
@@ -35,7 +44,7 @@ function mulberry(seed) { return () => { seed |= 0; seed = (seed + 0x6d2b79f5) |
 
 // ---------------------------------------------------------------- map (procedural)
 const W = 2400, H = 1800;
-const HEARTH = { x: 1120, y: 840, w: 160, h: 120, kind: "hearth" };
+const HEARTH = { x: 1120, y: 840, w: 160, h: 120, kind: "hearth", z0: 0, z1: 90 };
 let WALLS = [HEARTH];
 let MAP_SEED = 1;
 let VALLEY = "Slopholm";
@@ -56,10 +65,50 @@ function generateMap(seed) {
     return hit(clear) || walls.some(hit);
   };
   const place = (n, mk, pad) => { for (let i = 0, tries = 0; i < n && tries < 400; tries++) { const r = mk(); if (!overlaps(r, pad)) { walls.push(r); i++; } } };
-  place(4 + ((rng() * 4) | 0), () => ({ x: R(80, W - 320), y: R(80, H - 260), w: R(170, 280), h: R(120, 180), kind: "house", roof: (rng() * 4) | 0 }), 90);
-  place(5 + ((rng() * 5) | 0), () => { const s = R(55, 95); return { x: R(80, W - 160), y: R(80, H - 160), w: s, h: s * R(0.7, 1.1), kind: "rock" }; }, 70);
-  place(8 + ((rng() * 8) | 0), () => { const s = R(40, 56); return { x: R(80, W - 120), y: R(80, H - 120), w: s, h: s, kind: "tree" }; }, 50);
-  place(3 + ((rng() * 4) | 0), () => rng() < 0.5 ? { x: R(80, W - 260), y: R(80, H - 80), w: R(120, 220), h: 18, kind: "fence" } : { x: R(80, W - 80), y: R(80, H - 260), w: 18, h: R(120, 220), kind: "fence" }, 70);
+  // verticality first, so the big stuff gets room: watchtowers joined by catwalks, each with a staircase
+  const stairs = (tx, ty, tw, th, top, dir) => { // a solid staircase climbing towards one face of a box
+    const n = Math.ceil(top / 20), d = 30, wd = 44, out = [];
+    for (let i = 0; i < n; i++) {
+      const k = n - i; // distance from the face, in steps
+      const z1 = Math.round(top * (i + 1) / n);
+      if (dir === 0) out.push({ x: tx + tw + (k - 1) * d, y: ty + th / 2 - wd / 2, w: d, h: wd, kind: "step", z0: 0, z1 });
+      else if (dir === 1) out.push({ x: tx - k * d, y: ty + th / 2 - wd / 2, w: d, h: wd, kind: "step", z0: 0, z1 });
+      else if (dir === 2) out.push({ x: tx + tw / 2 - wd / 2, y: ty + th + (k - 1) * d, w: wd, h: d, kind: "step", z0: 0, z1 });
+      else out.push({ x: tx + tw / 2 - wd / 2, y: ty - k * d, w: wd, h: d, kind: "step", z0: 0, z1 });
+    }
+    return out;
+  };
+  const group = (list, pad) => { if (list.every((r) => !overlaps(r, pad))) { walls.push(...list); return true; } return false; };
+  for (let i = 0, tries = 0; i < 2 + ((rng() * 2) | 0) && tries < 300; tries++) { // pairs of towers with a catwalk between them
+    const top = Math.round(R(170, 230)), tw = 76, gap = Math.round(R(220, 420)), horiz = rng() < 0.5;
+    const ax = R(100, W - 700), ay = R(100, H - 600);
+    const a = { x: ax, y: ay, w: tw, h: tw, kind: "tower", z0: 0, z1: top };
+    const b = horiz ? { ...a, x: ax + tw + gap } : { ...a, y: ay + tw + gap };
+    const br = horiz ? { x: ax + tw, y: ay + tw / 2 - 22, w: gap, h: 44, kind: "bridge", z0: top - 14, z1: top } : { x: ax + tw / 2 - 22, y: ay + tw, w: 44, h: gap, kind: "bridge", z0: top - 14, z1: top };
+    const st = stairs(a.x, a.y, tw, tw, top, horiz ? 1 : 3);
+    if (group([a, b, br, ...st], 60)) i++;
+  }
+  place(4 + ((rng() * 4) | 0), () => ({ x: R(80, W - 320), y: R(80, H - 260), w: R(170, 280), h: R(120, 180), kind: "house", roof: (rng() * 4) | 0, z0: 0, z1: Math.round(R(96, 136)) }), 90);
+  // some houses get an outside staircase to the roof
+  for (const h of walls.filter((w) => w.kind === "house")) {
+    if (rng() < 0.35) continue;
+    const dir = (rng() * 4) | 0, st = stairs(h.x, h.y, h.w, h.h, h.z1, dir);
+    walls.splice(walls.indexOf(h), 1);
+    if (!group(st, 40)) { /* no room on that side */ }
+    walls.push(h);
+  }
+  // floating ledges, each with a jump pad beside it
+  for (let i = 0, tries = 0; i < 3 && tries < 200; tries++) {
+    const x = R(120, W - 320), y = R(120, H - 320), z0 = Math.round(R(130, 170));
+    const ledge = { x, y, w: 120, h: 120, kind: "ledge", z0, z1: z0 + 16 };
+    const pad = { x: x + 140, y: y + 40, w: 40, h: 40, kind: "pad", z0: 0, z1: 4 };
+    if (!overlaps({ x: x - 10, y: y - 10, w: 200, h: 140 }, 50)) { walls.push(ledge, pad); i++; }
+  }
+  place(5 + ((rng() * 5) | 0), () => { const s = R(55, 95); return { x: R(80, W - 160), y: R(80, H - 160), w: s, h: s * R(0.7, 1.1), kind: "rock", z0: 0, z1: Math.round(R(30, 64)) }; }, 70);
+  place(8 + ((rng() * 8) | 0), () => { const s = R(40, 56); return { x: R(80, W - 120), y: R(80, H - 120), w: s, h: s, kind: "tree", z0: 0, z1: 260 }; }, 50);
+  place(3 + ((rng() * 4) | 0), () => rng() < 0.5 ? { x: R(80, W - 260), y: R(80, H - 80), w: R(120, 220), h: 18, kind: "fence", z0: 0, z1: 34 } : { x: R(80, W - 80), y: R(80, H - 260), w: 18, h: R(120, 220), kind: "fence", z0: 0, z1: 34 }, 70);
+  place(3 + ((rng() * 3) | 0), () => ({ x: R(80, W - 140), y: R(80, H - 140), w: 44, h: 44, kind: "pad", z0: 0, z1: 4 }), 60); // jump pads out in the open
+  place(4 + ((rng() * 4) | 0), () => ({ x: R(80, W - 140), y: R(80, H - 140), w: 50, h: 50, kind: "crate", z0: 0, z1: 50 }), 50); // hay bales to hop on
   WALLS = walls;
 }
 generateMap((Math.random() * 1e9) | 0);
@@ -92,11 +141,13 @@ const WEAPONS = {
   rifle:   { name: "Rifle",      dmg: 30,  rate: 7,   spread: 0.08,  range: 900,  pellets: 1, mag: 30, reload: 2.3, bloom: 0.2 },
   sniper:  { name: "Sniper",     dmg: 130, rate: 0.8, spread: 0.01,  range: 1600, pellets: 1, mag: 5,  reload: 3.0, bloom: 0, pierce: true },
   staff:   { name: "Fire Staff", dmg: 45,  rate: 1.5, spread: 0.03,  range: 700,  pellets: 1, mag: 10, reload: 2.0, bloom: 0.3, boom: 90 },
+  ak:      { name: "AK-Maybe",   dmg: 26,  rate: 9,   spread: 0.09,  range: 820,  pellets: 1, mag: 30, reload: 2.2, bloom: 0.18, gamble: true }, // every shot re-rolls the ammo count
+  sword:   { name: "Slop Sword", dmg: 70,  rate: 1.8, spread: 0,     range: 92,   pellets: 1, mag: 1,  reload: 0,   bloom: 0, melee: true, arc: 1.1 }, // no ammo, lunges, hits harder falling
 };
 const MYTHIC = {
-  smg: "The Hive", shotgun: "Farmer's Wrath", rifle: "Kingmaker", sniper: "The Last Word", staff: "Morwen's Spite", pistol: "Grubb's Gavel",
+  smg: "The Hive", shotgun: "Farmer's Wrath", rifle: "Kingmaker", sniper: "The Last Word", staff: "Morwen's Spite", pistol: "Grubb's Gavel", ak: "Lady Luck", sword: "Excalibutt",
 };
-const LOOT_TYPES = ["smg", "shotgun", "rifle", "sniper", "staff"];
+const LOOT_TYPES = ["smg", "shotgun", "rifle", "sniper", "staff", "smg", "shotgun", "rifle", "sniper", "staff", "ak", "sword"]; // the AK is rarer
 const RARITY = ["Common", "Rare", "Epic", "Legendary", "Mythic"];
 const RARITY_MULT = [1, 1.2, 1.4, 1.7, 2.0];
 const ENH_NAMES = ["", "PRI", "DUO", "TRI", "TET", "PEN"];
@@ -154,9 +205,12 @@ const SHOP = {
   shotgun: { name: "Shotgun", cost: 100 },
   rifle:   { name: "Rifle", cost: 150 },
   sniper:  { name: "Sniper", cost: 220 },
+  sword:   { name: "Slop Sword", cost: 90 },
   case:    { name: "Mystery Case", cost: 100 },
+  gcase:   { name: "Golden Case (wheel spins!)", cost: 150 },
   enhance: { name: "Enhance weapon", cost: 0 },
   repair:  { name: "Repair Hearth", cost: 75 },
+  antidote: { name: "Antidote", cost: 40 },
 };
 
 const VEHICLES = {
@@ -164,31 +218,44 @@ const VEHICLES = {
   buggy:   { name: "Slop Buggy", r: 24, max: 480, acc: 430, turn: 3.0, hp: 300, ram: 1.0 },
 };
 const PIECES = {
-  wall:   { name: "Wall",   cost: 25,  hp: 300, solid: true,  desc: "Blocks the dead (and bullets). They will chew through it." },
+  wall:   { name: "Wall",   cost: 25,  hp: 300, solid: true, z1: 70,  desc: "Blocks the dead (and bullets). They will chew through it." },
   spikes: { name: "Spikes", cost: 35,  hp: 1,   solid: false, uses: 15, desc: "Hurts whatever walks over it. 15 uses." },
-  turret: { name: "Turret", cost: 140, hp: 300, solid: true,  range: 380, rate: 2.2, dmg: 16, desc: "Shoots the nearest threat. Never needs reloading." },
+  turret: { name: "Turret", cost: 140, hp: 300, solid: true, z1: 50,  range: 380, rate: 2.2, dmg: 16, desc: "Shoots the nearest threat. Never needs reloading." },
   lamp:   { name: "Lamp",   cost: 20,  hp: 80,  solid: false, desc: "Lights up the night around it." },
 };
 const GRID = 40;
 
 // ---------------------------------------------------------------- geometry
-function collide(e, r) {
-  let hit = false;
-  for (const w of WALLS) {
-    const cx = clamp(e.x, w.x, w.x + w.w), cy = clamp(e.y, w.y, w.y + w.h);
-    const dx = e.x - cx, dy = e.y - cy, d2 = dx * dx + dy * dy;
-    if (d2 >= r * r) continue;
-    hit = true;
-    if (d2 > 1e-4) { const d = Math.sqrt(d2); e.x = cx + (dx / d) * r; e.y = cy + (dy / d) * r; }
-    else {
-      const l = e.x - w.x, rr = w.x + w.w - e.x, t = e.y - w.y, b = w.y + w.h - e.y, m = Math.min(l, rr, t, b);
-      if (m === l) e.x = w.x - r; else if (m === rr) e.x = w.x + w.w + r; else if (m === t) e.y = w.y - r; else e.y = w.y + w.h + r;
-    }
+function collide(e, r) { return !!MV.pushOut(e, r, WALLS, W, H); } // at the entity's own height (ground level if it has none)
+// 3D slab test against a box; returns the distance along the (unit) ray or Infinity
+function rayBox3(o, d, b) {
+  let tmin = 0, tmax = Infinity;
+  const lo = [b.x, b.y, b.z0], hi = [b.x + b.w, b.y + b.h, b.z1];
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-9) { if (o[i] < lo[i] || o[i] > hi[i]) return Infinity; continue; }
+    let t1 = (lo[i] - o[i]) / d[i], t2 = (hi[i] - o[i]) / d[i];
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return Infinity;
   }
-  if (e.x < r || e.x > W - r || e.y < r || e.y > H - r) hit = true;
-  e.x = clamp(e.x, r, W - r); e.y = clamp(e.y, r, H - r);
-  return hit;
+  return tmin;
 }
+// a standing thing is a vertical cylinder
+function rayCyl(o, d, c, r, z0, z1) {
+  const hl = Math.hypot(d[0], d[1]);
+  let best = Infinity;
+  if (hl > 1e-6) {
+    const th = rayCircle(o[0], o[1], d[0] / hl, d[1] / hl, c, r);
+    if (th < Infinity) { const t = th / hl, z = o[2] + d[2] * t; if (z >= z0 && z <= z1) best = t; }
+  }
+  if (Math.abs(d[2]) > 1e-6) for (const zc of [z0, z1]) {
+    const t = (zc - o[2]) / d[2];
+    if (t > 0 && t < best) { const px = o[0] + d[0] * t - c.x, py = o[1] + d[1] * t - c.y; if (px * px + py * py < r * r) best = t; }
+  }
+  return best;
+}
+const zHeight = (z) => z.r * 3.7;
+function freeGround(p) { return MV.floorAt(p.x, p.y, 20, 0, WALLS).h === 0 && !WALLS.some((w) => w.kind === "pad" && MV.touches(w, p.x, p.y, 40)); }
 function rayRect(x, y, dx, dy, w) {
   let tmin = 0, tmax = Infinity;
   for (const [o, d, lo, hi] of [[x, dx, w.x, w.x + w.w], [y, dy, w.y, w.y + w.h]]) {
@@ -212,7 +279,7 @@ function freeSpot(r = 30) {
   for (let i = 0; i < 100; i++) {
     const p = { x: rand(100, W - 100), y: rand(100, H - 100) };
     if (PLOTS.some((pl) => dist2(pl, p) < 90 * 90)) continue;
-    const q = { ...p }; collide(q, r); if (q.x === p.x && q.y === p.y) return p;
+    const q = { ...p }; collide(q, r); if (q.x === p.x && q.y === p.y && freeGround(p)) return p;
   }
   return { x: 200, y: 200 };
 }
@@ -255,8 +322,8 @@ function makePlayer(ws, msg) {
     eyes: String(msg.eyes || "dot").slice(0, 10), bg, chosenTrait: chosen,
     cls, gen: 1, trait: chosen || pick(TRAIT_KEYS), x: 0, y: 0, a: 0, keys: 0, firing: false,
     hp: 0, armor: 0, gold: 0, seeds: 0, dead: false, respawnAt: 0, weapons: [], active: 0,
-    heat: 0, dashUntil: 0, dashCd: 0, dashDx: 0, dashDy: 0, shoutCd: 0, vx: 0, vy: 0, lastHurt: 0,
-    pe: [], lineage: [], champion: false,
+    heat: 0, dashUntil: 0, dashCd: 0, dashDx: 0, dashDy: 0, z: 0, vz: 0, gr: true, pt: null, rel: false, shoutCd: 0, vx: 0, vy: 0, lastHurt: 0,
+    pe: [], lineage: [], champion: false, cos: new Set(), trail: "", title: "", spunTotal: 0,
   };
   resetProgress(p);
   resetLoadout(p, true);
@@ -266,7 +333,8 @@ function resetProgress(p) {
   p.lvl = 1; p.xp = 0; p.pts = 0; p.sk = { ...(BACKGROUNDS[p.bg].sk || {}) };
   p.gen = 1; p.lineage = []; p.trait = p.chosenTrait || pick(TRAIT_KEYS); p.champion = false; p.heat = 0; p.dead = false;
   p.st = { kills: 0, deaths: 0, dmg: 0, crops: 0, tk: 0, gold: 0, bounty: 0, shots: 0, hits: 0, hs: 0, perfect: 0, cases: 0, shoutHits: 0, repairs: 0, pk: 0 };
-  p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.veh = 0;
+  p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.veh = 0; p.spins = 0; p.casino = null; p.spinning = false;
+  p.bl = 0; p.bw = 0; p.going = 0; p.goKind = ""; p.inf = null; p.soggy = 0; p.ads = false;
 }
 function resetLoadout(p, fresh) {
   p.hp = maxHp(p); p.armor = 0;
@@ -274,7 +342,7 @@ function resetLoadout(p, fresh) {
   if (fresh && CLASSES[p.cls].start) p.weapons.push(newWeapon(CLASSES[p.cls].start));
   p.active = p.weapons.length - 1;
   if (fresh) { p.gold = (FAST ? 2000 : 50) + (BACKGROUNDS[p.bg].gold || 0); p.seeds = p.cls === "farmer" ? 6 : 3; }
-  Object.assign(p, hearthSpawn());
+  Object.assign(p, hearthSpawn(), { z: 0, vx: 0, vy: 0, vz: 0, gr: true });
 }
 
 function deed(k, n) { if (game.mode === "story") game.deeds[k] += n; }
@@ -288,7 +356,19 @@ function addXp(p, amt) {
     p.xp -= xpNeed(p.lvl); p.lvl++; p.pts++;
     p.pe.push({ k: "lvl", lvl: p.lvl });
     if (p.lvl % 5 === 0) feed(`${fullName(p)} reached level ${p.lvl}`, "#9fe0ff");
+    if (unlucky(p)) break;
   }
+}
+// the 0.004%: every level-up and upgrade rolls it. Almost nobody will ever see this.
+function unlucky(p) {
+  if (Math.random() >= UNLUCKY) return false;
+  const lv = p.lvl;
+  p.lvl = 1; p.xp = 0; p.pts = 0; p.sk = { ...(BACKGROUNDS[p.bg].sk || {}) };
+  for (const w of p.weapons) w.enh = 0;
+  p.hp = Math.min(p.hp, maxHp(p));
+  feed(`The 0.004% happened to ${fullName(p)}. Level ${lv}, every skill and every upgrade: gone.`, "#ff4b4b");
+  p.pe.push({ k: "unlucky", lv });
+  return true;
 }
 function gaffers() { return [...players.values()].filter((q) => q.cls === "gaffer" && !q.dead); }
 function addGold(p, amt, reason) {
@@ -301,6 +381,8 @@ function speedOf(p) {
   let s = 210 * CLASSES[p.cls].speed * (1 + (traitOf(p).speed || 0)) * (1 + 0.06 * sk(p, "fleet")) * game.mods.speed;
   if (inAura(p)) s *= 1.1;
   if (p.weapons[p.active]?.type === "sniper") s *= 0.85;
+  if (p.ads) s *= 0.6;
+  if (now() < p.soggy) s *= 0.8;
   return s;
 }
 function inAura(p) { return gaffers().some((g) => g !== p && dist2(g, p) < 260 * 260); }
@@ -320,14 +402,68 @@ function spreadOf(p, w) {
   let s = def.spread * (0.3 + w.bloom) * (1 + (traitOf(p).spread || 0));
   if (moving) s *= w.type === "sniper" ? 8 : 1.7;
   if (w.type === "shotgun") s = def.spread * (moving ? 1.15 : 1);
+  if (p.ads) s *= w.type === "shotgun" ? 0.75 : 0.4;
   return s;
+}
+
+// ---------------------------------------------------------------- infection and bodily needs
+// A bite can infect you. Infection cycles through symptoms until dawn, an antidote, or it wears off.
+// "second": you see yourself through someone else's eyes. "keys": your controls rearrange themselves. "runs": self-explanatory.
+const SYMPTOMS = {
+  second: "Second person. You are no longer the main character. You are being watched.",
+  keys: "Your fingers forget. Forward is P, back is INSERT, left is ALT. There is no right.",
+  runs: "Your stomach makes a noise like a drain. Find somewhere private. Soon.",
+};
+function infect(p) {
+  if (p.inf || p.dead) return;
+  p.inf = { until: now() + 70, sym: "", next: 0 };
+  nextSymptom(p);
+  feed(`${fullName(p)} got bitten and doesn't look well.`, "#9fdc5a");
+}
+function nextSymptom(p) {
+  const opts = Object.keys(SYMPTOMS).filter((k) => k !== p.inf.sym);
+  p.inf.sym = SYMPTOMS[FORCE_SYM] ? FORCE_SYM : pick(opts); p.inf.next = now() + 20;
+  p.pe.push({ k: "sym", sym: p.inf.sym, text: SYMPTOMS[p.inf.sym] });
+}
+function cure(p, why) { if (!p.inf) return; p.inf = null; p.pe.push({ k: "sym", sym: "", text: why }); }
+function needs(p, dt, t) {
+  if (t < p.going) return;
+  const k = FAST ? 5 : 1; // bladder fills in ~3.5 min, bowels ~6 min (the runs: under a minute)
+  p.bl = Math.min(100, p.bl + dt * k * 100 / 210);
+  p.bw = Math.min(100, p.bw + dt * k * 100 / 340 * (p.inf && p.inf.sym === "runs" ? 8 : 1));
+  for (const [k, name] of [["bl", "bladder"], ["bw", "bowels"]]) {
+    const v = p[k];
+    if (v >= 80 && !p["warn" + k]) { p["warn" + k] = true; toast(p, `Your ${name} is at ${Math.round(v)}%. Press X to go.`, "#ffc030"); }
+    if (v >= 100) accident(p, k === "bl" ? "pee" : "poo");
+  }
+}
+function accident(p, kind) {
+  if (kind === "pee") { p.bl = 0; p.warnbl = false; p.soggy = now() + 20; feed(`${fullName(p)} wet themselves in front of everyone.`, "#e8d84a"); }
+  else { p.bw = 0; p.warnbw = false; p.soggy = now() + 35; feed(`${fullName(p)} soiled themselves. The flies have found a new favourite.`, "#a0703a"); }
+  events.push({ k: "mess", x: Math.round(p.x), y: Math.round(p.y), kind, big: 1 });
+  p.pe.push({ k: "accident", kind });
+}
+function relieve(p) {
+  const t = now();
+  if (p.dead || p.air || p.veh || t < p.going || game.phase === "intro") return;
+  const kind = p.bw >= p.bl ? "poo" : "pee";
+  if (Math.max(p.bl, p.bw) < 25) return toast(p, "You don't need to go. You try anyway. Nothing.", "#bbb");
+  p.going = t + (kind === "poo" ? 2.2 : 1.4); p.goKind = kind;
+  setTimeout(() => {
+    if (p.dead || !players.has(p.id)) return;
+    if (kind === "pee") { p.bl = 0; p.warnbl = false; } else { p.bw = 0; p.warnbw = false; }
+    events.push({ k: "mess", x: Math.round(p.x), y: Math.round(p.y), kind });
+    const plot = PLOTS.find((pl) => (pl.stage === 1 || pl.stage === 2) && dist2(pl, p) < 60 * 60);
+    if (plot && kind === "poo") { plot.stage++; plot.prog = 0; deed("soil", 3); toast(p, "Fertilised. The crop grows a whole stage. Nature is disgusting.", "#7fd34d"); }
+    else toast(p, kind === "pee" ? "Ahh. Relief." : "Much better. Don't look behind you.", "#8f8");
+  }, (p.going - t) * 1000);
 }
 
 // ---------------------------------------------------------------- combat
 function hurtZombie(z, dmg, p, kind) {
   if (z.hp <= 0) return;
   z.hp -= dmg;
-  if (p) { p.st.dmg += dmg; p.pe.push({ k: "dmg", x: z.x, y: z.y - z.r, v: Math.round(dmg), crit: kind === "crit", hs: kind === "hs" }); }
+  if (p) { p.st.dmg += dmg; p.pe.push({ k: "dmg", x: z.x, y: z.y - z.r, z: Math.round((z.z || 0) + zHeight(z)), v: Math.round(dmg), crit: kind === "crit", hs: kind === "hs" }); }
   if (z.hp <= 0) {
     const def = ZTYPES[z.type];
     if (p) deed("blood", z.type === "boss" || z.type === "elite" ? 20 : 0.4);
@@ -353,7 +489,7 @@ function hurtPlayer(v, dmg, attacker, cause) {
   if (attacker && attacker !== v) {
     if (game.mode !== "royale") { dmg *= 0.5; attacker.heat += dmg; } // friendly fire is real, but halved
     attacker.st.dmg += dmg;
-    attacker.pe.push({ k: "dmg", x: v.x, y: v.y - 20, v: Math.round(dmg), crit: false, ff: true });
+    attacker.pe.push({ k: "dmg", x: v.x, y: v.y - 20, z: Math.round(v.z + MV.HGT), v: Math.round(dmg), crit: false, ff: true });
   }
   const veh = vehOf(v);
   if (veh && cause !== "blown up in a vehicle") { hurtVehicle(veh, dmg * 0.7, attacker); dmg *= 0.35; if (v.dead) return; }
@@ -365,7 +501,7 @@ function hurtPlayer(v, dmg, attacker, cause) {
 function killPlayer(v, attacker, cause) {
   if (v.dead) return;
   if (v.veh) exitVehicle(v);
-  v.dead = true; v.hp = 0; v.respawnAt = now() + 5; v.st.deaths++; v.champion = false; v.dlg = null;
+  v.dead = true; v.hp = 0; v.inf = null; v.going = 0; v.ads = false; v.respawnAt = now() + 5; v.st.deaths++; v.champion = false; v.dlg = null;
   const prim = v.weapons.find((w) => w.type !== "pistol");
   if (prim) crates.push({ id: nextId++, x: v.x, y: v.y, w: { ...prim, ammo: WEAPONS[prim.type].mag, reloadUntil: 0, hot: false }, grave: true });
   const vStars = Math.min(5, Math.floor(v.heat / 40));
@@ -404,11 +540,44 @@ function respawnHeir(p) {
   feed(`${fullName(p)} inherits the farm`, "#c0a0ff");
 }
 
+// the sword: a wide swing in front of you with a lunge. Falling onto something doubles as a plunge attack.
+function swing(p, w) {
+  const def = WEAPONS[w.type], t = now();
+  w.nextShot = t + 1 / def.rate;
+  p.st.shots++;
+  const mult = dmgMult(p, w) * (w.rarity === 4 ? 1.5 : 1);
+  const plunge = !p.gr && p.vz < -250;
+  const lunge = plunge ? 0 : 230;
+  p.vx += Math.cos(p.a) * lunge; p.vy += Math.sin(p.a) * lunge;
+  events.push({ k: "slash", id: p.id, x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), a: +p.a.toFixed(2), m: w.rarity === 4 ? 1 : 0 });
+  const reach = def.range + (plunge ? 30 : 0);
+  const inArc = (e, r, ez, eh) => {
+    const dx = e.x - p.x, dy = e.y - p.y, d = Math.hypot(dx, dy) - r;
+    if (d > reach) return false;
+    if (ez + eh < p.z - 20 - (plunge ? 60 : 0) || ez > p.z + MV.HGT + 20) return false;
+    if (d < 10) return true;
+    let da = Math.atan2(dy, dx) - p.a; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
+    return Math.abs(da) < (plunge ? Math.PI : def.arc);
+  };
+  let any = false;
+  for (const z of zombies) if (z.hp > 0 && inArc(z, z.r, z.z || 0, zHeight(z))) {
+    any = true;
+    let dmg = def.dmg * mult * (plunge ? 1.8 : 1), tag = plunge ? "hs" : "";
+    if (p.cls === "rogue" && Math.random() < 0.25 + (traitOf(p).luck ? 0.1 : 0)) { dmg *= 2; tag = tag || "crit"; }
+    hurtZombie(z, dmg, p, tag);
+    const d = Math.hypot(z.x - p.x, z.y - p.y) || 1; z.vx += (z.x - p.x) / d * 220; z.vy += (z.y - p.y) / d * 220;
+  }
+  for (const q of players.values()) if (q !== p && !q.dead && !q.veh && !q.air && inArc(q, 16, q.z, MV.HGT)) { any = true; hurtPlayer(q, def.dmg * mult * (plunge ? 1.8 : 1), p, "cut in half"); }
+  if (plunge) { p.vz = 380; events.push({ k: "boom", x: p.x, y: p.y, z: p.z, r: 50, dust: 1 }); } // bounce off whatever you landed on
+  if (any) p.st.hits++;
+}
 function shoot(p, w) {
   const def = WEAPONS[w.type];
+  if (def.melee) return swing(p, w);
   const t = now();
   w.nextShot = t + 1 / def.rate;
   w.ammo--;
+  if (def.gamble && w.ammo > 0) w.ammo = Math.floor(Math.random() * (w.rarity === 4 ? 150 : 100)); // could be 97, could be 0
   p.st.shots++;
   const myth = w.rarity === 4;
   const mult = dmgMult(p, w);
@@ -417,29 +586,37 @@ function shoot(p, w) {
   const pellets = def.pellets + (myth && w.type === "shotgun" ? 4 : 0);
   const pierce = def.pierce || (myth && w.type === "rifle");
   const boom = def.boom ? def.boom * (myth ? 1.6 : 1) : myth && w.type === "sniper" ? 110 : 0;
-  const mx = p.x + Math.cos(p.a) * 20, my = p.y + Math.sin(p.a) * 20;
+  // aim: yaw + pitch in the 3D views. The classic top-down view (and bots) send no pitch, and then height is ignored for targets.
+  const flat = p.pt == null;
+  const mx = p.x + Math.cos(p.a) * 20, my = p.y + Math.sin(p.a) * 20, mz = (p.z || 0) + MV.EYE - 6;
+  const inZ = (tz, z0, z1) => flat || (tz >= z0 && tz <= z1);
   let anyHit = false;
   for (let i = 0; i < pellets; i++) {
     const a = p.a + (Math.random() - 0.5) * 2 * spread;
-    const dx = Math.cos(a), dy = Math.sin(a);
+    const pt = flat ? 0 : p.pt + (Math.random() - 0.5) * 2 * spread * 0.7;
+    const dx = Math.cos(a) * Math.cos(pt), dy = Math.sin(a) * Math.cos(pt), dz = Math.sin(pt);
+    const o = [mx, my, mz], d = [dx, dy, dz];
     let wallT = def.range;
-    for (const wl of WALLS) wallT = Math.min(wallT, rayRect(mx, my, dx, dy, wl));
+    for (const wl of WALLS) wallT = Math.min(wallT, rayBox3(o, d, wl));
+    if (dz < -1e-6) wallT = Math.min(wallT, -mz / dz); // the ground
     const hits = [];
-    for (const z of zombies) { const tt = rayCircle(mx, my, dx, dy, z, z.r); if (tt < wallT) hits.push([tt, z, "z"]); }
+    const cyl = (c, r, z0, z1) => flat ? (() => { const hl = Math.hypot(dx, dy) || 1, th = rayCircle(mx, my, dx / hl, dy / hl, c, r); return th / hl; })() : rayCyl(o, d, c, r, z0, z1);
+    for (const z of zombies) { const tt = cyl(z, z.r, z.z || 0, (z.z || 0) + zHeight(z)); if (tt < wallT) hits.push([tt, z, "z"]); }
     for (const q of players.values()) {
       if (q === p || q.dead || q.veh || q.air) continue;
-      const tt = rayCircle(mx, my, dx, dy, q, 16); if (tt < wallT) hits.push([tt, q, "p"]);
+      const tt = cyl(q, 16, q.z, q.z + MV.HGT); if (tt < wallT) hits.push([tt, q, "p"]);
     }
-    if (game.mode === "royale") for (const v of vehicles) { if (v.id === p.veh) continue; const tt = rayCircle(mx, my, dx, dy, v, VEHICLES[v.kind].r); if (tt < wallT) hits.push([tt, v, "v"]); }
+    if (game.mode === "royale") for (const v of vehicles) { if (v.id === p.veh) continue; const tt = cyl(v, VEHICLES[v.kind].r, 0, 40); if (tt < wallT) hits.push([tt, v, "v"]); }
     hits.sort((a, b) => a[0] - b[0]);
     let endT = wallT;
     if (def.boom) {
       endT = hits.length ? hits[0][0] : wallT;
-      const bx = mx + dx * endT, by = my + dy * endT;
-      events.push({ k: "boom", x: bx, y: by, r: boom });
+      const bx = mx + dx * endT, by = my + dy * endT, bz = mz + dz * endT;
+      events.push({ k: "boom", x: bx, y: by, z: bz, r: boom });
       if (hits.length) anyHit = true;
-      for (const z of zombies) if ((z.x - bx) ** 2 + (z.y - by) ** 2 < (boom + z.r) ** 2) hurtZombie(z, def.dmg * mult, p);
-      for (const q of players.values()) if (!q.dead && (q.x - bx) ** 2 + (q.y - by) ** 2 < boom ** 2) hurtPlayer(q, def.dmg * mult * 0.3, q === p ? null : p, "blown up by their own fireball");
+      const near = (e, ez, r) => (e.x - bx) ** 2 + (e.y - by) ** 2 + (flat ? 0 : (ez - bz) ** 2) < r * r;
+      for (const z of zombies) if (near(z, (z.z || 0) + z.r, boom + z.r)) hurtZombie(z, def.dmg * mult, p);
+      for (const q of players.values()) if (!q.dead && near(q, q.z + 28, boom)) hurtPlayer(q, def.dmg * mult * 0.3, q === p ? null : p, "blown up by their own fireball");
     } else {
       const vi = hits.findIndex((h) => h[2] === "v");
       if (vi >= 0) hits.length = vi + 1; // vehicles stop bullets, even piercing ones
@@ -449,11 +626,11 @@ function shoot(p, w) {
         anyHit = true;
         let dmg = def.dmg * mult;
         if (kind === "v") { hurtVehicle(target, dmg * 0.6, p); continue; }
-        // precision: a shot through the middle of the target is a headshot
-        const perp = Math.abs((target.x - mx) * dy - (target.y - my) * dx);
-        const r = kind === "z" ? target.r : 16;
-        let tag = "";
-        if (perp < r * 0.38 && w.type !== "shotgun") { dmg *= 1.75 + 0.25 * sk(p, "deadeye"); tag = "hs"; p.st.hs++; }
+        // precision: in 3D a headshot is the top fifth of the target; top-down, it's a shot through the middle
+        let tag = "", head;
+        if (flat) { const hl = Math.hypot(dx, dy) || 1; head = Math.abs((target.x - mx) * dy / hl - (target.y - my) * dx / hl) < (kind === "z" ? target.r : 16) * 0.38; }
+        else { const th = hits.find((h) => h[1] === target)[0], hz = mz + dz * th, tz = target.z || 0, hh = kind === "z" ? zHeight(target) : MV.HGT; head = hz > tz + hh * 0.8; }
+        if (head && w.type !== "shotgun") { dmg *= 1.75 + 0.25 * sk(p, "deadeye"); tag = "hs"; p.st.hs++; }
         if (p.cls === "rogue" && Math.random() < 0.25 + (traitOf(p).luck ? 0.1 : 0)) { dmg *= 2; tag = tag || "crit"; }
         if (kind === "z") {
           hurtZombie(target, dmg, p, tag);
@@ -463,11 +640,11 @@ function shoot(p, w) {
       }
       if (boom) {
         const bx = mx + dx * endT, by = my + dy * endT;
-        events.push({ k: "boom", x: bx, y: by, r: boom });
+        events.push({ k: "boom", x: bx, y: by, z: mz + dz * endT, r: boom });
         for (const z of zombies) if ((z.x - bx) ** 2 + (z.y - by) ** 2 < (boom + z.r) ** 2) hurtZombie(z, 60 * mult, p);
       }
     }
-    events.push({ k: "tr", x1: mx, y1: my, x2: mx + dx * endT, y2: my + dy * endT, c: w.type, m: myth ? 1 : 0 });
+    events.push({ k: "tr", x1: mx, y1: my, z1: Math.round(mz), x2: mx + dx * endT, y2: my + dy * endT, z2: Math.round(mz + dz * endT), c: w.type, m: myth ? 1 : 0 });
   }
   if (anyHit) p.st.hits++;
   if (w.ammo <= 0) w.hot = false;
@@ -495,6 +672,7 @@ function tryActiveReload(p, w) {
 function interact(p) {
   if (p.air) return;
   if (p.veh) return exitVehicle(p);
+  if (p.z > 40) return toast(p, "You'll have to come down first.", "#bbb");
   let best = null, bd = 60 * 60;
   for (const c of crates) { const d = dist2(c, p); if (d < bd) { bd = d; best = c; } }
   if (best) {
@@ -542,7 +720,14 @@ function buy(p, item) {
   if (item === "seeds") p.seeds += 3;
   else if (item === "medkit") p.hp = maxHp(p);
   else if (item === "kevlar") p.armor = 60;
+  else if (item === "antidote") { if (p.inf) cure(p, "The antidote tastes like pennies. The infection is gone."); else toast(p, "Bought an antidote. You drink it anyway. Nothing happens.", "#bbb"); }
   else if (item === "repair") { p.st.repairs++; deed("soil", 10); game.hearth = Math.min(game.hearthMax, game.hearth + 200); feed(`${fullName(p)} repaired the Hearth`, "#8f8"); }
+  else if (item === "gcase") {
+    const n = Math.random() < 0.15 + (traitOf(p).luck ? 0.1 : 0) ? 3 : Math.random() < 0.45 ? 2 : 1;
+    p.spins += n; p.st.cases++;
+    p.pe.push({ k: "case", type: "ak", rarity: n + 1, name: `${n} WHEEL SPIN${n > 1 ? "S" : ""}`, spins: 1 });
+    setTimeout(() => sendCasino(p), 3300);
+  }
   else if (item === "case") {
     const r = Math.random() * 100 - (traitOf(p).luck ? 8 : 0);
     const rarity = r < 0.8 ? 4 : r < 4 ? 3 : r < 15 ? 2 : r < 40 ? 1 : 0;
@@ -551,7 +736,7 @@ function buy(p, item) {
     p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) }); p.st.cases++;
     if (rarity >= 2) setTimeout(() => feed(`${fullName(p)} unboxed ${RARITY[rarity].toUpperCase()} ${wName(w)}`, ["", "", "#c070ff", "#ffc030", "#ff4b4b"][rarity]), 3200);
   } else if (WEAPONS[item]) giveWeapon(p, newWeapon(item));
-  if (item !== "case") toast(p, `Bought ${it.name}`, "#8f8");
+  if (item !== "case" && item !== "gcase" && item !== "antidote") toast(p, `Bought ${it.name}`, "#8f8");
 }
 function enhance(p) {
   const w = p.weapons[p.active];
@@ -563,6 +748,7 @@ function enhance(p) {
     w.enh++;
     p.pe.push({ k: "enh", ok: true, lvl: w.enh });
     if (w.enh >= 4) feed(`${fullName(p)} hit ${ENH_NAMES[w.enh]} ${wName(w)}!!`, "#ffc030");
+    unlucky(p);
   } else {
     const down = w.enh >= 2;
     if (down) w.enh--;
@@ -574,6 +760,7 @@ function learn(p, s) {
   if (!def || p.pts <= 0 || sk(p, s) >= def.max) return;
   p.pts--; p.sk[s] = sk(p, s) + 1;
   if (s === "tough") p.hp += 20;
+  unlucky(p);
 }
 function doShout(p) {
   const t = now();
@@ -596,10 +783,99 @@ function doShout(p) {
 function doDodge(p) {
   const t = now();
   if (p.dead || p.air || p.veh || t < p.dashCd) return;
-  let dx = ((p.keys & 8) ? 1 : 0) - ((p.keys & 2) ? 1 : 0), dy = ((p.keys & 4) ? 1 : 0) - ((p.keys & 1) ? 1 : 0);
+  const w = MV.wishDir(p.keys, p.a, p.rel);
+  let dx = w.x, dy = w.y;
   if (!dx && !dy) { dx = Math.cos(p.a); dy = Math.sin(p.a); }
-  const l = Math.hypot(dx, dy); p.dashDx = dx / l; p.dashDy = dy / l;
+  const spd = Math.max(Math.hypot(p.vx, p.vy), speedOf(p) * 2.7); // works in the air too: an air dash
+  p.vx = dx * spd; p.vy = dy * spd; if (!p.gr && p.vz < 0) p.vz = 0;
   p.dashUntil = t + 0.18; p.dashCd = t + (p.cls === "rogue" ? 0.8 : 1.3);
+}
+
+// ---------------------------------------------------------------- Vex's Casino (in-game gold only)
+function sendCasino(p) {
+  const c = p.casino;
+  p.pe.push({ k: "casino", spins: p.spins, game: c ? { ...c, deck: undefined, d: c.k === "bj" && c.hide ? [c.d[0], "??"] : c.k === "pk" && c.stage === "hold" ? null : c.d } : null });
+}
+function giveCosmetic(p, id, why) {
+  if (!id) { addGold(p, 30, "You own everything in that pool. Refund"); return; }
+  const had = p.cos.has(id);
+  p.cos.add(id);
+  p.pe.push({ k: "cos", list: [...p.cos] });
+  const c = COSMETICS[id];
+  toast(p, had ? `Duplicate ${c.name}. Vex gives you 30g for it.` : `New ${c.bad ? "(terrible) " : ""}cosmetic: ${c.name}! Press V to wear it.`, ["#ddd", "#4da6ff", "#c070ff", "#ffc030", "#ff4b4b"][c.rarity]);
+  if (had) addGold(p, 30);
+  else if (c.rarity >= 3) feed(`${fullName(p)} won the ${["", "", "", "LEGENDARY", "MYTHIC"][c.rarity]} ${c.name}${why ? " " + why : ""}`, c.rarity === 4 ? "#ff4b4b" : "#ffc030");
+}
+function casinoCrate(p, rarity, type) { giveWeapon(p, newWeapon(type || pick(LOOT_TYPES), rarity)); p.pe.push({ k: "case", type: p.weapons[p.active].type, rarity, name: wName(p.weapons[p.active]) }); }
+function doSpin(p) {
+  if (p.spinning || p.spins <= 0 || p.casino) return;
+  p.spins--; p.spinning = true; p.spunTotal++;
+  const i = process.env.SLOP_WHEEL ? WHEEL.findIndex((w) => w.id === process.env.SLOP_WHEEL) : spinWheel(), seg = WHEEL[i]; // SLOP_WHEEL: testing only
+  p.pe.push({ k: "wheel", seg: i });
+  if (p.spunTotal === 10) { feed(`${fullName(p)} has spun the wheel 10 times. Brother Aldous is organising an intervention.`, "#e0c0ff"); giveCosmetic(p, "degen"); }
+  setTimeout(() => {
+    p.spinning = false;
+    if (!players.has(p.id)) return;
+    if (seg.id === "jackpot") { addGold(p, 1000, "JACKPOT"); feed(`🎰 ${fullName(p)} HIT THE JACKPOT (1000g)`, "#ffd34d"); if (!p.cos.has("roller")) giveCosmetic(p, "roller", "for hitting the jackpot"); }
+    else if (seg.id === "g150") addGold(p, 150, "Wheel");
+    else if (seg.id === "g50") addGold(p, 50, "Wheel");
+    else if (seg.id === "lose") toast(p, "Nothing. The wheel doesn't care about you.", "#aaa");
+    else if (seg.id === "bankrupt") { const lost = Math.floor(p.gold * 0.25); p.gold -= lost; toast(p, `BANKRUPT! Vex takes ${lost}g. "Better luck next spin!"`, "#ff5050"); }
+    else if (seg.id === "cos") giveCosmetic(p, rollCosmetic(p.cos));
+    else if (seg.id === "crate") casinoCrate(p, 1 + (Math.random() < 0.5 ? 1 : 0) + (Math.random() < 0.2 ? 1 : 0));
+    else if (seg.id === "ak") { casinoCrate(p, Math.random() < 0.1 ? 4 : 3, "ak"); feed(`${fullName(p)} won an AK-Maybe on the wheel. Nobody knows how many bullets it has. Neither does it.`, "#ff9d2e"); }
+    else if (seg.id === "again") { p.spins += 2; toast(p, "Two more spins!", "#ff9d2e"); }
+    else if (seg.id === "skill") { p.pts++; toast(p, "+1 skill point. Press K.", "#9fe0ff"); }
+    else if (seg.id === "bj") { p.casino = { k: "bj", deck: deck(), p: [], d: [], w: 0, l: 0, hide: true, msg: "Blackjack! Win 2 hands out of 3." }; dealBj(p); }
+    else if (seg.id === "poker") { const dk = deck(); p.casino = { k: "pk", deck: dk, p: dk.splice(0, 5), d: dk.splice(0, 5), stage: "hold", msg: "Five-card draw. Click the cards you want to KEEP, then Draw." }; }
+    sendCasino(p);
+  }, 4200);
+}
+function dealBj(p) {
+  const c = p.casino;
+  if (c.deck.length < 15) c.deck = deck();
+  c.p = [c.deck.pop(), c.deck.pop()]; c.d = [c.deck.pop(), c.deck.pop()]; c.hide = true; c.over = false;
+  if (bjValue(c.p) === 21) finishBjHand(p);
+}
+function finishBjHand(p) {
+  const c = p.casino; c.hide = false;
+  const pv = bjValue(c.p);
+  if (pv <= 21) while (bjValue(c.d) < 17) c.d.push(c.deck.pop());
+  const dv = bjValue(c.d);
+  const res = pv > 21 ? -1 : dv > 21 ? 1 : Math.sign(pv - dv);
+  if (res > 0) c.w++; else if (res < 0) c.l++;
+  c.msg = `${res > 0 ? "You win the hand" : res < 0 ? "Dealer wins the hand" : "Push"} (${pv > 21 ? "bust" : pv} vs ${dv > 21 ? "bust" : dv}). Score ${c.w}-${c.l}.`;
+  if (c.w >= 2 || c.l >= 2) {
+    c.over = true;
+    if (c.w >= 2) { c.msg += " YOU BEAT THE HOUSE! 250g and a Legendary crate."; addGold(p, 250, "Blackjack"); casinoCrate(p, 3); if (!p.cos.has("bandit")) giveCosmetic(p, "bandit"); feed(`${fullName(p)} beat Vex at blackjack`, "#3fbf6f"); }
+    else { c.msg += " The house wins. It always does."; if (Math.random() < 0.5) giveCosmetic(p, rollCosmetic(p.cos, { bad: true })); }
+  } else c.next = true;
+}
+function casinoAct(p, m) {
+  const c = p.casino; if (!c) return;
+  if (m.a === "leave") { if (c.over || c.k === "pk" && c.stage === "done" || (c.k === "bj" && c.w === 0 && c.l === 0 && !c.p.length)) p.casino = null; else toast(p, "Finish the game first. Vex is watching.", "#f88"); return sendCasino(p); }
+  if (c.k === "bj" && !c.over) {
+    if (c.next && m.a === "deal") { c.next = false; dealBj(p); }
+    else if (!c.next && m.a === "hit") { c.p.push(c.deck.pop()); if (bjValue(c.p) >= 21) finishBjHand(p); }
+    else if (!c.next && m.a === "stand") finishBjHand(p);
+  } else if (c.k === "pk" && c.stage === "hold" && m.a === "draw" && Array.isArray(m.hold)) {
+    c.p = c.p.map((card, i) => (m.hold[i] ? card : c.deck.pop()));
+    const dh = dealerHolds(c.d); c.d = c.d.map((card, i) => (dh[i] ? card : c.deck.pop()));
+    c.stage = "done";
+    const res = compareHands(c.p, c.d), cat = pokerScore(c.p)[0];
+    c.msg = `You: ${handName(c.p)}. Vex: ${handName(c.d)}. `;
+    if (res > 0) {
+      c.msg += "YOU WIN!";
+      if (cat >= 5) { casinoCrate(p, 4); c.msg += " A MYTHIC crate!"; } else if (cat >= 3) { casinoCrate(p, 3); addGold(p, 250); c.msg += " Legendary crate and 250g."; } else if (cat === 2) { casinoCrate(p, 2); addGold(p, 200); c.msg += " Epic crate and 200g."; } else { addGold(p, 120); c.msg += " 120g."; }
+      if (cat >= 3 && !p.cos.has("shark")) giveCosmetic(p, "shark");
+      feed(`${fullName(p)} won at poker with ${handName(c.p)}`, "#4da6ff");
+    } else { c.msg += res < 0 ? "Vex wins. He always seems to." : "A tie. Vex keeps the pot anyway, on a technicality."; if (Math.random() < 0.35) giveCosmetic(p, rollCosmetic(p.cos, { bad: true })); }
+  }
+  sendCasino(p);
+}
+function equip(p, slot, id) {
+  if (slot === "hat" && (FREE_HATS.includes(id) || (COSMETICS[id]?.slot === "hat" && p.cos.has(id)))) p.hat = id;
+  else if ((slot === "trail" || slot === "title") && (id === "" || (COSMETICS[id]?.slot === slot && p.cos.has(id)))) p[slot] = id;
 }
 
 // ---------------------------------------------------------------- story
@@ -836,7 +1112,7 @@ function vehicleTick(t, dt) {
       q.rammed = t + 0.6; q.vx += Math.cos(v.a) * speed; q.vy += Math.sin(v.a) * speed;
       hurtPlayer(q, speed * 0.1, driver && driver !== q ? driver : null, "run over");
     }
-    for (const id of v.seats) { const p = players.get(id); if (p && p.veh === v.id) { p.x = v.x; p.y = v.y; } }
+    for (const id of v.seats) { const p = players.get(id); if (p && p.veh === v.id) { p.x = v.x; p.y = v.y; p.z = 0; } }
   }
 }
 
@@ -847,7 +1123,7 @@ function placePiece(p, kind, x, y, free) {
   if (!def) return false;
   const fail = (msg) => { if (p) toast(p, msg, "#f88"); return false; };
   x = Math.round(x / GRID) * GRID; y = Math.round(y / GRID) * GRID;
-  const b = { id: nextId++, kind: "built", bk: kind, x, y, w: GRID, h: GRID, hp: def.hp, maxHp: def.hp, owner: p ? p.id : 0, uses: def.uses || 0, nextShot: 0, a: 0 };
+  const b = { id: nextId++, kind: "built", bk: kind, x, y, w: GRID, h: GRID, z0: 0, z1: def.z1 || 10, hp: def.hp, maxHp: def.hp, owner: p ? p.id : 0, uses: def.uses || 0, nextShot: 0, a: 0 };
   const mid = { x: x + GRID / 2, y: y + GRID / 2 };
   if (x < 40 || y < 40 || x + GRID > W - 40 || y + GRID > H - 40) return fail("Can't build at the edge of the world.");
   if (p && !free) {
@@ -1024,7 +1300,7 @@ function startNight() {
 }
 function startDay() {
   game.phase = "day"; game.ends = now() + DAY_LEN;
-  for (const p of players.values()) p.talked.clear();
+  for (const p of players.values()) { p.talked.clear(); cure(p, "The sunrise burns the infection out of you."); }
   for (const z of zombies) if (z.type !== "elite") z.burn = true;
   spawnCrates();
   events.push({ k: "banner", text: `DAY ${game.night + 1}`, sub: `The sun burns the dead. ${LAST_NIGHT - game.night} night${LAST_NIGHT - game.night === 1 ? "" : "s"} left. Shop open [B].` });
@@ -1065,7 +1341,7 @@ function spawnZombie(type, at) {
     y = side === 2 ? 20 : side === 3 ? H - 20 : rand(20, H - 20);
   }
   const hpScale = (1 + 0.15 * Math.max(0, game.night - 1)) * game.mods.zHp;
-  const z = { id: nextId++, type, x, y, r: def.r, hp: def.hp * hpScale, maxHp: def.hp * hpScale, vx: 0, vy: 0, stun: 0, atk: 0, steer: 0, burn: false, special: now() + 6, charge: 0, arson: type !== "boss" && type !== "elite" && Math.random() < 0.35 };
+  const z = { id: nextId++, type, x, y, z: 0, vz: 0, gr: true, r: def.r, hp: def.hp * hpScale, maxHp: def.hp * hpScale, vx: 0, vy: 0, stun: 0, atk: 0, steer: 0, burn: false, special: now() + 6, charge: 0, arson: type !== "boss" && type !== "elite" && Math.random() < 0.35 };
   zombies.push(z);
   return z;
 }
@@ -1127,7 +1403,7 @@ function tick() {
     if (p.dead) { if (game.phase !== "over" && game.phase !== "intro" && !p.out && game.mode !== "royale" && t > p.respawnAt) respawnHeir(p); continue; }
     if (p.air === "wait") continue;
     if (p.air === "plane") {
-      const pos = dropPos(t); p.x = pos.x; p.y = pos.y;
+      const pos = dropPos(t); p.x = pos.x; p.y = pos.y; p.z = 700;
       if (pos.k >= 0.97) jump(p);
       continue;
     }
@@ -1135,7 +1411,8 @@ function tick() {
       let fx = ((p.keys & 8) ? 1 : 0) - ((p.keys & 2) ? 1 : 0), fy = ((p.keys & 4) ? 1 : 0) - ((p.keys & 1) ? 1 : 0);
       if (fx && fy) { fx *= Math.SQRT1_2; fy *= Math.SQRT1_2; }
       p.x = clamp(p.x + fx * 420 * dt, 30, W - 30); p.y = clamp(p.y + fy * 420 * dt, 30, H - 30);
-      if (t > p.fallEnd) { p.air = null; collide(p, 16); events.push({ k: "land", x: p.x, y: p.y }); }
+      p.z = Math.max(0, 700 * clamp((p.fallEnd - t) / 2.2, 0, 1));
+      if (t > p.fallEnd) { p.air = null; collide(p, 16); p.z = MV.floorAt(p.x, p.y, 10, 2000, WALLS).h; p.vz = 0; p.vx = p.vy = 0; p.gr = true; events.push({ k: "land", x: p.x, y: p.y }); }
       continue;
     }
     if (outsideZone(p) && (game.phase === "night" || game.phase === "royale" || game.phase === "day")) {
@@ -1145,17 +1422,17 @@ function tick() {
       if (p.dead) continue;
     }
     if (p.dlg) { const n = NPC_POS.find((q) => q.id === p.dlg.npc); if (!n || dist2(n, p) > 150 * 150) { p.dlg = null; sendDlg(p); } }
+    if (playing) {
+      needs(p, dt, t);
+      if (p.inf) { if (t > p.inf.until) cure(p, "The infection passes. You feel almost normal."); else if (t > p.inf.next) nextSymptom(p); }
+    }
     const veh = vehOf(p);
     if (p.veh && !veh) p.veh = 0;
     if (!veh) {
-      let mx = ((p.keys & 8) ? 1 : 0) - ((p.keys & 2) ? 1 : 0), my = ((p.keys & 4) ? 1 : 0) - ((p.keys & 1) ? 1 : 0);
-      if (mx && my) { mx *= Math.SQRT1_2; my *= Math.SQRT1_2; }
-      const sp = speedOf(p);
-      if (t < p.dashUntil) { mx = p.dashDx * 3.1; my = p.dashDy * 3.1; }
-      p.x += (mx * sp + p.vx) * dt; p.y += (my * sp + p.vy) * dt;
-      p.vx *= Math.pow(0.02, dt); p.vy *= Math.pow(0.02, dt);
-      collide(p, 16);
-    }
+      const ev = MV.step(p, { keys: p.keys, yaw: p.a, rel: p.rel }, dt, { sp: speedOf(p), boxes: WALLS, W, H, frozen: t < p.going || !!p.dlg });
+      if (ev === "pad") events.push({ k: "pad", x: Math.round(p.x), y: Math.round(p.y) });
+      if (p.z > 1400) p.z = 1400;
+    } else { p.z = 0; p.vz = 0; p.vx = 0; p.vy = 0; p.gr = true; }
     p.heat = Math.max(0, p.heat - 1.6 * dt);
     const mh = maxHp(p);
     if (sk(p, "wind") && t - p.lastHurt > 3) p.hp = Math.min(mh, p.hp + 1.5 * sk(p, "wind") * dt);
@@ -1164,7 +1441,7 @@ function tick() {
     const w = p.weapons[p.active];
     w.bloom = Math.max(0, w.bloom - dt * 2.2);
     if (w.reloadUntil && t >= w.reloadUntil) { w.reloadUntil = 0; w.ammo = WEAPONS[w.type].mag; }
-    if (p.firing && !p.dlg && !(veh && veh.seats[0] === p.id) && (playing || game.phase === "lobby") && !w.reloadUntil && t >= w.nextShot) {
+    if (p.firing && !p.dlg && !(t < p.going) && !(veh && veh.seats[0] === p.id) && (playing || game.phase === "lobby") && !w.reloadUntil && t >= w.nextShot) {
       if (w.ammo > 0) shoot(p, w);
       else startReload(p, w);
     }
@@ -1198,20 +1475,25 @@ function tick() {
     const ox = z.x, oy = z.y;
     z.x += (dx * sp + z.vx) * dt; z.y += (dy * sp + z.vy) * dt;
     z.vx *= Math.pow(0.03, dt); z.vy *= Math.pow(0.03, dt);
-    const touchingHearth = game.mode !== "royale" && z.x + z.r > HEARTH.x - 4 && z.x - z.r < HEARTH.x + HEARTH.w + 4 && z.y + z.r > HEARTH.y - 4 && z.y - z.r < HEARTH.y + HEARTH.h + 4;
-    if (collide(z, z.r) && !touchingHearth) {
+    const touchingHearth = game.mode !== "royale" && z.z < HEARTH.z1 && z.x + z.r > HEARTH.x - 4 && z.x - z.r < HEARTH.x + HEARTH.w + 4 && z.y + z.r > HEARTH.y - 4 && z.y - z.r < HEARTH.y + HEARTH.h + 4;
+    // the dead climb: walls, roofs, towers. Not trees, not the Hearth, not your barricades (those they chew).
+    const hit = MV.pushOut(z, z.r, WALLS, W, H, z.z, zHeight(z));
+    const climbable = hit && hit !== "edge" && hit.kind !== "tree" && hit.kind !== "hearth" && hit.kind !== "built";
+    if (climbable && (!target || target.z > z.z + 10 || Math.random() < 0.6)) z.vz = Math.max(z.vz, z.type === "runner" ? 220 : z.type === "walker" ? 130 : 80);
+    else if (hit && !touchingHearth) {
       const moved = Math.hypot(z.x - ox, z.y - oy);
       if (moved < sp * dt * 0.4) z.steer = z.steer ? z.steer : (Math.random() < 0.5 ? 1.2 : -1.2);
     } else if (z.steer && Math.random() < dt * 0.8) z.steer = 0;
-    if (t > z.atk && builds.length && !(target && Math.sqrt(bd) < z.r + 20)) {
+    MV.vertical(z, dt, WALLS, z.r * 0.8, zHeight(z));
+    if (t > z.atk && builds.length && !(target && Math.sqrt(bd) < z.r + 20 && Math.abs(target.z - z.z) < 60)) {
       const piece = builds.find((b) => PIECES[b.bk].solid && rectHitsCircle(b, z, z.r + 6));
       if (piece) { hurtPiece(piece, def.dmg * (z.type === "boss" ? 3 : 1)); z.atk = t + 0.8; }
     }
     if (t > z.atk) {
-      if (target && Math.sqrt(bd) < z.r + 20) { hurtPlayer(target, def.dmg, null, z.type === "boss" ? `folded by ${B.name.toLowerCase().replace("the ", "the ")}` : "eaten"); z.atk = t + 0.8; }
+      if (target && Math.sqrt(bd) < z.r + 20 && Math.abs(target.z - z.z) < 60) { hurtPlayer(target, def.dmg, null, z.type === "boss" ? `folded by ${B.name.toLowerCase().replace("the ", "the ")}` : "eaten"); z.atk = t + 0.8; if (target.id && Math.random() < INFECT) infect(target); }
       else if (!target && touchingHearth && game.phase !== "over") { game.hearth -= def.dmg * (z.type === "boss" ? 1.5 : 0.6); z.atk = t + 0.8; events.push({ k: "hhit" }); }
     }
-    for (const pl of PLOTS) if (pl.stage > 0 && (pl.x - z.x) ** 2 + (pl.y - z.y) ** 2 < 22 * 22) { pl.stage = 0; pl.prog = 0; events.push({ k: "trample", x: pl.x, y: pl.y }); }
+    for (const pl of PLOTS) if (pl.stage > 0 && z.z < 10 && (pl.x - z.x) ** 2 + (pl.y - z.y) ** 2 < 22 * 22) { pl.stage = 0; pl.prog = 0; events.push({ k: "trample", x: pl.x, y: pl.y }); }
     if ((z.type === "boss" || z.type === "elite") && t > z.special && game.phase !== "over") {
       z.special = t + (z.type === "elite" ? 5 : B.summon);
       const charge = game.bossKind === "golem" && z.type === "boss" ? Math.random() < 0.75 : Math.random() < 0.5;
@@ -1255,18 +1537,18 @@ function snapshot() {
     p: [...players.values()].map((p) => {
       const w = p.weapons[p.active];
       return {
-        id: p.id, n: fullName(p), x: r(p.x), y: r(p.y), a: +p.a.toFixed(2), hp: r(p.hp), mh: maxHp(p), ar: r(p.armor),
+        id: p.id, n: fullName(p), x: r(p.x), y: r(p.y), z: r(p.z), mv: [r(p.vx), r(p.vy), r(p.vz), p.gr ? 1 : 0], pt: p.pt == null ? 0 : +p.pt.toFixed(2), a: +p.a.toFixed(2), hp: r(p.hp), mh: maxHp(p), ar: r(p.armor),
         c: p.color, h: p.hat, ey: p.eyes, cl: p.cls, bg: p.bg, d: p.dead ? 1 : 0, g: p.gold, sd: p.seeds, st: Math.min(5, Math.floor(p.heat / 40)),
         w: w.type, wn: wName(w), wr: w.rarity, we: w.enh, am: w.ammo, hot: w.hot ? 1 : 0, sec: p.weapons.length > 1 ? 1 : 0,
         rl: w.reloadUntil ? +(w.reloadUntil - t).toFixed(2) : 0, rt: w.reloadUntil ? +(w.reloadUntil - w.reloadStart).toFixed(2) : 0, rtr: w.tried ? 1 : 0,
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
         lv: p.lvl, xp: p.xp, xn: xpNeed(p.lvl), pts: p.pts, sk: p.sk, ch: p.champion ? 1 : 0,
-        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, out: p.out ? 1 : 0, pk: p.st.pk,
+        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, out: p.out ? 1 : 0, pk: p.st.pk,
         nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
         k: p.st.kills, de: p.st.deaths, cr: p.st.crops, tk: p.st.tk, hs: p.st.hs, acc: p.st.shots ? Math.round(p.st.hits / p.st.shots * 100) : 0,
       };
     }),
-    z: zombies.map((z) => [z.id, z.type[0], r(z.x), r(z.y), r((z.hp / z.maxHp) * 100), z.burn ? 1 : 0]),
+    z: zombies.map((z) => [z.id, z.type[0], r(z.x), r(z.y), r((z.hp / z.maxHp) * 100), z.burn ? 1 : 0, r(z.z)]),
     pl: PLOTS.map((p) => p.stage),
     cr: crates.map((c) => [c.id, r(c.x), r(c.y), c.w.rarity, c.grave ? 1 : 0]),
     vh: vehicles.map((v) => [v.id, v.kind, r(v.x), r(v.y), +v.a.toFixed(2), r((v.hp / VEHICLES[v.kind].hp) * 100), v.seats[0], v.seats[1], r(v.v)]),
@@ -1311,7 +1593,8 @@ function onMessage(ws, raw) {
   if (!p) return;
   switch (m.t) {
     case "in":
-      p.keys = m.k | 0; p.a = +m.a || 0; p.firing = !!m.f && !p.dead;
+      p.keys = m.k | 0; p.a = +m.a || 0; p.firing = !!m.f && !p.dead; p.ads = !!m.ads && !p.dead;
+      p.pt = typeof m.pt === "number" && isFinite(m.pt) ? clamp(m.pt, -1.5, 1.5) : null; p.rel = !!m.rel;
       break;
     case "reload": { const w = p.weapons[p.active]; if (w.reloadUntil) tryActiveReload(p, w); else startReload(p, w); break; }
     case "swap": if (p.weapons.length > 1) { p.active = m.i === 0 || m.i === 1 ? Math.min(m.i, p.weapons.length - 1) : 1 - p.active; } break;
@@ -1322,8 +1605,12 @@ function onMessage(ws, raw) {
     case "dlg": pickDlg(p, m.i | 0); break;
     case "mode": if (p.id === hostId() && game.phase !== "day" && game.phase !== "night" && game.phase !== "royale" && (m.m === "story" || m.m === "royale")) { game.mode = m.m; broadcastRaw(JSON.stringify(mapMsg())); } break;
     case "shout": doShout(p); break;
+    case "go": relieve(p); break;
     case "dodge": if (game.phase === "intro") game.skip.add(p.id); else if (p.air === "plane") jump(p); else doDodge(p); break;
     case "buy": buy(p, m.item); break;
+    case "spin": doSpin(p); break;
+    case "casino": casinoAct(p, m); break;
+    case "equip": equip(p, String(m.slot), String(m.id)); break;
     case "learn": learn(p, String(m.s)); break;
     case "vote": if (game.vote && Number.isInteger(m.i) && m.i >= 0 && m.i < game.vote.ev.choices.length) game.vote.votes.set(p.id, m.i); break;
     case "chat": { const text = String(m.text || "").slice(0, 120).trim(); if (text) chat(fullName(p), text, p.color), events.push({ k: "say", id: p.id, text }); break; }
@@ -1336,6 +1623,7 @@ const server = Bun.serve({
   fetch(req, srv) {
     const url = new URL(req.url);
     if (url.pathname === "/ws") return srv.upgrade(req, { data: { pid: 0 } }) ? undefined : new Response("Upgrade failed", { status: 400 });
+    if (url.pathname === "/three.js") return new Response(threeJs, { headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "max-age=86400" } });
     if (url.pathname === "/game.js") return new Response(gameJs, { headers: { "content-type": "application/javascript; charset=utf-8" } });
     if (url.pathname === "/") return new Response(indexHtml, { headers: { "content-type": "text/html; charset=utf-8" } });
     return new Response("Not found", { status: 404 });
@@ -1343,7 +1631,7 @@ const server = Bun.serve({
   websocket: {
     open(ws) {
       spectators.add(ws);
-      ws.send(JSON.stringify({ t: "hello", shop: SHOP, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS }));
+      ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS }));
       ws.send(JSON.stringify(mapMsg()));
     },
     message: onMessage,
