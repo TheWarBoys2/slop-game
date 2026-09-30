@@ -91,7 +91,13 @@
   #wardrobe .wi { padding: 6px 10px; border-radius: 6px; background: #2a3423; border: 2px solid transparent; cursor: pointer; font-size: 14px; }
   #wardrobe .wi.sel { border-color: #ffd34d; } #wardrobe .wi.lock { opacity: .3; cursor: default; }
   .lg { margin: 5px 0; } .lg .bar { height: 8px; background: #0006; border-radius: 4px; overflow: hidden; margin-top: 2px; } .lg .bar div { height: 100%; }
-  .modeBtns { display: flex; gap: 6px; }
+  .modeBtns { display: flex; gap: 6px; flex-wrap: wrap; }
+  #optBtn { position: fixed; left: 12px; top: 214px; z-index: 5; background: #000a; color: #ddd; border: 1px solid #555; border-radius: 8px; padding: 4px 9px; font-size: 13px; cursor: pointer; }
+  #optBtn:hover { color: #fff; border-color: #aaa; }
+  .opt { display: flex; align-items: center; gap: 12px; margin: 10px 0; color: #cfe0b8; }
+  .opt label { min-width: 150px; font-weight: bold; }
+  .opt input[type=range] { flex: 1; }
+  .opt span { min-width: 60px; text-align: right; color: #ffd34d; }
   .modeBtns button { padding: 10px 16px; font-size: 16px; font-weight: bold; background: #2a3423; color: #cfe0b8; border: 2px solid #4b5e38; border-radius: 8px; cursor: pointer; }
   .modeBtns button.sel { border-color: #ffd34d; color: #ffd34d; }
   #dlg { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); width: min(640px, calc(100% - 32px)); z-index: 7; background: #1a1624f2; border: 2px solid #8a6ab0; border-radius: 12px; padding: 14px 18px; }
@@ -133,8 +139,8 @@
     <button class="big" id="go">Enter the Valley</button>
     <div class="keys">
       <kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> look/shoot &nbsp; <kbd>Right-click</kbd> aim down sights &nbsp; <kbd>Space</kbd> jump (hold to bunny hop) &nbsp; <kbd>Shift</kbd> dodge &nbsp; <kbd>T</kbd> first / third person / top-down &nbsp; <kbd>R</kbd> reload &nbsp; <kbd>E</kbd> plant / harvest / loot &nbsp;
-      <kbd>Q</kbd> FUS RO DAH &nbsp; <kbd>1</kbd><kbd>2</kbd> swap &nbsp; <kbd>B</kbd> shop (day) &nbsp;
-      <kbd>K</kbd> skills &nbsp; <kbd>J</kbd> journal &nbsp; <kbd>C</kbd> build &nbsp; <kbd>G</kbd> casino &nbsp; <kbd>V</kbd> wardrobe &nbsp; <kbd>X</kbd> relieve yourself &nbsp; <kbd>F</kbd> ready &nbsp; <kbd>Tab</kbd> scoreboard &nbsp; <kbd>Enter</kbd> chat
+      <kbd>Q</kbd> FUS RO DAH &nbsp; <kbd>1</kbd><kbd>2</kbd> swap &nbsp; <kbd>3</kbd> grenade &nbsp; <kbd>4</kbd> molotov &nbsp; <kbd>B</kbd> shop (day) &nbsp;
+      <kbd>K</kbd> skills &nbsp; <kbd>J</kbd> journal &nbsp; <kbd>C</kbd> build &nbsp; <kbd>G</kbd> casino &nbsp; <kbd>V</kbd> wardrobe &nbsp; <kbd>X</kbd> relieve yourself &nbsp; <kbd>O</kbd> options &nbsp; <kbd>F</kbd> ready &nbsp; <kbd>Tab</kbd> scoreboard &nbsp; <kbd>Enter</kbd> chat
     </div>
   </div>
 </div>
@@ -167,7 +173,7 @@
     <table id="overTable"></table>
     <h3 style="margin:18px 0 6px;color:#cfe0b8">Dynasties</h3>
     <div id="overLineage"></div>
-    <div class="modeBtns hidden" style="margin-top:14px"><button data-m="story">Story</button><button data-m="royale">Royale</button></div>
+    <div class="modeBtns hidden" style="margin-top:14px"><button data-m="story">Story</button><button data-m="endless">Endless</button><button data-m="royale">Royale</button></div>
     <button class="readyBtn" id="overReady">Ready for another round</button>
     <div class="tag" id="overReadyInfo" style="margin-top:8px"></div>
   </div>
@@ -177,7 +183,7 @@
 <div id="lobbyPanel" class="hidden">
   <h3 id="lpTitle">Lobby</h3>
   <div id="lpList"></div>
-  <div class="modeBtns hidden" style="margin-top:8px"><button data-m="story">Story</button><button data-m="royale">Royale</button></div>
+  <div class="modeBtns hidden" style="margin-top:8px"><button data-m="story">Story</button><button data-m="endless">Endless</button><button data-m="royale">Royale</button></div>
   <div class="lp-f" id="lpMode"></div>
   <button class="readyBtn" id="readyBtn">Ready</button>
   <div class="lp-cd" id="lpCd"></div>
@@ -210,6 +216,15 @@
 </div>
 
 <div id="dlg" class="hidden"></div>
+
+<button id="optBtn" title="Options (O)">⚙ Options [O]</button>
+<div id="options" class="overlay hidden">
+  <div class="panel" style="max-width:520px">
+    <h2 style="margin:0 0 4px;color:#cfe0b8">Options</h2>
+    <div id="optsBody"></div>
+    <div class="keys">Saved on this computer. <kbd>O</kbd>/<kbd>Esc</kbd> to close.</div>
+  </div>
+</div>
 
 <div id="journal" class="overlay hidden">
   <div class="panel" style="max-width:620px">

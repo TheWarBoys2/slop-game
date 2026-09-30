@@ -82,7 +82,7 @@ var R3D = (function () {
     for (const [x, y, w, d] of [[MAP.W / 2, -10, MAP.W + 40, 20], [MAP.W / 2, MAP.H + 10, MAP.W + 40, 20], [-10, MAP.H / 2, 20, MAP.H], [MAP.W + 10, MAP.H / 2, 20, MAP.H]]) level.add(at(box(w, d, 60, mat(0x2a3d20)), x, y, 30));
     for (const w of MAP.walls) addWall(w);
     // plots
-    MAP.plots.forEach((pl) => { const s = at(box(52, 52, 3, mat(0x5b3a1e)), pl.x, pl.y, 1.5); level.add(s); for (let r = -18; r <= 18; r += 12) level.add(at(box(44, 4, 3.4, mat(0x6e4826)), pl.x, pl.y + r, 1.7)); });
+    // (plot beds are drawn per frame, since a hoe can add more)
     // the old well
     if (MAP.well) {
       const wl = MAP.well, g = new T.Group();
@@ -357,6 +357,10 @@ var R3D = (function () {
     for (const pd of level.userData.pads || []) { const k = (t * 1.5) % 1; pd.userData.ring.position.y = 6 + k * 40; pd.userData.ring.material.opacity = 0.8 * (1 - k); }
 
     // plots
+    MAP.plots.forEach((pl, i) => {
+      const e = pooled(`bed:${i}:${pl.x}:${pl.y}`, () => { const g = new T.Group(); g.add(mesh(new T.BoxGeometry(52, 3, 52), mat(0x5b3a1e), 0, 1.5, 0)); for (let r = -18; r <= 18; r += 12) g.add(mesh(new T.BoxGeometry(44, 3.4, 4), mat(0x6e4826), 0, 1.7, r)); return g; });
+      at(e.obj, pl.x, pl.y, 0);
+    });
     S.pl.forEach((stage, i) => {
       if (!stage) return;
       const pl = MAP.plots[i];

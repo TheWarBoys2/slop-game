@@ -17,7 +17,7 @@ const PORT = Number(process.argv[2] || process.env.PORT || 7777);
 const TICK_RATE = 30;
 const SNAP_EVERY = 2; // 15 snapshots/sec
 const FAST = !!process.env.SLOP_FAST; // testing only: short phases
-const DAY_LEN = FAST ? 6 : 85;
+const DAY_LEN = Number(process.env.SLOP_DAY) || (FAST ? 6 : 85);
 const NIGHT_LEN = FAST ? 8 : 100;
 const VOTE_LEN = FAST ? 3 : 25;
 const LAST_NIGHT = 5; // the earliest the final night can come. In the story it waits until the mystery is solved.
@@ -53,6 +53,11 @@ let VALLEY = "Slopholm";
 const PLOTS = [];
 for (const baseX of [830, 1390]) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++)
   PLOTS.push({ x: baseX + c * 64 + 28, y: 800 + r * 64 + 28, stage: 0, prog: 0, rate: 1, owner: 0 });
+const BASE_PLOTS = PLOTS.length;
+// the hoe: till new plots anywhere on open ground. Each upgrade lets you till more, grows faster and sells for more.
+const HOES = ["", "Hoe", "Steel Hoe", "Golden Hoe"];
+const HOE_COST = [40, 90, 160];
+const hoeLimit = (lvl) => 3 + 3 * lvl;
 
 function generateMap(seed) {
   MAP_SEED = seed;
@@ -219,6 +224,7 @@ const SHOP = {
   molotov: { name: "Molotovs x2", cost: 30 },
   case:    { name: "Mystery Case", cost: 100 },
   gcase:   { name: "Golden Case (wheel spins!)", cost: 150 },
+  hoe:     { name: "Hoe (till new plots with E)", cost: 40 },
   enhance: { name: "Enhance weapon", cost: 0 },
   repair:  { name: "Repair Hearth", cost: 75 },
   antidote: { name: "Antidote", cost: 40 },
@@ -346,6 +352,7 @@ function resetProgress(p) {
   p.st = { kills: 0, deaths: 0, dmg: 0, crops: 0, tk: 0, gold: 0, bounty: 0, shots: 0, hits: 0, hs: 0, perfect: 0, cases: 0, shoutHits: 0, repairs: 0, pk: 0 };
   p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.veh = 0; p.spins = 0; p.casino = null; p.spinning = false;
   p.bl = 0; p.bw = 0; p.going = 0; p.goKind = ""; p.inf = null; p.soggy = 0; p.ads = false;
+  p.hoe = p.cls === "farmer" ? 1 : 0;
 }
 function resetLoadout(p, fresh) {
   p.hp = maxHp(p); p.armor = 0;
@@ -688,7 +695,7 @@ function fireTick(t, dt) {
     const fuel = builds.some((b) => PIECES[b.bk].solid && b.x < f.x + 20 && b.x + 40 > f.x - 20 && b.y < f.y + 20 && b.y + 40 > f.y - 20);
     if (t > f.next && f.gen < 6) {
       f.next = t + rand(0.8, 1.6);
-      const chance = (fuel ? 0.9 : 0.55) * Math.pow(0.78, f.gen);
+      const chance = (fuel ? 0.9 : 0.45) * Math.pow(0.75, f.gen);
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (Math.random() < chance * 0.5) ignite(f.x + dx * FIRE_CELL, f.y + dy * FIRE_CELL, f.z + 20, f.owner, f.gen + (fuel ? 0 : 1));
     }
     const owner = players.get(f.owner) || null;
@@ -858,17 +865,42 @@ function interact(p) {
   if (game.mode !== "royale") { const n = NPC_POS.filter((q) => dist2(q, p) < 70 * 70).sort((a, b) => dist2(a, p) - dist2(b, p))[0]; if (n) return openDlg(p, n.id); }
   let plot = null; bd = 48 * 48;
   for (const pl of PLOTS) { const d = dist2(pl, p); if (d < bd) { bd = d; plot = pl; } }
-  if (!plot) return;
+  if (!plot) return p.hoe ? till(p) : undefined;
   if (plot.stage === 0) {
     if (p.seeds <= 0) return toast(p, "No seeds. Buy some in the shop [B].", "#f88");
-    p.seeds--; plot.stage = 1; plot.prog = 0; plot.rate = (p.cls === "farmer" ? 1.85 : 1) * (1 + 0.25 * sk(p, "green")) * game.mods.grow; plot.owner = p.id;
+    p.seeds--; plot.stage = 1; plot.prog = 0; plot.rate = (p.cls === "farmer" ? 1.85 : 1) * (1 + 0.25 * sk(p, "green")) * (1 + 0.15 * (p.hoe || 0)) * game.mods.grow; plot.owner = p.id;
     addXp(p, 2);
   } else if (plot.stage === 3) {
     plot.stage = 0; p.st.crops++; deed("soil", 5);
-    addGold(p, p.cls === "farmer" ? 40 : 25, "Harvest");
+    addGold(p, Math.round((p.cls === "farmer" ? 40 : 25) * (1 + 0.2 * (p.hoe || 0))), "Harvest");
     addXp(p, 12);
     if (Math.random() < 0.25) { p.seeds++; toast(p, "Found a seed in the soil", "#8f8"); }
   } else toast(p, "Still growing...", "#bbb");
+}
+function till(p) {
+  if (game.mode === "royale") return toast(p, "No time for farming. Somebody's shooting at you.", "#bbb");
+  if (!p.gr || p.z > 4) return toast(p, "You can only till the ground.", "#bbb");
+  const mineN = PLOTS.filter((pl) => pl.tilled === p.id).length, limit = hoeLimit(p.hoe);
+  if (mineN >= limit) return toast(p, `Your ${HOES[p.hoe]} can't manage more than ${limit} plots. Upgrade it in the shop [B].`, "#f88");
+  const want = p.hoe >= 3 && mineN + 2 <= limit ? 2 : 1;
+  const fx = Math.cos(p.a), fy = Math.sin(p.a), made = [];
+  for (let i = 0; i < want; i++) {
+    const side = want === 2 ? (i ? 32 : -32) : 0;
+    const x = Math.round(p.x + fx * 44 - fy * side), y = Math.round(p.y + fy * 44 + fx * side), c = { x, y };
+    const why = x < 60 || y < 60 || x > W - 60 || y > H - 60 ? "Too close to the edge of the valley."
+      : WALLS.some((w) => rectHitsCircle(w, c, 34)) ? "Something's in the way."
+      : PLOTS.some((pl) => dist2(pl, c) < 58 * 58) || made.some((pl) => dist2(pl, c) < 58 * 58) ? "Too close to another plot."
+      : builds.some((b) => rectHitsCircle(b, c, 30)) ? "Not on top of your barricades."
+      : null;
+    if (why) { if (!made.length && i === want - 1) return toast(p, why, "#bbb"); continue; }
+    made.push({ x, y, stage: 0, prog: 0, rate: 1, owner: 0, tilled: p.id });
+  }
+  if (!made.length || PLOTS.length + made.length > 200) return;
+  PLOTS.push(...made);
+  for (const pl of made) events.push({ k: "built", x: pl.x, y: pl.y });
+  deed("soil", 2 * made.length); addXp(p, 3);
+  toast(p, `Tilled ${made.length === 2 ? "two new plots" : "a new plot"} (${mineN + made.length}/${limit}). Plant it with E.`, "#8f8");
+  broadcastRaw(JSON.stringify(mapMsg()));
 }
 function giveWeapon(p, w) {
   if (w.type === "pistol") { p.weapons[0] = w; p.active = 0; return; }
@@ -880,7 +912,8 @@ function buy(p, item) {
   if (p.dead) return;
   const it = SHOP[item]; if (!it) return;
   if (item === "enhance") return enhance(p);
-  const cost = price(p, it.cost);
+  if (item === "hoe" && p.hoe >= 3) return toast(p, "Your Golden Hoe is as good as hoes get.", "#bbb");
+  const cost = price(p, item === "hoe" ? HOE_COST[p.hoe] : it.cost);
   if (p.gold < cost) return toast(p, `Need ${cost}g`, "#f88");
   if (item === "repair" && game.hearth >= game.hearthMax) return toast(p, "Hearth is already at full health", "#bbb");
   p.gold -= cost;
@@ -888,6 +921,7 @@ function buy(p, item) {
   if (item === "seeds") p.seeds += 3;
   else if (item === "medkit") p.hp = maxHp(p);
   else if (item === "kevlar") p.armor = 60;
+  else if (item === "hoe") { p.hoe++; toast(p, `${p.hoe === 1 ? "Bought" : "Upgraded to"} a ${HOES[p.hoe]}. Press E on open ground to till a plot (${hoeLimit(p.hoe)} max${p.hoe === 3 ? ", two at a time" : ""}).`, "#8f8"); }
   else if (item === "grenade") p.gren = Math.min(9, p.gren + 2);
   else if (item === "molotov") p.molo = Math.min(9, p.molo + 2);
   else if (item === "antidote") { if (p.inf) cure(p, "The antidote tastes like pennies. The infection is gone."); else toast(p, "Bought an antidote. You drink it anyway. Nothing happens.", "#bbb"); }
@@ -906,7 +940,7 @@ function buy(p, item) {
     p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) }); p.st.cases++;
     if (rarity >= 2) setTimeout(() => feed(`${fullName(p)} unboxed ${RARITY[rarity].toUpperCase()} ${wName(w)}`, ["", "", "#c070ff", "#ffc030", "#ff4b4b"][rarity]), 3200);
   } else if (WEAPONS[item]) giveWeapon(p, newWeapon(item));
-  if (item !== "case" && item !== "gcase" && item !== "antidote") toast(p, `Bought ${it.name}`, "#8f8");
+  if (item !== "case" && item !== "gcase" && item !== "antidote" && item !== "hoe") toast(p, `Bought ${it.name}`, "#8f8");
 }
 function enhance(p) {
   const w = p.weapons[p.active];
@@ -1378,6 +1412,7 @@ function endRoyale() {
 // ---------------------------------------------------------------- phases
 // launched from the lobby once everyone is ready: build the world, play the opening, then drop everyone in
 function startGame() {
+  PLOTS.length = BASE_PLOTS; // tilled plots belong to the last game
   generateMap((Math.random() * 1e9) | 0);
   vehicles = []; builds = []; game.zone = null; game.drop = null; game.countdown = 0; game.skip = new Set(); game.pendingVote = null;
   game.deeds = freshDeeds(); game.legend = null;
@@ -1791,7 +1826,7 @@ function snapshot() {
         rl: w.reloadUntil ? +(w.reloadUntil - t).toFixed(2) : 0, rt: w.reloadUntil ? +(w.reloadUntil - w.reloadStart).toFixed(2) : 0, rtr: w.tried ? 1 : 0,
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
         lv: p.lvl, xp: p.xp, xn: xpNeed(p.lvl), pts: p.pts, sk: p.sk, ch: p.champion ? 1 : 0,
-        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, out: p.out ? 1 : 0, pk: p.st.pk, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
+        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, out: p.out ? 1 : 0, pk: p.st.pk, hoe: p.hoe || 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
         nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
         k: p.st.kills, de: p.st.deaths, cr: p.st.crops, tk: p.st.tk, hs: p.st.hs, acc: p.st.shots ? Math.round(p.st.hits / p.st.shots * 100) : 0,
       };
