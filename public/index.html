@@ -98,6 +98,23 @@
   .opt label { min-width: 150px; font-weight: bold; }
   .opt input[type=range] { flex: 1; }
   .opt span { min-width: 60px; text-align: right; color: #ffd34d; }
+  #clean .panel { max-width: 660px; background: #161a14; border-color: #8a8a6a; }
+  .cl-h { font-size: 20px; font-weight: bold; color: #e8e0c0; } .cl-h span { float: right; font-size: 14px; color: #ff9a80; }
+  .cl-msg { margin: 8px 0 12px; color: #cfe0b8; min-height: 20px; }
+  .cl-parts { display: flex; flex-wrap: wrap; gap: 4px; } .cl-parts .cbtn { font-size: 15px; }
+  .cl-parts .cbtn.done { opacity: .25; }
+  .cl-l { margin-top: 14px; font-size: 12px; color: #999; letter-spacing: 1px; }
+  .cl-tray { margin-top: 4px; padding: 8px; min-height: 30px; background: #0006; border-radius: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .cl-tray span { padding: 3px 8px; background: #3a3a30; border-radius: 4px; font-size: 12px; color: #ddd; }
+  #hack .panel { max-width: 660px; background: #0b120e; border-color: #2aff9a; font-family: Consolas, "Courier New", monospace; }
+  .hk-time { height: 6px; background: #0f2a1c; border-radius: 3px; overflow: hidden; margin-bottom: 12px; } .hk-time div { height: 100%; background: #7dffb0; }
+  .hk-wrap { display: flex; gap: 18px; flex-wrap: wrap; }
+  .hk-grid { border-collapse: collapse; } .hk-grid td { width: 46px; height: 40px; text-align: center; color: #3a7a5a; font-size: 18px; font-weight: bold; border: 1px solid #12301f; user-select: none; }
+  .hk-grid td.on { color: #d8ffe8; background: #12301f; cursor: pointer; } .hk-grid td.on:hover { background: #2aff9a; color: #062014; } .hk-grid td.used { color: #2a5a3f; cursor: default; background: none; }
+  .hk-side { flex: 1; min-width: 200px; } .hk-l { color: #7dffb0; font-size: 12px; margin: 6px 0 4px; letter-spacing: 2px; }
+  .hk-buf span { display: inline-block; width: 30px; height: 26px; line-height: 26px; margin: 0 3px 3px 0; border: 1px dashed #2aff9a; text-align: center; color: #d8ffe8; vertical-align: top; }
+  .hk-seq { margin: 4px 0; color: #9fb; } .hk-seq span { display: inline-block; width: 30px; text-align: center; } .hk-seq.ok { color: #7dffb0; } .hk-seq b { font-size: 12px; margin-left: 8px; }
+  .hk-f { color: #9fb; font-size: 13px; margin: 12px 0 6px; }
   .modeBtns button { padding: 10px 16px; font-size: 16px; font-weight: bold; background: #2a3423; color: #cfe0b8; border: 2px solid #4b5e38; border-radius: 8px; cursor: pointer; }
   .modeBtns button.sel { border-color: #ffd34d; color: #ffd34d; }
   #dlg { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); width: min(640px, calc(100% - 32px)); z-index: 7; background: #1a1624f2; border: 2px solid #8a6ab0; border-radius: 12px; padding: 14px 18px; }
@@ -138,8 +155,8 @@
     <div class="classes" id="classes"></div>
     <button class="big" id="go">Enter the Valley</button>
     <div class="keys">
-      <kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> look/shoot &nbsp; <kbd>Right-click</kbd> aim down sights &nbsp; <kbd>Space</kbd> jump (hold to bunny hop) &nbsp; <kbd>Shift</kbd> dodge &nbsp; <kbd>T</kbd> first / third person / top-down &nbsp; <kbd>R</kbd> reload &nbsp; <kbd>E</kbd> plant / harvest / loot &nbsp;
-      <kbd>Q</kbd> FUS RO DAH &nbsp; <kbd>1</kbd><kbd>2</kbd> swap &nbsp; <kbd>3</kbd> grenade &nbsp; <kbd>4</kbd> molotov &nbsp; <kbd>B</kbd> shop (day) &nbsp;
+      <kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> look/shoot &nbsp; <kbd>Right-click</kbd> aim down sights &nbsp; <kbd>Space</kbd> jump (hold to bunny hop) &nbsp; <kbd>Shift</kbd> dodge &nbsp; <kbd>T</kbd> first / third person / top-down &nbsp; <kbd>R</kbd> reload (tap again at each stage) &nbsp; <kbd>E</kbd> plant / harvest / loot &nbsp;
+      <kbd>Q</kbd> Thu'um &nbsp; <kbd>Z</kbd> switch element &nbsp; <kbd>L</kbd> strip &amp; clean your gun &nbsp; <kbd>1</kbd><kbd>2</kbd> swap &nbsp; <kbd>3</kbd> grenade &nbsp; <kbd>4</kbd> molotov &nbsp; <kbd>B</kbd> shop (day) &nbsp;
       <kbd>K</kbd> skills &nbsp; <kbd>J</kbd> journal &nbsp; <kbd>C</kbd> build &nbsp; <kbd>G</kbd> casino &nbsp; <kbd>V</kbd> wardrobe &nbsp; <kbd>X</kbd> relieve yourself &nbsp; <kbd>O</kbd> options &nbsp; <kbd>F</kbd> ready &nbsp; <kbd>Tab</kbd> scoreboard &nbsp; <kbd>Enter</kbd> chat
     </div>
   </div>
@@ -223,6 +240,22 @@
     <h2 style="margin:0 0 4px;color:#cfe0b8">Options</h2>
     <div id="optsBody"></div>
     <div class="keys">Saved on this computer. <kbd>O</kbd>/<kbd>Esc</kbd> to close.</div>
+  </div>
+</div>
+
+<div id="clean" class="overlay hidden">
+  <div class="panel">
+    <h2 style="margin:0 0 4px;color:#e8e0c0">Field strip &amp; clean</h2>
+    <div id="cleanBody"></div>
+    <div class="keys"><kbd>Esc</kbd> to give up (the gun stays dirty). You can't shoot while it's in bits.</div>
+  </div>
+</div>
+
+<div id="hack" class="overlay hidden">
+  <div class="panel">
+    <h2 style="margin:0 0 4px;color:#7dffb0">SLOP-TECH BREACH PROTOCOL</h2>
+    <div id="hackBody"></div>
+    <div class="keys"><kbd>Esc</kbd> to walk away quietly. Uploading nothing useful trips the alarm.</div>
   </div>
 </div>
 

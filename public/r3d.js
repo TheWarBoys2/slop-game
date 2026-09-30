@@ -2,10 +2,11 @@
 // Game coordinates are (x, y) on the ground and z for height; three.js is y-up, so a game point (x, y, z) sits at (x, z, y).
 // game.js owns the game state and the camera maths; this file only turns that state into a scene.
 // zombie sizes by the one-letter code the server sends (game.js uses this too)
-var ZR = { b: 48, e: 34, t: 26, r: 12, w: 15, c: 20, f: 13, x: 24, s: 14 };
+var ZR = { b: 48, e: 34, t: 26, r: 12, w: 15, c: 20, f: 13, x: 24, s: 14, d: 16, y: 40 };
 var R3D = (function () {
   let T = null, R = null, scene = null, cam = null, gl = null, ok = false, vw = 0, vh = 0;
-  let level = null, levelKey = "";
+  let level = null, levelKey = "", levelVer = -1;
+  const wallObjs = new Map();
   const pools = new Map(); // "kind:id" -> { obj, seen, x, y, z, a }
   const fxObjs = new Map(); // fx object -> mesh
   let frameNo = 0, viewModel = null, vmKey = "";
@@ -63,6 +64,14 @@ var R3D = (function () {
     let seed = (MAP.seed % 2147483646) + 1; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     for (let i = 0; i < 2600; i++) { g.fillStyle = rnd() < 0.5 ? "#476f33" : "#588741"; g.beginPath(); g.arc(rnd() * MAP.W, rnd() * MAP.H, 6 + rnd() * 26, 0, 7); g.fill(); }
     g.fillStyle = "#6a5a3a"; g.fillRect(MAP.W / 2 - 40, 0, 80, MAP.H); g.fillRect(0, MAP.H / 2 - 40, MAP.W, 80);
+    if (MAP.pitch) { // the football pitch
+      const p = MAP.pitch; g.fillStyle = "#5a8a40"; g.fillRect(p.x, p.y, p.w, p.h);
+      for (let i = 0; i < p.w; i += 80) { g.fillStyle = "#62944a"; g.fillRect(p.x + i, p.y, 40, p.h); }
+      g.strokeStyle = "#f0f0f0"; g.lineWidth = 4; g.strokeRect(p.x, p.y, p.w, p.h);
+      g.beginPath(); g.moveTo(p.x + p.w / 2, p.y); g.lineTo(p.x + p.w / 2, p.y + p.h); g.stroke();
+      g.beginPath(); g.arc(p.x + p.w / 2, p.y + p.h / 2, 50, 0, 7); g.stroke();
+      for (const s of [0, 1]) g.strokeRect(s ? p.x + p.w - 70 : p.x, p.y + p.h / 2 - 80, 70, 160);
+    }
     g.strokeStyle = "#3d6a2c"; g.lineWidth = 2;
     for (let i = 0; i < 3000; i++) { const x = rnd() * MAP.W, y = rnd() * MAP.H; g.beginPath(); g.moveTo(x - 3, y); g.lineTo(x - 1, y - 6); g.moveTo(x, y); g.lineTo(x + 1, y - 8); g.stroke(); }
     for (let i = 0; i < 400; i++) { g.fillStyle = ["#e86", "#fd5", "#c8f", "#fff"][(rnd() * 4) | 0]; g.beginPath(); g.arc(rnd() * MAP.W, rnd() * MAP.H, 3, 0, 7); g.fill(); }
@@ -75,7 +84,7 @@ var R3D = (function () {
   const ROOFS = [0xa33b2b, 0x3b5ea3, 0x5d6b3a, 0x6b4a8a];
   function buildLevel(MAP) {
     if (level) { scene.remove(level); level.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
-    level = new T.Group();
+    level = new T.Group(); wallObjs.clear();
     const ground = mesh(new T.PlaneGeometry(MAP.W, MAP.H), new T.MeshLambertMaterial({ map: groundTexture(MAP) }), MAP.W / 2, 0, MAP.H / 2);
     ground.rotation.x = -Math.PI / 2; level.add(ground);
     // the world's edge: a low dark hedge all round
@@ -95,58 +104,71 @@ var R3D = (function () {
     scene.add(level);
   }
   function addWall(w) {
+    const tgt = new T.Group();
     const cx = w.x + w.w / 2, cy = w.y + w.h / 2, z0 = w.z0 || 0, z1 = w.z1 || 60, hgt = z1 - z0;
     if (w.kind === "house") {
-      level.add(at(box(w.w, w.h, hgt - 8, mat(0x8b5a3a)), cx, cy, (hgt - 8) / 2));
-      level.add(at(box(w.w + 12, w.h + 12, 8, mat(ROOFS[w.roof || 0])), cx, cy, hgt - 4));
-      for (const s of [-1, 1]) level.add(at(box(w.w + 12, 6, 12, mat(ROOFS[w.roof || 0])), cx, cy + s * (w.h / 2 + 3), hgt + 6)); // parapet
-      level.add(at(box(22, 3, 44, mat(0x3a2616)), cx, w.y + w.h + 1, 22)); // door
-      for (const fx of [-0.3, 0.3]) level.add(at(box(22, 3, 18, mat(0x9fc8e0, 0x1a2a3a)), cx + fx * w.w, w.y + w.h + 1, hgt * 0.55));
-      level.add(at(box(16, 16, 40, mat(0x6d5a4a)), w.x + w.w * 0.75, w.y + w.h * 0.3, hgt + 20)); // chimney
+      tgt.add(at(box(w.w, w.h, hgt - 8, mat(0x8b5a3a)), cx, cy, (hgt - 8) / 2));
+      tgt.add(at(box(w.w + 12, w.h + 12, 8, mat(ROOFS[w.roof || 0])), cx, cy, hgt - 4));
+      for (const s of [-1, 1]) tgt.add(at(box(w.w + 12, 6, 12, mat(ROOFS[w.roof || 0])), cx, cy + s * (w.h / 2 + 3), hgt + 6)); // parapet
+      tgt.add(at(box(22, 3, 44, mat(0x3a2616)), cx, w.y + w.h + 1, 22)); // door
+      for (const fx of [-0.3, 0.3]) tgt.add(at(box(22, 3, 18, mat(0x9fc8e0, 0x1a2a3a)), cx + fx * w.w, w.y + w.h + 1, hgt * 0.55));
+      tgt.add(at(box(16, 16, 40, mat(0x6d5a4a)), w.x + w.w * 0.75, w.y + w.h * 0.3, hgt + 20)); // chimney
     } else if (w.kind === "hearth") {
       const g = new T.Group();
       g.add(mesh(new T.BoxGeometry(w.w, hgt, w.h), mat(0x9a8a70), 0, hgt / 2, 0));
       g.add(mesh(new T.BoxGeometry(w.w + 10, 10, w.h + 10), mat(0x6f5f4a), 0, hgt + 5, 0));
       const f1 = mesh(new T.ConeGeometry(30, 70, 10), mat(0xff8a2a, 0xff6a10), 0, hgt + 40, 0), f2 = mesh(new T.ConeGeometry(16, 44, 8), mat(0xffe07a, 0xffd040), 0, hgt + 32, 0);
       g.add(f1, f2); g.userData.flames = [f1, f2];
-      level.userData.hearth = at(g, cx, cy, 0); level.add(g);
+      level.userData.hearth = at(g, cx, cy, 0); tgt.add(g);
     } else if (w.kind === "tower") {
-      level.add(at(box(w.w, w.h, hgt, mat(0x7d7066)), cx, cy, hgt / 2));
-      for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) level.add(at(box(14, 14, 18, mat(0x6d6056)), cx + dx * (w.w / 2 - 7), cy + dy * (w.h / 2 - 7), z1 + 9));
-      level.add(at(box(w.w + 4, w.h + 4, 6, mat(0x5a4e46)), cx, cy, z1 - 3));
+      tgt.add(at(box(w.w, w.h, hgt, mat(0x7d7066)), cx, cy, hgt / 2));
+      for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) tgt.add(at(box(14, 14, 18, mat(0x6d6056)), cx + dx * (w.w / 2 - 7), cy + dy * (w.h / 2 - 7), z1 + 9));
+      tgt.add(at(box(w.w + 4, w.h + 4, 6, mat(0x5a4e46)), cx, cy, z1 - 3));
     } else if (w.kind === "bridge") {
-      level.add(at(box(w.w, w.h, hgt, mat(0x8a6a42)), cx, cy, (z0 + z1) / 2));
+      tgt.add(at(box(w.w, w.h, hgt, mat(0x8a6a42)), cx, cy, (z0 + z1) / 2));
       const horiz = w.w > w.h;
-      for (const s of [-1, 1]) level.add(at(box(horiz ? w.w : 4, horiz ? 4 : w.h, 26, mat(0x6e5232)), horiz ? cx : cx + s * (w.w / 2 - 2), horiz ? cy + s * (w.h / 2 - 2) : cy, z1 + 13));
+      for (const s of [-1, 1]) tgt.add(at(box(horiz ? w.w : 4, horiz ? 4 : w.h, 26, mat(0x6e5232)), horiz ? cx : cx + s * (w.w / 2 - 2), horiz ? cy + s * (w.h / 2 - 2) : cy, z1 + 13));
     } else if (w.kind === "step") {
-      level.add(at(box(w.w, w.h, hgt, mat(0x9a7a4a)), cx, cy, hgt / 2));
-      level.add(at(box(w.w, w.h, 3, mat(0x7a5a32)), cx, cy, z1 - 1.5));
+      tgt.add(at(box(w.w, w.h, hgt, mat(0x9a7a4a)), cx, cy, hgt / 2));
+      tgt.add(at(box(w.w, w.h, 3, mat(0x7a5a32)), cx, cy, z1 - 1.5));
     } else if (w.kind === "ledge") {
-      level.add(at(box(w.w, w.h, hgt, mat(0x6a6a74)), cx, cy, (z0 + z1) / 2));
-      level.add(at(box(w.w + 2, w.h + 2, 2, mat(0x7dffb0, 0x2a9a60)), cx, cy, z0 + 1));
+      tgt.add(at(box(w.w, w.h, hgt, mat(0x6a6a74)), cx, cy, (z0 + z1) / 2));
+      tgt.add(at(box(w.w + 2, w.h + 2, 2, mat(0x7dffb0, 0x2a9a60)), cx, cy, z0 + 1));
     } else if (w.kind === "pad") {
       const p = mesh(new T.CylinderGeometry(w.w / 2, w.w / 2 + 3, 5, 20), mat(0x40e0ff, 0x1090c0), 0, 2.5, 0);
       const ring = mesh(new T.TorusGeometry(w.w / 2 - 4, 2.5, 6, 24), basic(0xbff8ff, 0.8), 0, 6, 0); ring.rotation.x = Math.PI / 2;
-      const g = new T.Group(); g.add(p, ring); g.userData.ring = ring; at(g, cx, cy, 0); level.add(g);
+      const g = new T.Group(); g.add(p, ring); g.userData.ring = ring; at(g, cx, cy, 0); tgt.add(g);
       (level.userData.pads = level.userData.pads || []).push(g);
     } else if (w.kind === "crate") {
-      level.add(at(box(w.w, w.h, hgt, mat(0xd8b860)), cx, cy, hgt / 2));
-      for (const s of [-0.25, 0.25]) level.add(at(box(w.w + 1, 3, hgt + 1, mat(0x8a6a32)), cx, cy + s * w.h, hgt / 2));
+      tgt.add(at(box(w.w, w.h, hgt, mat(0xd8b860)), cx, cy, hgt / 2));
+      for (const s of [-0.25, 0.25]) tgt.add(at(box(w.w + 1, 3, hgt + 1, mat(0x8a6a32)), cx, cy + s * w.h, hgt / 2));
     } else if (w.kind === "rock") {
       const r = mesh(new T.DodecahedronGeometry(1, 0), mat(0x7d7d80));
-      r.scale.set(w.w * 0.62, hgt * 0.95, w.h * 0.62); at(r, cx, cy, hgt * 0.45); r.rotation.y = (w.x * 7) % 3; level.add(r);
+      r.scale.set(w.w * 0.62, hgt * 0.95, w.h * 0.62); at(r, cx, cy, hgt * 0.45); r.rotation.y = (w.x * 7) % 3; tgt.add(r);
     } else if (w.kind === "tree") {
-      level.add(at(mesh(new T.CylinderGeometry(6, 9, 120, 8), mat(0x5a3a1e)), cx, cy, 60));
-      level.add(at(mesh(new T.ConeGeometry(w.w * 0.9, 130, 9), mat(0x2f5e28)), cx, cy, 150));
-      level.add(at(mesh(new T.ConeGeometry(w.w * 0.65, 100, 9), mat(0x3b7431)), cx, cy, 215));
+      tgt.add(at(mesh(new T.CylinderGeometry(6, 9, 120, 8), mat(0x5a3a1e)), cx, cy, 60));
+      tgt.add(at(mesh(new T.ConeGeometry(w.w * 0.9, 130, 9), mat(0x2f5e28)), cx, cy, 150));
+      tgt.add(at(mesh(new T.ConeGeometry(w.w * 0.65, 100, 9), mat(0x3b7431)), cx, cy, 215));
     } else if (w.kind === "fence") {
-      level.add(at(box(w.w, w.h * 0.4, 8, mat(0x94693c)), cx, cy, 26));
-      level.add(at(box(w.w, w.h * 0.4, 8, mat(0x94693c)), cx, cy, 12));
+      tgt.add(at(box(w.w, w.h * 0.4, 8, mat(0x94693c)), cx, cy, 26));
+      tgt.add(at(box(w.w, w.h * 0.4, 8, mat(0x94693c)), cx, cy, 12));
       const n = Math.max(2, Math.round(Math.max(w.w, w.h) / 40));
-      for (let i = 0; i <= n; i++) { const k = i / n; level.add(at(box(6, 6, hgt, mat(0x7a5530)), w.w > w.h ? w.x + k * w.w : cx, w.w > w.h ? cy : w.y + k * w.h, hgt / 2)); }
+      for (let i = 0; i <= n; i++) { const k = i / n; tgt.add(at(box(6, 6, hgt, mat(0x7a5530)), w.w > w.h ? w.x + k * w.w : cx, w.w > w.h ? cy : w.y + k * w.h, hgt / 2)); }
+    } else if (w.kind === "rubble") {
+      tgt.add(at(box(w.w * 0.9, w.h * 0.9, hgt * 0.6, mat(0x6d5a4a)), cx, cy, hgt * 0.3));
+      for (let i = 0; i < 9; i++) { const c = mesh(new T.BoxGeometry(18 + (i * 7) % 20, 10 + (i * 5) % 14, 16), mat(i % 3 ? 0x8b5a3a : ROOFS[w.roof || 0])); at(c, w.x + ((i * 37) % 97) / 97 * w.w, w.y + ((i * 61) % 89) / 89 * w.h, hgt * 0.6 + (i % 3) * 3); c.rotation.set(i, i * 2, i * 3); tgt.add(c); }
+    } else if (w.kind === "post") {
+      tgt.add(at(box(w.w, w.h, hgt, mat(0xf4f4f4)), cx, cy, (z0 + z1) / 2));
     } else {
-      level.add(at(box(w.w, w.h, hgt, mat(0x8a8a8a)), cx, cy, (z0 + z1) / 2));
+      tgt.add(at(box(w.w, w.h, hgt, mat(0x8a8a8a)), cx, cy, (z0 + z1) / 2));
     }
+    level.add(tgt); if (w.id !== undefined) wallObjs.set(w.id, tgt);
+  }
+  // walls can be destroyed (and rubble appears) without rebuilding the whole level
+  function syncWalls(MAP) {
+    const ids = new Set(MAP.walls.map((w) => w.id));
+    for (const [id, o] of wallObjs) if (!ids.has(id)) { level.remove(o); o.traverse((c) => { if (c.geometry) c.geometry.dispose(); }); wallObjs.delete(id); }
+    for (const w of MAP.walls) if (w.id !== undefined && !wallObjs.has(w.id)) addWall(w);
   }
 
   // ---------------------------------------------------------------- models
@@ -227,7 +249,7 @@ var R3D = (function () {
     g.userData.body = body;
     return g;
   }
-  const ZCOL = { e: 0x3a6a8a, t: 0x3f6b3a, r: 0xa0d070, w: 0x6fa35a, c: 0x7a5a3a, f: 0x4a3a5a, x: 0x8aa04a, s: 0xd8d0c0 };
+  const ZCOL = { e: 0x3a6a8a, t: 0x3f6b3a, r: 0xa0d070, w: 0x6fa35a, c: 0x7a5a3a, f: 0x4a3a5a, x: 0x8aa04a, s: 0xd8d0c0, d: 0x7a8a3a, y: 0x5a6a2a };
   function zombieMesh(type, bk) {
     const r = ZR[type] || 15;
     const bossCol = { leshen: 0x3a5a2a, drowned: 0x3a6a8a, golem: 0xb08a3a }[bk] || 0x3a5a2a;
@@ -243,6 +265,19 @@ var R3D = (function () {
       const wings = [];
       for (const s of [-1, 1]) { const piv = new T.Group(); piv.position.set(0, 26 * k, s * 6 * k); const w = mesh(new T.BoxGeometry(18 * k, 1.5, 30 * k), mat(0x2a2030), 0, 0, s * 15 * k); piv.add(w); g.add(piv); wings.push(piv); }
       g.userData.wings = wings;
+    } else if (type === "d" || type === "y") { // a dinosaur: level body, long tail, big head, two strong legs, silly little arms
+      const s = type === "y" ? 2.6 : 1, stripe = mat(type === "y" ? 0x3a4a1a : 0xc8702a);
+      const body = mesh(new T.SphereGeometry(12 * s, 12, 10), skin, 0, 28 * s, 0); body.scale.set(1.6, 0.9, 0.8); g.add(body);
+      const tail = mesh(new T.ConeGeometry(7 * s, 40 * s, 8), skin, -32 * s, 28 * s, 0); tail.rotation.z = Math.PI / 2 + 0.12; g.add(tail);
+      const neck = mesh(new T.CylinderGeometry(5 * s, 6 * s, 14 * s, 8), skin, 16 * s, 36 * s, 0); neck.rotation.z = -0.7; g.add(neck);
+      g.add(mesh(new T.BoxGeometry(22 * s, 11 * s, 11 * s), skin, 26 * s, 44 * s, 0));
+      g.add(mesh(new T.BoxGeometry(18 * s, 3 * s, 9 * s), mat(0xe8e0c8), 28 * s, 38.5 * s, 0)); // teeth
+      for (const z2 of [-1, 1]) g.add(mesh(new T.SphereGeometry(1.8 * s, 6, 5), mat(0xffc020, 0xff8000), 31 * s, 47 * s, z2 * 5.6 * s));
+      for (let i = 0; i < 4; i++) g.add(mesh(new T.ConeGeometry(2.5 * s, 7 * s, 4), stripe, (8 - i * 8) * s, 40 * s - i * s, 0));
+      const legs = [];
+      for (const z2 of [-1, 1]) { const piv = new T.Group(); piv.position.set(0, 24 * s, z2 * 7 * s); piv.add(mesh(new T.BoxGeometry(7 * s, 24 * s, 7 * s), skin, 0, -12 * s, 0)); g.add(piv); legs.push(piv); }
+      g.userData.legs = legs;
+      for (const z2 of [-1, 1]) { const a = mesh(new T.BoxGeometry(8 * s, 2.5 * s, 2.5 * s), skin, 20 * s, 28 * s, z2 * 7 * s); g.add(a); arms.push(a); }
     } else {
       const fat = type === "x" ? 1.7 : type === "s" ? 0.7 : 1, tall = type === "s" ? 1.3 : type === "c" ? 0.85 : 1;
       g.add(mesh(new T.CylinderGeometry(10 * k * fat, 12 * k * fat, 30 * k * tall, 12), skin, 0, 17 * k * tall, 0));
@@ -258,6 +293,8 @@ var R3D = (function () {
     }
     const fire = mesh(new T.ConeGeometry(12 * k, 40 * k, 8, 1, true), new T.MeshBasicMaterial({ color: 0xff8a20, transparent: true, opacity: 0.55, depthWrite: false }), 0, 26 * k, 0);
     fire.visible = false; g.add(fire); g.userData.fire = fire;
+    const ice = mesh(new T.SphereGeometry(r * 1.4, 10, 8), new T.MeshBasicMaterial({ color: 0xbfefff, transparent: true, opacity: 0.45, depthWrite: false }), 0, r * 1.6, 0);
+    ice.scale.y = 1.5; ice.visible = false; g.add(ice); g.userData.ice = ice;
     if (type === "b" && bk === "leshen") for (const s of [-1, 1]) { const a = mesh(new T.CylinderGeometry(3, 4, 70, 6), mat(0xd8cfae), 0, 90, s * 26); a.rotation.x = s * 0.6; g.add(a); const b2 = mesh(new T.CylinderGeometry(2, 3, 34, 6), mat(0xd8cfae), 0, 104, s * 50); b2.rotation.x = s * 1.3; g.add(b2); }
     if (type === "b" && bk === "golem") for (const s of [-1, 1]) g.add(mesh(new T.CylinderGeometry(7, 7, 40, 8), mat(0x6b5220), -10, 60, s * 30));
     if (type === "e" || (type === "b" && bk === "drowned")) { const c = mesh(new T.TorusGeometry(10 * k, 1.5 * k, 6, 20), mat(0xffd34d, 0x806010), 4 * k, 32 * k, 0); c.rotation.y = Math.PI / 2; c.rotation.x = 0.4; g.add(c); }
@@ -335,8 +372,9 @@ var R3D = (function () {
   function frame(st) {
     frameNo++;
     const { S, MAP, t, dt, me } = st;
-    const key = MAP.seed + ":" + MAP.walls.length;
-    if (key !== levelKey) { buildLevel(MAP); levelKey = key; }
+    const key = MAP.seed + ":" + (MAP.ver === undefined ? MAP.walls.length : "");
+    if (key !== levelKey) { buildLevel(MAP); levelKey = key; levelVer = MAP.ver; }
+    else if (MAP.ver !== levelVer) { syncWalls(MAP); levelVer = MAP.ver; }
     // time of day
     let n = 0;
     if (S.g.ph === "night") n = 1;
@@ -416,7 +454,7 @@ var R3D = (function () {
     // the dead
     const bk = S.g.bk;
     for (const zz of S.z) {
-      const [id, type, zx, zy, , burn, zh, charging] = zz;
+      const [id, type, zx, zy, , burn, zh, charging, frozen] = zz;
       const e = pooled(`z:${id}:${type}:${type === "b" ? bk : ""}`, () => zombieMesh(type, bk));
       const px = e.x, py = e.y;
       smoothTo(e, zx, zy, zh || 0, dt);
@@ -425,6 +463,8 @@ var R3D = (function () {
       at(e.obj, e.x, e.y, e.z); e.obj.rotation.y = -(e.a || 0);
       const sw = Math.sin(t * 8 + id) * 0.25;
       e.obj.userData.arms.forEach((a, i) => { a.rotation.y = i ? sw : -sw; });
+      e.obj.userData.ice.visible = !!frozen;
+      if (e.obj.userData.legs && mv > 0.05 && !frozen) e.obj.userData.legs.forEach((l, i) => { l.rotation.z = Math.sin(t * 10 + id + i * Math.PI) * 0.6; });
       const fr = e.obj.userData.fire; fr.visible = !!burn; if (burn) { fr.scale.set(1, 0.8 + Math.sin(t * 20 + id) * 0.2, 1); fr.rotation.y = t * 3; }
       if (e.obj.userData.wings) e.obj.userData.wings.forEach((w, i) => { w.rotation.x = (i ? 1 : -1) * Math.sin(t * 14 + id) * 0.7; });
       if (charging) { e.obj.userData.arms.forEach((a) => { a.rotation.z = 0.5; }); e.obj.rotation.z = -0.25; } else e.obj.rotation.z = 0;
@@ -454,6 +494,54 @@ var R3D = (function () {
       });
       at(e.obj, (cx + 0.5) * 40, (cy + 0.5) * 40, fz);
       e.obj.userData.flames.forEach((f, i) => { const k = 0.75 + Math.abs(Math.sin(t * (9 + i) + cx * 3 + cy)) * 0.5; f.scale.set(1, k, 1); f.position.y = 12 * k; });
+    }
+    // Slop-Tech caches
+    for (const [id, x, y, busy] of S.ca || []) {
+      const e = pooled(`cache:${id}`, () => {
+        const g = new T.Group();
+        g.add(mesh(new T.BoxGeometry(36, 30, 28), mat(0x2a3440), 0, 15, 0));
+        const scr = mesh(new T.BoxGeometry(2, 12, 22), mat(0x7dffb0, 0x2aff9a), 18.5, 20, 0); g.add(scr); g.userData.scr = scr;
+        g.add(mesh(new T.CylinderGeometry(1, 1, 30, 5), mat(0x999999), -10, 45, 8));
+        g.add(mesh(new T.SphereGeometry(3, 8, 6), mat(0xff3030, 0xff0000), -10, 60, 8));
+        return g;
+      });
+      at(e.obj, x, y, 0); e.obj.rotation.y = id;
+      e.obj.userData.scr.material.emissive.setHex(busy ? 0xffc020 : Math.floor(t * 2 + id) % 2 ? 0x2aff9a : 0x0a5030);
+    }
+    // the football
+    if (S.ball) {
+      const [bx, by, bz] = S.ball;
+      const e = pooled("ball", () => { const g = new T.Group(); g.add(mesh(new T.SphereGeometry(9, 14, 10), mat(0xf4f4f4))); for (let i = 0; i < 6; i++) { const ph = mesh(new T.SphereGeometry(3.2, 6, 5), mat(0x222222)); const a = i * 1.05, b = (i % 3) * 1.2; ph.position.set(Math.cos(a) * Math.cos(b) * 7.6, Math.sin(b) * 7.6 * (i % 2 ? 1 : -1), Math.sin(a) * Math.cos(b) * 7.6); g.add(ph); } return g; });
+      const px = e.x ?? bx, py = e.y ?? by;
+      smoothTo(e, bx, by, bz, dt);
+      at(e.obj, e.x, e.y, e.z + 9);
+      const d = Math.hypot(e.x - px, e.y - py); if (d > 0.01) { e.obj.rotation.y = -Math.atan2(e.y - py, e.x - px); e.obj.rotation.z -= d / 9; }
+    }
+    // natural disasters
+    const dis = S.g.dis;
+    if (dis) {
+      if (dis.k === "flood" && dis.w > 0.5) {
+        const e = pooled("flood", () => { const m = mesh(new T.PlaneGeometry(MAP.W + 400, MAP.H + 400), new T.MeshLambertMaterial({ color: 0x2a6aa0, transparent: true, opacity: 0.6, depthWrite: false })); m.rotation.x = -Math.PI / 2; return m; });
+        at(e.obj, MAP.W / 2, MAP.H / 2, dis.w + Math.sin(t * 1.5) * 0.6);
+      }
+      if (dis.k === "tornado") {
+        const e = pooled("tornado", () => { const g = new T.Group(); for (let i = 0; i < 3; i++) { const c = mesh(new T.ConeGeometry(170 - i * 45, 520 - i * 80, 20, 1, true), new T.MeshBasicMaterial({ color: [0x8a8078, 0x9a9088, 0x6a625a][i], transparent: true, opacity: 0.35 + i * 0.1, side: T.DoubleSide, depthWrite: false })); c.rotation.x = Math.PI; c.position.y = (520 - i * 80) / 2; g.add(c); } return g; });
+        smoothTo(e, dis.x, dis.y, 0, dt, 1000);
+        at(e.obj, e.x, e.y, 0); e.obj.children.forEach((c, i) => { c.rotation.y = t * (4 + i * 2); });
+      }
+      for (const [mx, my, left] of dis.m || []) {
+        const e = pooled(`met:${mx}:${my}`, () => {
+          const g = new T.Group();
+          const ring = mesh(new T.RingGeometry(160, 172, 40), new T.MeshBasicMaterial({ color: 0xff4020, transparent: true, opacity: 0.7, side: T.DoubleSide, depthWrite: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = 2; g.add(ring);
+          const rock = mesh(new T.DodecahedronGeometry(24, 0), mat(0x5a3020, 0xff6010)); g.add(rock); g.userData.rock = rock;
+          const trail = mesh(new T.ConeGeometry(20, 160, 8, 1, true), new T.MeshBasicMaterial({ color: 0xffa030, transparent: true, opacity: 0.6, depthWrite: false })); rock.add(trail); trail.position.set(0, 80, 0);
+          g.userData.ring = ring; return g;
+        });
+        const k = Math.max(0, Math.min(1, 1 - left / 1.8));
+        at(e.obj, mx, my, 0);
+        e.obj.userData.ring.material.opacity = 0.4 + k * 0.5 + Math.sin(t * 20) * 0.1;
+        const rock = e.obj.userData.rock; rock.position.set(-(1 - k) * 300, (1 - k) * 1400 + 20, -(1 - k) * 500); rock.rotation.set(t * 3, t * 2, 0);
+      }
     }
     // players
     let si = 0;
@@ -524,10 +612,16 @@ var R3D = (function () {
         else if (f.kind === "shout") o = mesh(new T.TorusGeometry(1, 0.08, 6, 32), new T.MeshBasicMaterial({ color: f.col ?? 0xc8e6ff, transparent: true, depthWrite: false }));
         else if (f.kind === "burn") o = mesh(new T.SphereGeometry(4, 6, 5), new T.MeshBasicMaterial({ color: 0xff9a20, transparent: true, depthWrite: false }));
         else if (f.kind === "slash") { o = mesh(new T.TorusGeometry(56, 3, 4, 20, 2.2), new T.MeshBasicMaterial({ color: f.m ? 0xff6a6a : 0xf0f6ff, transparent: true, depthWrite: false, side: T.DoubleSide })); }
+        else if (f.kind === "zap") { // chain lightning: a jagged line through every target
+          const v = [];
+          f.pts.forEach(([x, y, z], i) => { if (i) { const [px, py, pz] = f.pts[i - 1]; for (let j = 1; j < 5; j++) { const q = j / 5; v.push(px + (x - px) * q + (Math.random() - 0.5) * 22, pz + (z - pz) * q + (Math.random() - 0.5) * 22, py + (y - py) * q + (Math.random() - 0.5) * 22); } } v.push(x, z, y); });
+          const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute(v, 3));
+          o = new T.Line(g, new T.LineBasicMaterial({ color: 0xe8dcff, transparent: true }));
+        }
         else continue;
         o.userData.fx = f; scene.add(o); fxObjs.set(f, o);
       }
-      if (f.kind === "tr") o.material.opacity = 1 - k;
+      if (f.kind === "tr" || f.kind === "zap") o.material.opacity = 1 - k;
       else if (f.kind === "boom") { const r = f.r * (f.dust ? 0.5 + k * 1.5 : 0.4 + k * 0.8); at(o, f.x, f.y, f.z ?? 20); o.scale.setScalar(r); o.material.opacity = (f.dust ? 0.6 : 1) * (1 - k); }
       else if (f.kind === "shout") { const r = f.full ? 60 + k * 200 : (f.r || 280) * Math.min(1, k * 2); at(o, f.x, f.y, (f.z || 0) + 30); o.rotation.x = Math.PI / 2; o.scale.set(r, r, r); o.material.opacity = 0.6 * (1 - k); }
       else if (f.kind === "burn") { at(o, f.x, f.y, (f.z || 0) + 10 + k * 30); o.material.opacity = 1 - k; }

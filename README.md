@@ -13,7 +13,7 @@ Only the host installs anything. Everyone else just opens a link in their browse
 | Enhance your gun to PRI, DUO, TRI, TET, PEN. Failing downgrades it. | Black Desert Online |
 | Plant, grow and harvest crops on the farm plots for gold | Stardew Valley |
 | Pick your colour and hat, a plumbob over your head, "Sul sul!" | The Sims 4 |
-| **Q** = FUS RO DAH (knocks back zombies and friends) | Skyrim |
+| **Q** = FUS RO DAH, plus Fire, Frost and Storm shouts (Z to switch) | Skyrim |
 | Zombie nights, flashlights in the dark, "This is how you died" | Project Zomboid |
 | When you die your heir takes over with a random trait and 50% inheritance tax | Crusader Kings 3, Kenshi |
 | Post-match ratings out of 10 and Player of the Match; the Gaffer class | Football Manager |
@@ -23,7 +23,7 @@ Only the host installs anything. Everyone else just opens a link in their browse
 
 **How a match goes:** a short first day, then five nights with days in between. Zombies come from the map edges and go for players or straight for the Hearth. If the Hearth's health hits zero you lose. Kill the Leshen on night 5 to win. Winner winner, chicken dinner.
 
-**Controls:** WASD move, mouse look and shoot (click the game to lock the mouse), right-click aim down sights, R reload, E plant / harvest / till new plots (with a hoe) / open crates / get in and out of things, Space jump (hold it to bunny hop), Shift dodge, T switches first person / third person / top-down, Q shout, 1/2 or mouse wheel swap weapons, 3 throw a grenade, 4 throw a molotov, B shop (daytime only), K skills, J journal, C build, G casino, V wardrobe, X relieve yourself, O options (volume, mouse sensitivity, field of view), Tab scoreboard, Enter chat. In the lobby the host picks Story, Endless or Royale, and everyone presses F when they are ready; the game starts once all of you are. There is more to find than this README lets on.
+**Controls:** WASD move, mouse look and shoot (click the game to lock the mouse), right-click aim down sights, R reload (press it again at each stage: mag out, mag in, rack), L strip and clean your gun so it stops jamming, E plant / harvest / till new plots (with a hoe) / open crates / hack Slop-Tech caches / get in and out of things, Space jump (hold it to bunny hop), Shift dodge, T switches first person / third person / top-down, Q shout, Z switch the shout's element (Force, Fire, Frost, Storm; every monster is weak to one), 1/2 or mouse wheel swap weapons, 3 throw a grenade, 4 throw a molotov, B shop (daytime only), K skills, J journal, C build, G casino, V wardrobe, X relieve yourself, O options (volume, mouse sensitivity, field of view), Tab scoreboard, Enter chat. Stress builds at night; walk onto the football pitch and kick the ball about to calm down. In the lobby the host picks Story, Endless or Royale, and everyone presses F when they are ready; the game starts once all of you are. There is more to find than this README lets on.
 
 ## Hosting on Windows (the host only)
 

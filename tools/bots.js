@@ -33,6 +33,27 @@ for (let i = 0; i < count; i++) {
     for (const e of m.pe) if (e.k === "sym" && e.sym) { seen.sym = seen.sym || {}; seen.sym[e.sym] = (seen.sym[e.sym] || 0) + 1; }
     for (const e of m.pe) if (e.k === "unlucky") seen.unlucky = (seen.unlucky || 0) + 1;
     for (const e of m.e) if (e.k === "mess") { seen.mess = seen.mess || {}; const k = e.kind + (e.big ? "!" : ""); seen.mess[k] = (seen.mess[k] || 0) + 1; }
+    for (const e of m.pe) if (e.k === "hack") {
+      seen.hacks = (seen.hacks || 0) + 1;
+      // a real solver half the time, nonsense the rest
+      let best = [], bestN = -1;
+      const dfs = (path, used, r, c, i) => {
+        const codes = path.map(([a, b]) => e.g[a][b]).join(" "), n = e.seqs.filter((q) => codes.includes(q.join(" "))).length;
+        if (n > bestN) { bestN = n; best = path.slice(); }
+        if (path.length >= e.buf || n === 3) return;
+        for (let k = 0; k < 5; k++) { const cell = i % 2 === 0 ? [r, k] : [k, c]; const key = cell.join(); if (used.has(key)) continue; used.add(key); path.push(cell); dfs(path, used, cell[0], cell[1], i + 1); path.pop(); used.delete(key); }
+      };
+      if (Math.random() < 0.5) dfs([], new Set(), 0, 0, 0); else best = [[0, 0], [1, 0]];
+      setTimeout(() => ws.send(JSON.stringify({ t: "hack", picks: best })), 1500);
+    }
+    for (const e of m.e) if (e.k === "hacked") seen.hacked = (seen.hacked || 0) + 1;
+    for (const e of m.e) if (e.k === "alarm") seen.alarms = (seen.alarms || 0) + 1;
+    for (const e of m.e) if (e.k === "collapse") seen.collapse = (seen.collapse || 0) + 1;
+    for (const e of m.e) if (e.k === "disaster") { seen.dis = seen.dis || {}; seen.dis[e.kind] = 1; }
+    for (const e of m.e) if (e.k === "goal") seen.goals = (seen.goals || 0) + 1;
+    for (const e of m.e) if (e.k === "zap") seen.zaps = (seen.zaps || 0) + 1;
+    for (const e of m.pe) if (e.k === "jammed") seen.jams = (seen.jams || 0) + 1;
+    for (const e of m.pe) if (e.k === "eff") { seen.eff = seen.eff || {}; seen.eff[e.m] = (seen.eff[e.m] || 0) + 1; }
     for (const e of m.e) if (e.k === "shame") seen.shame = (seen.shame || 0) + 1;
     for (const e of m.pe) if (e.k === "wheel") seen.spins = (seen.spins || 0) + 1;
     for (const e of m.pe) if (e.k === "dlg" && !e.close) { seen.dlg = (seen.dlg || 0) + 1; setTimeout(() => ws.send(JSON.stringify({ t: "dlg", i: (Math.random() * e.opts.length) | 0 })), 100); }
@@ -59,6 +80,10 @@ for (let i = 0; i < count; i++) {
     else if (r < 0.06) ws.send(JSON.stringify({ t: "build", kind: ["wall", "spikes", "turret", "lamp"][(Math.random() * 4) | 0], x: p.x + (Math.random() - 0.5) * 300, y: p.y + (Math.random() - 0.5) * 300 }));
     else if (r < 0.07) ws.send(JSON.stringify({ t: "reload" }));
     else if (r < 0.075) ws.send(JSON.stringify({ t: "throw", k: Math.random() < 0.5 ? "gren" : "molo" }));
+    else if (r < 0.08) ws.send(JSON.stringify({ t: "elem" }));
+    if ((p.rw || p.jam) && Math.random() < 0.3) ws.send(JSON.stringify({ t: "reload" }));
+    if (p.dirt > 60 && Math.random() < 0.01) { ws.send(JSON.stringify({ t: "clean", start: true })); setTimeout(() => ws.send(JSON.stringify({ t: "clean", mistakes: (Math.random() * 3) | 0 })), 3000); seen.cleans = (seen.cleans || 0) + 1; }
+    seen.stress = Math.max(seen.stress || 0, p.ss || 0); seen.maxWalls = S.ball ? 1 : 0;
     seen.zt = seen.zt || {}; for (const z of S.z) seen.zt[z[1]] = 1;
     seen.fires = Math.max(seen.fires || 0, (S.fi || []).length); seen.projs = Math.max(seen.projs || 0, (S.pr || []).length);
     seen.fog = seen.fog || !!S.g.fog; seen.night = Math.max(seen.night || 0, S.g.n); seen.hoe = Math.max(seen.hoe || 0, p.hoe || 0);
@@ -67,4 +92,4 @@ for (let i = 0; i < count; i++) {
     if (S.story && !seen.stories.includes(S.story.title + ": " + S.story.pick)) seen.stories.push(S.story.title + ": " + S.story.pick);
   }, 50);
 }
-setInterval(() => console.log(JSON.stringify({ phases: [...seen.phases], maxZ: seen.maxZ, hh: seen.hh, errors: seen.errors, lv: seen.lv, dlg: seen.dlg, clues: seen.clues, alive: seen.alive, zone: seen.zone, casino: seen.casino, spins: seen.spins, games: seen.games, cos: seen.cos, lastMsg: seen.lastMsg, maxZ3: seen.maxZ3, sym: seen.sym, mess: seen.mess, unlucky: seen.unlucky, intro: seen.intro, cd: seen.cd, veh: seen.veh, builds: seen.builds, legend: seen.legend, reckoned: seen.reckoned, deeds: seen.deeds, stories: seen.stories, ending: seen.ending, zt: seen.zt && Object.keys(seen.zt).join(""), fires: seen.fires, projs: seen.projs, fog: seen.fog, night: seen.night, hoe: seen.hoe, shame: seen.shame, over: seen.over && seen.over.map((r) => [r.name, r.rating, r.kills, r.hs, r.acc, r.deaths]) })), 5000);
+setInterval(() => console.log(JSON.stringify({ phases: [...seen.phases], maxZ: seen.maxZ, hh: seen.hh, errors: seen.errors, lv: seen.lv, dlg: seen.dlg, clues: seen.clues, alive: seen.alive, zone: seen.zone, casino: seen.casino, spins: seen.spins, games: seen.games, cos: seen.cos, lastMsg: seen.lastMsg, maxZ3: seen.maxZ3, sym: seen.sym, mess: seen.mess, unlucky: seen.unlucky, intro: seen.intro, cd: seen.cd, veh: seen.veh, builds: seen.builds, legend: seen.legend, reckoned: seen.reckoned, deeds: seen.deeds, stories: seen.stories, ending: seen.ending, zt: seen.zt && Object.keys(seen.zt).join(""), fires: seen.fires, projs: seen.projs, fog: seen.fog, night: seen.night, hoe: seen.hoe, shame: seen.shame, hacks: seen.hacks, hacked: seen.hacked, alarms: seen.alarms, collapse: seen.collapse, dis: seen.dis && Object.keys(seen.dis).join(","), goals: seen.goals, zaps: seen.zaps, jams: seen.jams, eff: seen.eff, cleans: seen.cleans, stress: seen.stress, ball: seen.maxWalls, over: seen.over && seen.over.map((r) => [r.name, r.rating, r.kills, r.hs, r.acc, r.deaths]) })), 5000);
