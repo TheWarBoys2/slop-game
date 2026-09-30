@@ -8,6 +8,7 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #111; color: #eee; font-family: "Trebuchet MS", system-ui, sans-serif; overflow: hidden; }
   canvas { display: block; cursor: crosshair; }
+  #c { position: relative; z-index: 1; }
   .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(8, 10, 8, .82); z-index: 10; }
   .hidden { display: none !important; }
   .panel { background: #1d2419; border: 2px solid #4b5e38; border-radius: 12px; padding: 22px 26px; max-width: 760px; width: calc(100% - 32px); max-height: 92vh; overflow: auto; box-shadow: 0 10px 40px #000a; }
@@ -131,8 +132,8 @@
     <div class="classes" id="classes"></div>
     <button class="big" id="go">Enter the Valley</button>
     <div class="keys">
-      <kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> aim/shoot &nbsp; <kbd>Right-click</kbd> aim down sights &nbsp; <kbd>R</kbd> reload &nbsp; <kbd>E</kbd> plant / harvest / loot &nbsp;
-      <kbd>Space</kbd> dodge roll &nbsp; <kbd>Q</kbd> FUS RO DAH &nbsp; <kbd>1</kbd><kbd>2</kbd> swap &nbsp; <kbd>B</kbd> shop (day) &nbsp;
+      <kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> look/shoot &nbsp; <kbd>Right-click</kbd> aim down sights &nbsp; <kbd>Space</kbd> jump (hold to bunny hop) &nbsp; <kbd>Shift</kbd> dodge &nbsp; <kbd>T</kbd> first / third person / top-down &nbsp; <kbd>R</kbd> reload &nbsp; <kbd>E</kbd> plant / harvest / loot &nbsp;
+      <kbd>Q</kbd> FUS RO DAH &nbsp; <kbd>1</kbd><kbd>2</kbd> swap &nbsp; <kbd>B</kbd> shop (day) &nbsp;
       <kbd>K</kbd> skills &nbsp; <kbd>J</kbd> journal &nbsp; <kbd>C</kbd> build &nbsp; <kbd>G</kbd> casino &nbsp; <kbd>V</kbd> wardrobe &nbsp; <kbd>X</kbd> relieve yourself &nbsp; <kbd>F</kbd> ready &nbsp; <kbd>Tab</kbd> scoreboard &nbsp; <kbd>Enter</kbd> chat
     </div>
   </div>
@@ -218,6 +219,10 @@
   </div>
 </div>
 
-<script src="/game.js"></script>
+<script type="module">
+  // three.js powers the 3D views; if it can't load, the game still runs in the classic top-down view
+  const go = () => { const s = document.createElement("script"); s.src = "/game.js"; document.body.appendChild(s); };
+  import("/three.js").then((T) => { window.THREE = T; }).catch((e) => console.warn("No 3D:", e)).finally(go);
+</script>
 </body>
 </html>

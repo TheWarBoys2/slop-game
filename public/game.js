@@ -15,8 +15,15 @@ addEventListener("resize", resize); resize();
 const RARITY_COL = ["#d8d8d8", "#4da6ff", "#c070ff", "#ffc030", "#ff4b4b"];
 const RARITY = ["Common", "Rare", "Epic", "Legendary", "Mythic"];
 const ENH = ["", "PRI", "DUO", "TRI", "TET", "PEN"];
-const WNAME = { pistol: "Pistol", smg: "SMG", shotgun: "Shotgun", rifle: "Rifle", sniper: "Sniper", staff: "Fire Staff", ak: "AK-Maybe" };
+const WNAME = { pistol: "Pistol", smg: "SMG", shotgun: "Shotgun", rifle: "Rifle", sniper: "Sniper", staff: "Fire Staff", ak: "AK-Maybe", sword: "Slop Sword" };
 const TRACER = { pistol: "#ffe9a0", smg: "#ffe9a0", shotgun: "#ffcf70", rifle: "#fff3b0", sniper: "#ffffff", staff: "#ff7a2a", ak: "#ffb0ff" };
+// ---------------------------------------------------------------- view: first person, third person, or the classic top-down map
+const VIEWS = ["fp", "tp", "top"], VIEW_NAME = { fp: "First person", tp: "Third person", top: "Classic top-down" };
+let viewMode = (() => { try { return localStorage.getItem("slop-view") || "fp"; } catch { return "fp"; } })();
+if (!VIEWS.includes(viewMode)) viewMode = "fp";
+const has3d = typeof R3D !== "undefined" && R3D.init();
+let yaw = 0, pitch = 0, yawInit = false, aimYaw = 0, aimPitch = 0, use3d = false, camNow = null, lastShotT = -9, viewT = -9;
+const slashT = new Map();
 const COLORS = ["#e0b050", "#e05050", "#50a0e0", "#60c060", "#c070e0", "#f08040", "#f0f0f0", "#40d0c0"];
 const HATS = [["none", "None"], ["crown", "Crown"], ["cowboy", "Cowboy"], ["wizard", "Wizard"], ["horns", "Iron Helmet"], ["flower", "Flower"]];
 const CLASSES = [
@@ -123,16 +130,17 @@ function onSnap(m) {
   else intro = null;
   if (building && !["day", "night", "royale"].includes(m.g.ph)) toggleBuild(false);
   const mine = m.p.find((p) => p.id === me);
-  if (mine && pred.init === false) { pred.x = mine.x; pred.y = mine.y; pred.init = true; }
+  if (mine && pred.init === false) { pred.x = mine.x; pred.y = mine.y; pred.z = mine.z || 0; pred.init = true; }
   if (mine) {
-    const dx = mine.x - pred.x, dy = mine.y - pred.y;
-    if ((mine.d || dx * dx + dy * dy > 90 * 90) && !mine.air && !mine.vh) { pred.x = mine.x; pred.y = mine.y; }
-    pred.srvX = mine.x; pred.srvY = mine.y;
+    const mv = mine.mv || [0, 0, 0, 1];
+    pred.srv = { x: mine.x, y: mine.y, z: mine.z || 0, vx: mv[0], vy: mv[1], vz: mv[2], gr: !!mv[3] };
+    if (mine.d) { pred.x = mine.x; pred.y = mine.y; pred.z = mine.z || 0; }
+    if (!yawInit && !mine.d) { yaw = mine.a; yawInit = true; }
   }
 }
 function handleEvent(e) {
   const t = T();
-  if (e.k === "tr") { fx.push({ kind: "tr", t0: t, dur: e.c === "sniper" ? 0.25 : 0.08, ...e }); const d = Math.hypot(e.x1 - pred.x, e.y1 - pred.y); if (d < 700) sfx("shot", 1 - d / 700, e.c); }
+  if (e.k === "tr") { fx.push({ kind: "tr", t0: t, dur: e.c === "sniper" ? 0.25 : use3d ? 0.12 : 0.08, col: parseInt((TRACER[e.c] || "#ffffff").slice(1), 16), ...e }); if (Math.hypot(e.x1 - pred.x - Math.cos(aimYaw) * 20, e.y1 - pred.y - Math.sin(aimYaw) * 20) < 4) lastShotT = t; const d = Math.hypot(e.x1 - pred.x, e.y1 - pred.y); if (d < 700) sfx("shot", 1 - d / 700, e.c); }
   else if (e.k === "boom") { fx.push({ kind: "boom", t0: t, dur: 0.4, ...e }); nearShake(e, 8); sfx("boom"); }
   else if (e.k === "shout") { fx.push({ kind: "shout", t0: t, dur: 0.7, ...e }); nearShake(e, 10); sfx("shout"); }
   else if (e.k === "burn") fx.push({ kind: "burn", t0: t, dur: 0.8, x: e.x + (Math.random() - 0.5) * 20, y: e.y });
@@ -151,12 +159,14 @@ function handleEvent(e) {
   else if (e.k === "cd") sfx("lvl");
   else if (e.k === "legend") { legendT = t; legendKind = e.kind; sfx("banner"); }
   else if (e.k === "mess") pushLim(messes, { ...e, t }, 60);
+  else if (e.k === "slash") { slashT.set(e.id, t); fx.push({ kind: "slash", t0: t, dur: 0.22, ...e }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("shout", 0.25); }
+  else if (e.k === "pad") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("perfect", 0.6); }
 }
 function handlePersonal(e) {
   const t = T();
   if (e.k === "toast") pushLim(toasts, { text: e.text, color: e.color, t }, 4);
   else if (e.k === "dmg") {
-    fx.push({ kind: "text", t0: t, dur: 0.7, x: e.x + (Math.random() - 0.5) * 16, y: e.y, text: e.hs ? `${e.v}!` : String(e.v), color: e.ff ? "#ff5050" : e.hs ? "#ff9d2e" : e.crit ? "#ffd34d" : "#fff", big: e.crit || e.hs });
+    fx.push({ kind: "text", t0: t, dur: 0.7, x: e.x + (Math.random() - 0.5) * 16, y: e.y, z: e.z, text: e.hs ? `${e.v}!` : String(e.v), color: e.ff ? "#ff5050" : e.hs ? "#ff9d2e" : e.crit ? "#ffd34d" : "#fff", big: e.crit || e.hs });
     if (e.hs) { hsT = t; sfx("hs"); } else sfx("hit");
   }
   else if (e.k === "lvl") { pushLim(toasts, { text: `LEVEL ${e.lvl}!  Press K to spend your skill point`, color: "#9fe0ff", t }, 4); sfx("lvl"); }
@@ -181,7 +191,7 @@ const messes = [];
 let symT = -9, adsDown = false, adsZoom = 1, watcher = null;
 const view = { cx: 0, cy: 0, z: 1, sx: 0, sy: 0 };
 const toScr = (x, y) => ({ x: (x - view.cx) * view.z + VW / 2 + view.sx, y: (y - view.cy) * view.z + VH / 2 + view.sy });
-function myScr() { return S && S.p.some((p) => p.id === me) ? toScr(pred.x, pred.y) : { x: VW / 2, y: VH / 2 }; }
+function myScr() { return !use3d && S && S.p.some((p) => p.id === me) ? toScr(pred.x, pred.y) : { x: VW / 2, y: VH / 2 }; }
 function pushLim(arr, v, n) { arr.push(v); while (arr.length > n) arr.shift(); }
 function nearShake(e, amt) { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 500) shake = Math.max(shake, amt); }
 let hearthHitT = 0, hsT = -9, localReloadTry = 0, wastedPlace = 0, fogT = -9, clueT = -9, legendT = -99, legendKind = null, intro = null;
@@ -229,14 +239,21 @@ addEventListener("keydown", (e) => {
   if (k === "r") { const mine = S?.p.find((p) => p.id === me); if (mine && mine.rl && !mine.rtr) localReloadTry = T(); send({ t: "reload" }); }
   if (k === "e") send({ t: "use" });
   if (k === "q") send({ t: "shout" });
-  if (k === " ") { send({ t: "dodge" }); localDodge(); e.preventDefault(); }
+  if (k === " ") { e.preventDefault(); const mine = S?.p.find((p) => p.id === me); if ((mine && mine.air === 1) || (S && S.g.ph === "intro")) send({ t: "dodge" }); } // jump (held); also bails out of the balloon
+  if (k === "shift") { send({ t: "dodge" }); localDodge(); }
+  if (k === "t") { viewMode = VIEWS[(VIEWS.indexOf(viewMode) + 1) % VIEWS.length]; try { localStorage.setItem("slop-view", viewMode); } catch {} viewT = T(); if (viewMode === "top") document.exitPointerLock?.(); }
   if (k === "1") send({ t: "swap", i: 0 });
   if (k === "2") send({ t: "swap", i: 1 });
 });
 addEventListener("keyup", (e) => { const k = e.key.toLowerCase(); keys.delete(k); if (k === "alt") e.preventDefault(); if (k === "tab") showScores = false; });
 addEventListener("blur", () => { keys.clear(); mouseDown = false; adsDown = false; showScores = false; });
-cv.addEventListener("mousemove", (e) => { mouseX = e.clientX; mouseY = e.clientY; });
+cv.addEventListener("mousemove", (e) => {
+  if (document.pointerLockElement === cv) { const sens = 0.0024 * (adsZoom > 1.05 ? 0.55 : 1); yaw += e.movementX * sens; pitch = Math.max(-1.45, Math.min(1.45, pitch - e.movementY * sens)); return; }
+  mouseX = e.clientX; mouseY = e.clientY;
+});
+const menusOpen = () => chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || journalOpen || (S && S.g.ph === "over");
 cv.addEventListener("mousedown", (e) => {
+  if (use3d && document.pointerLockElement !== cv) { if (e.button === 0 && !menusOpen()) cv.requestPointerLock?.(); return; }
   if (building) { if (e.button === 0) { const g = ghostCell(); send({ t: "build", kind: buildKind, x: g.x, y: g.y }); } else toggleBuild(false); return; }
   if (e.button === 0) mouseDown = true;
   if (e.button === 2) adsDown = true;
@@ -360,6 +377,7 @@ function renderBuildBar() {
 }
 setInterval(() => { if (building) renderBuildBar(); }, 500);
 function ghostCell() {
+  if (use3d) return ghost3d || { x: Math.round((pred.x - 20) / 40) * 40, y: Math.round((pred.y - 20) / 40) * 40 };
   const wx = (mouseX - VW / 2 - view.sx) / view.z + view.cx, wy = (mouseY - VH / 2 - view.sy) / view.z + view.cy;
   return { x: Math.round((wx - 20) / 40) * 40, y: Math.round((wy - 20) / 40) * 40 };
 }
@@ -435,7 +453,7 @@ function renderStory() {
     for (const [pid, i] of Object.entries(v.votes)) { counts[i]++; if (Number(pid) === me) mineV = i; }
     box.innerHTML = `<div class="st-h">${esc(v.title)} <span>${v.left}s</span></div><div class="st-t">${esc(v.text)}</div>` +
       v.ch.map(([label, desc], i) => `<div class="st-c${mineV === i ? " mine" : ""}" data-i="${i}"><b>${esc(label)}</b><small>${esc(desc)}</small><span class="st-n">${"●".repeat(counts[i])}</span></div>`).join("") +
-      `<div class="st-f">Click to vote. Majority decides.</div>`;
+      `<div class="st-f">${use3d ? "Press Esc to free your mouse, then click" : "Click"} to vote. Majority decides.</div>`;
     for (const el of box.querySelectorAll(".st-c")) el.onclick = () => send({ t: "vote", i: Number(el.dataset.i) });
   } else box.innerHTML = `<div class="st-h">${esc(st.title)}</div><div class="st-p">You chose: ${esc(st.pick)}</div><div class="st-t">${esc(st.text)}</div>`;
 }
@@ -513,48 +531,67 @@ function keyMask() {
   const mine = S && S.p.find((p) => p.id === me);
   if (mine && mine.go) return 0;
   // infected: forward is P, back is INSERT, left is ALT. There is no right.
-  if (mine && mine.inf === "keys") return (keys.has("p") ? 1 : 0) | (keys.has("alt") ? 2 : 0) | (keys.has("insert") ? 4 : 0);
-  return (keys.has("w") ? 1 : 0) | (keys.has("a") ? 2 : 0) | (keys.has("s") ? 4 : 0) | (keys.has("d") ? 8 : 0);
+  const jump = keys.has(" ") ? 16 : 0;
+  if (mine && mine.inf === "keys") return jump | (keys.has("p") ? 1 : 0) | (keys.has("alt") ? 2 : 0) | (keys.has("insert") ? 4 : 0);
+  return jump | (keys.has("w") ? 1 : 0) | (keys.has("a") ? 2 : 0) | (keys.has("s") ? 4 : 0) | (keys.has("d") ? 8 : 0);
 }
-function aimAngle() { const o = myScr(); return Math.atan2(mouseY - o.y, mouseX - o.x); }
+function aimAngle() { if (use3d) return aimYaw; const o = myScr(); return Math.atan2(mouseY - o.y, mouseX - o.x); }
 const aiming = () => adsDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen;
-setInterval(() => { if (joined) send({ t: "in", k: keyMask(), a: aimAngle(), f: mouseDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen, ads: aiming() ? 1 : 0 }); }, 33);
+setInterval(() => {
+  if (!joined) return;
+  const msg = { t: "in", k: keyMask(), a: aimAngle(), f: mouseDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen, ads: aiming() ? 1 : 0 };
+  if (use3d) { msg.pt = +aimPitch.toFixed(3); msg.rel = 1; }
+  send(msg);
+}, 33);
 setInterval(() => { if (shopOpen) renderShop(); }, 250);
 
 // ---------------------------------------------------------------- prediction (own player)
-const pred = { x: 0, y: 0, init: false, srvX: 0, srvY: 0, dashUntil: 0, dashCd: 0, dx: 0, dy: 0 };
+// the same physics as the server (move.js), run locally so movement feels instant; the server's answer pulls us back gently
+const pred = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, gr: true, pk: 0, tt: 0, init: false, srv: null, dashCd: 0 };
+let boxCache = { key: "", boxes: [] };
+function worldBoxes() {
+  const key = (MAP ? MAP.seed + ":" + MAP.walls.length : "") + ":" + (S ? S.b.map((b) => b[0]).join(",") : "");
+  if (key !== boxCache.key) {
+    const solid = S ? S.b.filter((b) => PIECES[b[1]] && PIECES[b[1]].solid).map((b) => ({ x: b[2], y: b[3], w: 40, h: 40, z0: 0, z1: PIECES[b[1]].z1 || 10, kind: "built" })) : [];
+    boxCache = { key, boxes: [...MAP.walls, ...solid] };
+  }
+  return boxCache.boxes;
+}
 function localDodge() {
   const t = T(); if (t < pred.dashCd) return;
-  const mine = S?.p.find((p) => p.id === me); if (!mine || mine.d) return;
-  const m = keyMask();
-  let dx = ((m & 8) ? 1 : 0) - ((m & 2) ? 1 : 0), dy = ((m & 4) ? 1 : 0) - ((m & 1) ? 1 : 0);
+  const mine = S?.p.find((p) => p.id === me); if (!mine || mine.d || mine.air || mine.vh) return;
+  const w = MV.wishDir(keyMask(), use3d ? yaw : aimAngle(), use3d);
+  let dx = w.x, dy = w.y;
   if (!dx && !dy) { const a = aimAngle(); dx = Math.cos(a); dy = Math.sin(a); }
-  const l = Math.hypot(dx, dy); pred.dx = dx / l; pred.dy = dy / l;
-  pred.dashUntil = t + 0.18; pred.dashCd = t + (mine.cl === "rogue" ? 0.8 : 1.3);
+  const spd = Math.max(Math.hypot(pred.vx, pred.vy), mine.sp * 2.7);
+  pred.vx = dx * spd; pred.vy = dy * spd; if (!pred.gr && pred.vz < 0) pred.vz = 0;
+  pred.dashCd = t + (mine.cl === "rogue" ? 0.8 : 1.3);
 }
-function collide(e, r) {
-  const solid = S ? S.b.filter((b) => b[1] === "wall" || b[1] === "turret").map((b) => ({ x: b[2], y: b[3], w: 40, h: 40 })) : [];
-  for (const w of [...MAP.walls, ...solid]) {
-    const cx = Math.max(w.x, Math.min(e.x, w.x + w.w)), cy = Math.max(w.y, Math.min(e.y, w.y + w.h));
-    const dx = e.x - cx, dy = e.y - cy, d2 = dx * dx + dy * dy;
-    if (d2 < r * r && d2 > 1e-4) { const d = Math.sqrt(d2); e.x = cx + dx / d * r; e.y = cy + dy / d * r; }
-  }
-  e.x = Math.max(r, Math.min(MAP.W - r, e.x)); e.y = Math.max(r, Math.min(MAP.H - r, e.y));
-}
+function collide(e, r) { MV.pushOut(e, r, worldBoxes(), MAP.W, MAP.H); }
 function stepPred(dt) {
   const mine = S?.p.find((p) => p.id === me);
   if (!mine || !MAP) return;
-  if (mine.d) { pred.x = mine.x; pred.y = mine.y; return; }
-  if (mine.air || mine.vh) { const k = Math.min(1, dt * 12); pred.x += (mine.x - pred.x) * k; pred.y += (mine.y - pred.y) * k; if (Math.hypot(mine.x - pred.x, mine.y - pred.y) > 300) { pred.x = mine.x; pred.y = mine.y; } return; }
-  const m = keyMask();
-  let mx = ((m & 8) ? 1 : 0) - ((m & 2) ? 1 : 0), my = ((m & 4) ? 1 : 0) - ((m & 1) ? 1 : 0);
-  if (mx && my) { mx *= Math.SQRT1_2; my *= Math.SQRT1_2; }
-  if (T() < pred.dashUntil) { mx = pred.dx * 3.1; my = pred.dy * 3.1; }
-  pred.x += mx * mine.sp * dt; pred.y += my * mine.sp * dt;
-  // gently pull toward the server's opinion
-  const k = Math.min(1, dt * (mx || my ? 2 : 8));
-  pred.x += (pred.srvX - pred.x) * k; pred.y += (pred.srvY - pred.y) * k;
-  collide(pred, 16);
+  if (mine.d) { Object.assign(pred, { x: mine.x, y: mine.y, z: mine.z || 0, vx: 0, vy: 0, vz: 0 }); return; }
+  if (mine.air || mine.vh) { const k = Math.min(1, dt * 12); pred.x += (mine.x - pred.x) * k; pred.y += (mine.y - pred.y) * k; pred.z += ((mine.z || 0) - pred.z) * k; pred.vx = pred.vy = pred.vz = 0; if (Math.hypot(mine.x - pred.x, mine.y - pred.y) > 300) { pred.x = mine.x; pred.y = mine.y; } return; }
+  // step in small slices so fast frames and slow frames give the same jump
+  let left = Math.min(dt, 0.1);
+  while (left > 1e-4) {
+    const h = Math.min(left, 1 / 60); left -= h;
+    MV.step(pred, { keys: keyMask(), yaw: use3d ? yaw : aimAngle(), rel: use3d }, h, { sp: mine.sp, boxes: worldBoxes(), W: MAP.W, H: MAP.H, frozen: !!mine.go || dlgOpen });
+  }
+  // gently pull toward the server's opinion (projected forward a little, since it's slightly out of date)
+  const s = pred.srv;
+  if (s) {
+    const lead = 0.06, tx = s.x + s.vx * lead, ty = s.y + s.vy * lead, tz = s.z;
+    const err = Math.hypot(tx - pred.x, ty - pred.y);
+    if (err > 140 || Math.abs(tz - pred.z) > 90) { Object.assign(pred, { x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, gr: s.gr }); }
+    else {
+      const k = Math.min(1, dt * 3);
+      pred.x += (tx - pred.x) * k; pred.y += (ty - pred.y) * k;
+      if (s.gr && pred.gr) pred.z += (tz - pred.z) * k;
+      pred.vx += (s.vx - pred.vx) * k * 0.5; pred.vy += (s.vy - pred.vy) * k * 0.5;
+    }
+  }
 }
 
 // ---------------------------------------------------------------- decor
@@ -794,6 +831,166 @@ function trailFx(p, d, t) {
   fx.push({ kind: "trail", t0: t, dur: k === "loo" ? 2.5 : 0.9, x, y, c: k === "rainbow" ? `hsl(${(t * 300) % 360},90%,60%)` : col, trl: k, r: Math.random() });
 }
 
+// ---------------------------------------------------------------- 3D view (first / third person)
+// a ray against the world (boxes, ground, the dead, other players) in game coordinates; returns the distance
+function rayWorld(o, d, maxT, skipId, boxesOnly) {
+  let best = maxT;
+  for (const b of worldBoxes()) {
+    let tmin = 0, tmax = Infinity, miss = false;
+    const lo = [b.x, b.y, b.z0 || 0], hi = [b.x + b.w, b.y + b.h, b.z1 || 60];
+    for (let i = 0; i < 3 && !miss; i++) {
+      if (Math.abs(d[i]) < 1e-9) { if (o[i] < lo[i] || o[i] > hi[i]) miss = true; continue; }
+      let t1 = (lo[i] - o[i]) / d[i], t2 = (hi[i] - o[i]) / d[i];
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+      if (tmin > tmax) miss = true;
+    }
+    if (!miss && tmin < best) best = tmin;
+  }
+  if (d[2] < -1e-6) best = Math.min(best, -o[2] / d[2]);
+  if (boxesOnly) return best;
+  const cyl = (x, y, r, z0, z1) => {
+    const hl = Math.hypot(d[0], d[1]); if (hl < 1e-6) return;
+    const ux = d[0] / hl, uy = d[1] / hl, fx = o[0] - x, fy = o[1] - y, b2 = fx * ux + fy * uy, c = fx * fx + fy * fy - r * r, disc = b2 * b2 - c;
+    if (disc < 0) return;
+    const th = -b2 - Math.sqrt(disc); if (th < 0) return;
+    const tt = th / hl, z = o[2] + d[2] * tt;
+    if (z >= z0 && z <= z1 && tt < best) best = tt;
+  };
+  if (S) {
+    for (const z of S.z) { const r = z[1] === "b" ? 48 : z[1] === "e" ? 34 : z[1] === "t" ? 26 : z[1] === "r" ? 12 : 15; cyl(z[2], z[3], r, z[6] || 0, (z[6] || 0) + r * 3.7); }
+    for (const p of S.p) if (p.id !== skipId && !p.d && !p.air) cyl(p.x, p.y, 16, p.z || 0, (p.z || 0) + 56);
+  }
+  return best;
+}
+const dirOf = (yw, pt) => [Math.cos(yw) * Math.cos(pt), Math.sin(yw) * Math.cos(pt), Math.sin(pt)];
+function render3d(mine, t, dt) {
+  ctx.clearRect(0, 0, VW, VH);
+  R3D.resize(VW, VH);
+  if (document.pointerLockElement === cv && menusOpen()) document.exitPointerLock();
+  adsZoom += ((mine && !mine.d && aiming() ? 1.35 : 1) - adsZoom) * Math.min(1, dt * 10);
+  const adsK = Math.max(0, (adsZoom - 1) / 0.35), fp = viewMode === "fp";
+  const eye = { x: pred.x, y: pred.y, z: pred.z + MV.EYE };
+  let cam, ownView = false;
+  watcher = null;
+  aimYaw = yaw; aimPitch = pitch;
+  const third = (tx, ty, tz, dist, side, up) => { // over-the-shoulder camera that doesn't go through walls
+    const f = dirOf(yaw, pitch), rx = -Math.sin(yaw), ry = Math.cos(yaw);
+    const want = [tx - f[0] * dist + rx * side, ty - f[1] * dist + ry * side, tz - f[2] * dist + up];
+    const dv = [want[0] - tx, want[1] - ty, want[2] - tz], L = Math.hypot(...dv) || 1, u = dv.map((v) => v / L);
+    const hit = rayWorld([tx, ty, tz], u, L, me);
+    const k = Math.max(6, hit - 16);
+    return { x: tx + u[0] * k, y: ty + u[1] * k, z: Math.max(8, tz + u[2] * k), yaw, pitch, fov: 74 - adsK * 20 };
+  };
+  if (!mine) cam = { x: MAP.W / 2, y: MAP.H + 300, z: 900, look: [MAP.W / 2, MAP.H / 2, 0], fov: 60 };
+  else if (mine.d || mine.out) {
+    let f = mine;
+    if (mine.out && S.g.ph === "royale") { const alive = S.p.filter((p) => !p.d && !p.out); if (alive.length) f = alive[Math.floor(t / 8) % alive.length]; }
+    const d = smooth("spec", f.x, f.y, dt), a = t * 0.25;
+    cam = { x: d.x - Math.cos(a) * 260, y: d.y - Math.sin(a) * 260, z: (f.z || 0) + 180, look: [d.x, d.y, (f.z || 0) + 30], fov: 70 };
+  } else if (mine.air === 1 && S.g.drop) {
+    const [x0, y0, x1, y1, k] = S.g.drop, bx = x0 + (x1 - x0) * k, by = y0 + (y1 - y0) * k;
+    cam = third(bx, by, 760, 320, 0, 60); cam.look = null;
+  } else if (mine.inf === "second") {
+    // second person: you are seen through someone else's eyes, looking at you
+    let best = null, bd = 900 * 900;
+    const far = (x, y) => { const d2 = (x - pred.x) ** 2 + (y - pred.y) ** 2; return d2 > 160 * 160 && d2 < bd ? d2 : 0; };
+    for (const q of S.p) { if (q.id === me || q.d) continue; const d2 = far(q.x, q.y); if (d2) { bd = d2; best = { x: q.x, y: q.y, z: (q.z || 0) + 46, who: q.n }; } }
+    for (const z of S.z) { const d2 = far(z[2], z[3]); if (d2) { bd = d2; const r = z[1] === "b" ? 48 : 15; best = { x: z[2], y: z[3], z: (z[6] || 0) + r * 3, who: z[1] === "b" ? "the boss" : "a zombie" }; } }
+    if (!best) { const a = t * 0.15; best = { x: pred.x + Math.cos(a) * 320, y: pred.y + Math.sin(a) * 320, z: 60, who: "something in the bushes" }; }
+    const w = smooth("watch", best.x, best.y, dt);
+    cam = { x: w.x, y: w.y, z: best.z, look: [pred.x, pred.y, pred.z + 30], fov: 70 };
+    watcher = { x: w.x, y: w.y, who: best.who };
+  } else if (fp && !mine.vh && !mine.air) {
+    const bob = pred.gr ? Math.sin(t * 11) * Math.min(1, Math.hypot(pred.vx, pred.vy) / 200) * 1.6 : 0;
+    cam = { x: eye.x, y: eye.y, z: eye.z + bob, yaw, pitch, fov: 80 - adsK * 30 };
+    ownView = true;
+  } else {
+    cam = mine.vh ? third(eye.x, eye.y, eye.z + 30, 220, 0, 50) : third(eye.x, eye.y, eye.z, 120 - adsK * 50, 30, 14);
+    // aim where the crosshair points, not where the camera is
+    const d = dirOf(yaw, pitch), hitT = rayWorld([cam.x, cam.y, cam.z], d, 2500, me);
+    const px = cam.x + d[0] * hitT, py = cam.y + d[1] * hitT, pz = cam.z + d[2] * hitT;
+    aimYaw = Math.atan2(py - eye.y, px - eye.x); aimPitch = Math.atan2(pz - (eye.z - 6), Math.hypot(px - eye.x, py - eye.y));
+  }
+  camNow = cam;
+  // what you're about to build
+  let ghost = null;
+  if (building && mine && !mine.d && cam.yaw !== undefined) {
+    const d = dirOf(cam.yaw, cam.pitch);
+    let gx = pred.x + Math.cos(yaw) * 90, gy = pred.y + Math.sin(yaw) * 90;
+    if (d[2] < -0.02) { const tt = -cam.z / d[2]; if (tt < 400) { gx = cam.x + d[0] * tt; gy = cam.y + d[1] * tt; } }
+    const g = { x: Math.round((gx - 20) / 40) * 40, y: Math.round((gy - 20) / 40) * 40 };
+    ghost = { ...g, ok: Math.hypot(g.x + 20 - pred.x, g.y + 20 - pred.y) < 280 && PIECES[buildKind] && mine.g >= PIECES[buildKind].cost * 0.7 };
+    ghost3d = g;
+  } else ghost3d = null;
+  // expire effects (the 2D renderer normally does this)
+  for (let i = fx.length - 1; i >= 0; i--) if ((t - fx[i].t0) / fx[i].dur >= 1) fx.splice(i, 1);
+  const sl = slashT.get(me), moving = Math.hypot(pred.vx, pred.vy) > 30 && pred.gr;
+  const vm = ownView && mine && !mine.d ? { type: mine.w, rar: mine.wr, show: true, kick: Math.max(0, 1 - (t - lastShotT) / 0.12), bob: moving ? t * 11 : 0, ads: adsK, swing: sl ? Math.min(1, (t - sl) / 0.25) : 1 } : null;
+  R3D.frame({ S, MAP, t, dt, me, pred, aimYaw, aimPitch, fp: ownView, cam, fx, messes, hearthHitT, ghost, vm, slashT });
+  overlay3d(mine, t, dt);
+  if (t - hurtFlash < 0.3) { const g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VH * 0.8); g.addColorStop(0, "#f000"); g.addColorStop(1, `rgba(200,0,0,${0.5 * (1 - (t - hurtFlash) / 0.3)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
+  if (t - fogT < 1.2) { ctx.fillStyle = `rgba(120,40,160,${0.25 * (1 - (t - fogT) / 1.2)})`; ctx.fillRect(0, 0, VW, VH); }
+  drawHud(mine, t);
+  drawMinimap(mine, t);
+  drawCrosshair(mine, t);
+  if (mine && document.pointerLockElement !== cv && !menusOpen()) { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 170, VH / 2 + 40, 340, 34, 8); ctx.fill(); text("Click to look around  ·  T switches view", VW / 2, VH / 2 + 57, 15, "#ffd34d"); }
+  if (t - viewT < 2) text(`${VIEW_NAME[viewMode]}  (T to switch)`, VW / 2, 150, 20, "#fff");
+  for (const k of disp.keys()) if (disp.get(k).seen < frameNo - 30) disp.delete(k);
+}
+let ghost3d = null;
+// names, health bars, damage numbers and the like, drawn flat over the 3D view
+function overlay3d(mine, t, dt) {
+  // labels hide behind walls: a quick line-of-sight check from the camera
+  const seen = (x, y, z) => { if (!camNow || camNow.x === undefined) return true; const v = [x - camNow.x, y - camNow.y, z - camNow.z], L = Math.hypot(...v); if (L < 1) return true; return rayWorld([camNow.x, camNow.y, camNow.z], v.map((c) => c / L), L, me, true) >= L - 12; };
+  const P = (x, y, z) => { const s = R3D.project(x, y, z); return s && s.d < 1500 && seen(x, y, z) ? s : null; };
+  for (const p of S.p) {
+    if (p.d || p.air === 1 || p.vh) continue;
+    const own = p.id === me;
+    const d = own ? { x: pred.x, y: pred.y } : smooth("p" + p.id, p.x, p.y, dt), z = own ? pred.z : (p.z || 0);
+    if (p.trl && !(own && viewMode === "fp")) { const n = fx.length; trailFx(p, d, t); if (fx.length > n) fx[fx.length - 1].z = z + 4; }
+    if (own) continue;
+    const s = P(d.x, d.y, z + 66); if (!s) continue;
+    let y = s.y;
+    if (p.st > 0) { ctx.fillStyle = "#ffcc00"; for (let i = 0; i < p.st; i++) star(s.x - (p.st - 1) * 7 + i * 14, y - 16, 6); }
+    text(`${p.ch ? "♛ " : ""}${p.n} · ${p.lv}`, s.x, y, 12, p.ch ? "#ffd34d" : "#e8e8e8");
+    if (p.ttl) { y -= 14; text(`« ${p.ttl} »`, s.x, y, 10, "#ffc030"); }
+    if (p.go) { y -= 16; text(p.go === "poo" ? "💩 busy" : "💦 busy", s.x, y, 12, "#ffe7a0"); }
+    bar(s.x - 18, s.y + 8, 36, 4, p.hp / p.mh, "#5f5");
+    const b = bubbles.get(p.id);
+    if (b && t - b.t < 4.5) { ctx.font = "bold 13px Trebuchet MS"; const tw = Math.min(260, ctx.measureText(b.text).width + 16); ctx.fillStyle = "#fffe"; ctx.beginPath(); ctx.roundRect(s.x - tw / 2, y - 44, tw, 24, 8); ctx.fill(); text(b.text.length > 36 ? b.text.slice(0, 35) + "…" : b.text, s.x, y - 32, 13, "#222", "center", false); }
+  }
+  if (MAP.npcs && S.g.mode !== "royale") for (const n of MAP.npcs) {
+    const s = P(n.x, n.y, 72); if (!s || s.d > 900) continue;
+    text(n.name, s.x, s.y, 12, "#e0c0ff"); text(n.role, s.x, s.y + 13, 10, "#b0a0c8");
+    if (mine && (!mine.nt.includes(n.id) || mine.qr.includes(n.id))) { const q = mine.qr.includes(n.id); text(q ? "?" : "!", s.x, s.y - 20 + Math.sin(t * 4) * 3, 24, q ? "#7dffb0" : "#ffd34d"); }
+    if (n.id === "chef" && Math.sin(t * 1.3 + n.x) > 0.6) text(["IT'S RAW!", "DONKEY!", "SHUT IT DOWN!", "WHERE'S THE LAMB SAUCE?"][Math.floor(t / 4.8 + n.x) % 4], s.x, s.y - 40, 14, "#ff5050");
+  }
+  for (const [, type, zx, zy, hp, , zh] of S.z) {
+    if (hp >= 100 || type === "b") continue;
+    const r = type === "e" ? 34 : type === "t" ? 26 : type === "r" ? 12 : 15, s = P(zx, zy, (zh || 0) + r * 3.9);
+    if (s && s.d < 900) bar(s.x - 16, s.y, 32, 4, hp / 100, "#e44");
+  }
+  const hw = MAP.hearth, hs = P(hw.x + hw.w / 2, hw.y + hw.h / 2, 190);
+  if (hs && S.g.mode !== "royale") { text("THE HEARTH", hs.x, hs.y - 12, 14, "#ffe9a0"); bar(hs.x - 60, hs.y, 120, 8, S.g.hh / S.g.hm, S.g.hh / S.g.hm > 0.3 ? "#e8703a" : "#ff3030"); }
+  for (const [, , vx, vy, , vhp] of S.vh) if (vhp < 100) { const s = P(vx, vy, 70); if (s) bar(s.x - 26, s.y, 52, 5, vhp / 100, vhp > 35 ? "#8fd35a" : "#e84a3a"); }
+  for (const [, kind, bx, by, hp] of S.b) if (hp < 100 && kind !== "spikes") { const s = P(bx + 20, by + 20, 80); if (s && s.d < 700) bar(s.x - 18, s.y, 36, 4, hp / 100, "#e8a33a"); }
+  if (ghost3d && PIECES[buildKind]) { const s = P(ghost3d.x + 20, ghost3d.y + 20, 50); if (s) text(PIECES[buildKind].name, s.x, s.y, 12, "#fff"); }
+  for (const f of fx) {
+    const k = (t - f.t0) / f.dur; if (k >= 1) continue;
+    if (f.kind === "text") { const s = P(f.x, f.y + 20, (f.z || 40) + k * 30); if (s) { ctx.globalAlpha = 1 - k; text(f.text, s.x, s.y, f.big ? 20 : 14, f.color); ctx.globalAlpha = 1; } }
+    else if (f.kind === "trail") {
+      const s = P(f.x, f.y, (f.z || 6) + (f.trl === "fire" || f.trl === "bubbles" || f.trl === "hearts" || f.trl === "money" ? k * 18 : 0)); if (!s) continue;
+      const sc = Math.max(0.3, Math.min(2.5, 300 / s.d));
+      ctx.globalAlpha = 1 - k; ctx.fillStyle = f.c;
+      if (f.trl === "hearts") text("♥", s.x, s.y, 12 * sc, f.c, "center", false);
+      else if (f.trl === "money") text("$", s.x, s.y, 13 * sc, f.c);
+      else { ctx.beginPath(); ctx.arc(s.x, s.y, 3.5 * sc, 0, 7); if (f.trl === "bubbles") { ctx.strokeStyle = f.c; ctx.lineWidth = 1.5; ctx.stroke(); } else ctx.fill(); }
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
 // ---------------------------------------------------------------- render
 let frameNo = 0, lastFrame = T();
 const dark = document.createElement("canvas"), dctx = dark.getContext("2d");
@@ -804,8 +1001,12 @@ function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = "#111"; ctx.fillRect(0, 0, VW, VH);
   if (!MAP || !S) { text("Connecting to the valley...", VW / 2, VH / 2, 24, "#ffd34d"); return; }
-  stepPred(dt);
   const mine = S.p.find((p) => p.id === me);
+  use3d = has3d && viewMode !== "top" && !intro && !!mine;
+  if (has3d) R3D.show(use3d);
+  stepPred(dt);
+  if (use3d) { render3d(mine, t, dt); return; }
+  if (document.pointerLockElement === cv) document.exitPointerLock();
   let cam = mine ? { x: pred.x, y: pred.y } : { x: MAP.W / 2, y: MAP.H / 2 };
   let zoom = 1, shot = null;
   if (intro) { shot = introShot(t); cam = shot.cam; zoom = shot.z; }
@@ -888,8 +1089,19 @@ function render() {
   }
 
   // walls / buildings
-  for (const w of MAP.walls) {
+  const walls2d = [...MAP.walls].sort((a, b) => (a.z1 || 0) - (b.z1 || 0)); // low things first, so towers and catwalks sit on top
+  for (const w of walls2d) {
     if (w.kind === "hearth") continue;
+    if (w.kind === "pad") { const cx = w.x + w.w / 2, cy = w.y + w.h / 2, k = (t * 1.5) % 1; ctx.fillStyle = "#1090c0"; ctx.beginPath(); ctx.arc(cx, cy, w.w / 2, 0, 7); ctx.fill(); ctx.strokeStyle = `rgba(190,248,255,${1 - k})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, w.w / 2 * (0.4 + k * 0.8), 0, 7); ctx.stroke(); continue; }
+    if (w.kind === "step" || w.kind === "tower" || w.kind === "bridge" || w.kind === "ledge" || w.kind === "crate") {
+      const lift = Math.min(18, (w.z1 || 0) / 12);
+      ctx.fillStyle = "#00000040"; ctx.fillRect(w.x + lift * 0.6, w.y + lift, w.w, w.h);
+      ctx.fillStyle = { step: "#9a7a4a", tower: "#7d7066", bridge: "#8a6a42", ledge: "#6a6a74", crate: "#d8b860" }[w.kind];
+      ctx.fillRect(w.x, w.y, w.w, w.h);
+      ctx.fillStyle = "#ffffff18"; ctx.fillRect(w.x, w.y, w.w, 3);
+      if (w.kind === "tower" || w.kind === "ledge") text(`${Math.round(w.z1)}`, w.x + w.w / 2, w.y + w.h / 2 + 4, 11, "#ffffffaa", "center", false);
+      continue;
+    }
     if (w.kind === "tree") {
       const cx = w.x + w.w / 2, cy = w.y + w.h / 2;
       ctx.fillStyle = "#00000040"; ctx.beginPath(); ctx.ellipse(cx + 8, cy + 10, w.w * 0.7, w.h * 0.45, 0, 0, 7); ctx.fill();
@@ -1023,11 +1235,15 @@ function render() {
     if (p.trl) trailFx(p, d, t);
     const a = p.id === me ? aimAngle() : p.a;
     if (p.cl === "gaffer") { ctx.strokeStyle = "#ffd34d33"; ctx.setLineDash([8, 8]); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(d.x, d.y, 260, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
-    ctx.fillStyle = "#0004"; ctx.beginPath(); ctx.ellipse(d.x, d.y + 14, 16, 6, 0, 0, 7); ctx.fill();
+    const pz = p.id === me ? pred.z : (p.z || 0);
+    ctx.fillStyle = "#0004"; ctx.beginPath(); ctx.ellipse(d.x + pz * 0.15, d.y + 14 + pz * 0.25, 16, 6, 0, 0, 7); ctx.fill();
+    if (pz > 4) text(`▲${Math.round(pz)}`, d.x + 22, d.y + 22, 10, "#bfe8ff");
     // gun
     ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(a);
-    const gl = { pistol: 20, smg: 26, shotgun: 30, rifle: 34, sniper: 42, staff: 36, ak: 32 }[p.w] || 24;
-    ctx.fillStyle = p.w === "staff" ? "#8b5a2b" : "#333"; ctx.fillRect(8, -3, gl, 6);
+    const gl = { pistol: 20, smg: 26, shotgun: 30, rifle: 34, sniper: 42, staff: 36, ak: 32, sword: 40 }[p.w] || 24;
+    const sw = slashT.get(p.id), sk = sw ? Math.min(1, (t - sw) / 0.25) : 1;
+    if (p.w === "sword") { if (sk < 1) ctx.rotate(-1.1 + sk * 2.2); ctx.fillStyle = "#5a3a1e"; ctx.fillRect(4, -2, 8, 4); ctx.fillStyle = "#c8a040"; ctx.fillRect(11, -7, 3, 14); ctx.fillStyle = "#dfe4ea"; ctx.fillRect(14, -2.5, gl, 5); }
+    else { ctx.fillStyle = p.w === "staff" ? "#8b5a2b" : "#333"; ctx.fillRect(8, -3, gl, 6); }
     if (p.w === "staff") { ctx.fillStyle = "#ff7a2a"; ctx.beginPath(); ctx.arc(8 + gl, 0, 5, 0, 7); ctx.fill(); }
     if (p.wr > 0) { ctx.fillStyle = RARITY_COL[p.wr]; ctx.fillRect(12, -1, gl - 8, 2); }
     ctx.restore();
@@ -1280,7 +1496,7 @@ function drawHud(mine, t) {
   const wn = `${mine.we ? ENH[mine.we] + " " : ""}${mine.wn}`;
   text(wn, VW - 24, VH - 80, 20, RARITY_COL[mine.wr], "right");
   text(`${RARITY[mine.wr]}${mine.we ? `  +${mine.we}` : ""}`, VW - 24, VH - 58, 13, RARITY_COL[mine.wr], "right");
-  text(mine.rl ? "RELOADING..." : `${mine.am}`, VW - 24, VH - 32, mine.rl ? 18 : 28, mine.am === 0 && !mine.rl ? "#f55" : mine.hot ? "#7dffb0" : "#fff", "right");
+  text(mine.rl ? "RELOADING..." : mine.w === "sword" ? "∞" : `${mine.am}`, VW - 24, VH - 32, mine.rl ? 18 : 28, mine.am === 0 && !mine.rl ? "#f55" : mine.hot ? "#7dffb0" : "#fff", "right");
   if (mine.hot && !mine.rl) text("EMPOWERED", VW - 70, VH - 32, 12, "#7dffb0", "right");
   text(mine.sec ? "[1] Pistol  [2] Primary" : "", VW - 296, VH - 32, 12, "#999", "left");
   const myVeh = mine.vh && S.vh.find((v) => v[0] === mine.vh);
@@ -1414,8 +1630,9 @@ function showOver() {
 function drawCrosshair(mine, t) {
   if (!mine || mine.d || chatting || shopOpen || skillsOpen || S.g.ph === "over") { cv.style.cursor = "default"; return; }
   cv.style.cursor = "none";
+  if (use3d) { mouseX = VW / 2; mouseY = VH / 2; }
   const o = myScr(), dist = Math.hypot(mouseX - o.x, mouseY - o.y);
-  const gap = 4 + Math.tan(mine.spr) * Math.max(60, dist);
+  const gap = use3d ? 4 + Math.tan(mine.spr) * (VH / 2) / Math.tan(((camNow && camNow.fov) || 78) * Math.PI / 360) : 4 + Math.tan(mine.spr) * Math.max(60, dist);
   const col = t - hsT < 0.25 ? "#ff9d2e" : mine.hot ? "#7dffb0" : "#ffffff";
   ctx.strokeStyle = "#000a"; ctx.lineWidth = 4;
   const lines = () => { ctx.beginPath(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(mouseX + dx * gap, mouseY + dy * gap); ctx.lineTo(mouseX + dx * (gap + 8), mouseY + dy * (gap + 8)); } ctx.stroke(); };
@@ -1433,6 +1650,6 @@ function drawCrosshair(mine, t) {
   }
 }
 
-window.slopDebug = { get S() { return S; }, get me() { return me; }, get MAP() { return MAP; }, get mask() { return keyMask(); } }; // for tools/ and curious people
+window.slopDebug = { get S() { return S; }, get me() { return me; }, get MAP() { return MAP; }, get mask() { return keyMask(); }, look(y, p) { yaw = y; pitch = p; }, get pred() { return pred; }, get use3d() { return use3d; }, send }; // for tools/ and curious people
 requestAnimationFrame(render);
 })();
