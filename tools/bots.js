@@ -15,7 +15,7 @@ for (let i = 0; i < count; i++) {
     if (m.g.ph === "over" && !seen.over) { seen.over = m.stats; seen.ending = m.ending; }
     const mp = m.p.find((q) => q.id === m.me); if (mp) seen.lv = Math.max(seen.lv, mp.lv);
     const mine = m.p.find((q) => q.id === m.me);
-    if (m.g.ph === "lobby" || (m.g.ph === "over" && process.env.AGAIN)) { if (process.env.ROYALE && m.g.mode !== "royale") ws.send(JSON.stringify({ t: "mode", m: "royale" })); else if (mine && !mine.rd) ws.send(JSON.stringify({ t: "ready", v: true })); }
+    if (m.g.ph === "lobby" || (m.g.ph === "over" && process.env.AGAIN)) { const want = process.env.ROYALE ? "royale" : process.env.ENDLESS ? "endless" : "story"; if (m.g.mode !== want) ws.send(JSON.stringify({ t: "mode", m: want })); else if (mine && !mine.rd) ws.send(JSON.stringify({ t: "ready", v: true })); }
     if (m.g.intro && Math.random() < 0.02) ws.send(JSON.stringify({ t: "skip" }));
     if (m.g.intro) seen.intro = true;
     if (m.g.cd >= 0) seen.cd = true;
@@ -33,6 +33,7 @@ for (let i = 0; i < count; i++) {
     for (const e of m.pe) if (e.k === "sym" && e.sym) { seen.sym = seen.sym || {}; seen.sym[e.sym] = (seen.sym[e.sym] || 0) + 1; }
     for (const e of m.pe) if (e.k === "unlucky") seen.unlucky = (seen.unlucky || 0) + 1;
     for (const e of m.e) if (e.k === "mess") { seen.mess = seen.mess || {}; const k = e.kind + (e.big ? "!" : ""); seen.mess[k] = (seen.mess[k] || 0) + 1; }
+    for (const e of m.e) if (e.k === "shame") seen.shame = (seen.shame || 0) + 1;
     for (const e of m.pe) if (e.k === "wheel") seen.spins = (seen.spins || 0) + 1;
     for (const e of m.pe) if (e.k === "dlg" && !e.close) { seen.dlg = (seen.dlg || 0) + 1; setTimeout(() => ws.send(JSON.stringify({ t: "dlg", i: (Math.random() * e.opts.length) | 0 })), 100); }
     seen.clues = m.g.clues.length; seen.alive = m.g.alive; seen.zone = m.g.zone && m.g.zone[2];
@@ -53,13 +54,17 @@ for (let i = 0; i < count; i++) {
     if (r < 0.02) ws.send(JSON.stringify({ t: "use" }));
     else if (r < 0.03) ws.send(JSON.stringify({ t: "shout" }));
     else if (r < 0.04) ws.send(JSON.stringify({ t: "dodge" }));
-    else if (r < 0.05) ws.send(JSON.stringify({ t: "buy", item: ["case", "enhance", "seeds", "medkit", "repair", "kevlar", "gcase", "gcase"][(Math.random() * 8) | 0] }));
+    else if (r < 0.05) ws.send(JSON.stringify({ t: "buy", item: ["case", "enhance", "seeds", "medkit", "repair", "kevlar", "gcase", "hoe", "grenade", "molotov", "rocket"][(Math.random() * 11) | 0] }));
     else if (r < 0.055) ws.send(JSON.stringify({ t: "chat", text: "sul sul" }));
     else if (r < 0.06) ws.send(JSON.stringify({ t: "build", kind: ["wall", "spikes", "turret", "lamp"][(Math.random() * 4) | 0], x: p.x + (Math.random() - 0.5) * 300, y: p.y + (Math.random() - 0.5) * 300 }));
     else if (r < 0.07) ws.send(JSON.stringify({ t: "reload" }));
+    else if (r < 0.075) ws.send(JSON.stringify({ t: "throw", k: Math.random() < 0.5 ? "gren" : "molo" }));
+    seen.zt = seen.zt || {}; for (const z of S.z) seen.zt[z[1]] = 1;
+    seen.fires = Math.max(seen.fires || 0, (S.fi || []).length); seen.projs = Math.max(seen.projs || 0, (S.pr || []).length);
+    seen.fog = seen.fog || !!S.g.fog; seen.night = Math.max(seen.night || 0, S.g.n); seen.hoe = Math.max(seen.hoe || 0, p.hoe || 0);
     if (S.vote && Math.random() < 0.05) ws.send(JSON.stringify({ t: "vote", i: (Math.random() * S.vote.ch.length) | 0 }));
     if (p.pts > 0) ws.send(JSON.stringify({ t: "learn", s: ["deadeye", "steady", "quick", "tough", "wind", "fleet", "green", "haggler", "scavenger", "thuum", "rally", "bloodlust"][(Math.random() * 12) | 0] }));
     if (S.story && !seen.stories.includes(S.story.title + ": " + S.story.pick)) seen.stories.push(S.story.title + ": " + S.story.pick);
   }, 50);
 }
-setInterval(() => console.log(JSON.stringify({ phases: [...seen.phases], maxZ: seen.maxZ, hh: seen.hh, errors: seen.errors, lv: seen.lv, dlg: seen.dlg, clues: seen.clues, alive: seen.alive, zone: seen.zone, casino: seen.casino, spins: seen.spins, games: seen.games, cos: seen.cos, lastMsg: seen.lastMsg, maxZ3: seen.maxZ3, sym: seen.sym, mess: seen.mess, unlucky: seen.unlucky, intro: seen.intro, cd: seen.cd, veh: seen.veh, builds: seen.builds, legend: seen.legend, reckoned: seen.reckoned, deeds: seen.deeds, stories: seen.stories, ending: seen.ending, over: seen.over && seen.over.map((r) => [r.name, r.rating, r.kills, r.hs, r.acc, r.deaths]) })), 5000);
+setInterval(() => console.log(JSON.stringify({ phases: [...seen.phases], maxZ: seen.maxZ, hh: seen.hh, errors: seen.errors, lv: seen.lv, dlg: seen.dlg, clues: seen.clues, alive: seen.alive, zone: seen.zone, casino: seen.casino, spins: seen.spins, games: seen.games, cos: seen.cos, lastMsg: seen.lastMsg, maxZ3: seen.maxZ3, sym: seen.sym, mess: seen.mess, unlucky: seen.unlucky, intro: seen.intro, cd: seen.cd, veh: seen.veh, builds: seen.builds, legend: seen.legend, reckoned: seen.reckoned, deeds: seen.deeds, stories: seen.stories, ending: seen.ending, zt: seen.zt && Object.keys(seen.zt).join(""), fires: seen.fires, projs: seen.projs, fog: seen.fog, night: seen.night, hoe: seen.hoe, shame: seen.shame, over: seen.over && seen.over.map((r) => [r.name, r.rating, r.kills, r.hs, r.acc, r.deaths]) })), 5000);
