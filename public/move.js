@@ -4,7 +4,11 @@
 var MV = (function () {
   const GRAV = 1500, JUMP = 470, STEP = 22, HGT = 56, EYE = 46, PAD = 1080;
   const ACCEL = 11, FRICTION = 7, AIR_ACCEL = 16, AIR_CAP = 42, MAX_MULT = 3.2, TAP_TURN = 1.25, TAP_CD = 0.12;
-  const KEY = { F: 1, L: 2, B: 4, R: 8, JUMP: 16 };
+  const KEY = { F: 1, L: 2, B: 4, R: 8, JUMP: 16, DOWN: 32 };
+  const SURF = -14, SWIM = 0.62; // treading water, the head just above the surface
+
+  // the lake: a box of kind "lake" whose z0 is its bed. Inside it the ground is the lake bed, not z=0.
+  function lakeAt(boxes, x, y) { for (const b of boxes) if (b.kind === "lake" && x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h) return b; return null; }
 
   const touches = (b, x, y, r) => { const cx = Math.max(b.x, Math.min(x, b.x + b.w)), cy = Math.max(b.y, Math.min(y, b.y + b.h)); return (x - cx) ** 2 + (y - cy) ** 2 < r * r; };
   const blocks = (b, z, hgt) => z < b.z1 - STEP && z + hgt > b.z0;
@@ -13,7 +17,7 @@ var MV = (function () {
   function pushOut(e, r, boxes, W, H, z = e.z || 0, hgt = HGT) {
     let hit = null;
     for (const w of boxes) {
-      if (!blocks(w, z, hgt)) continue;
+      if (w.kind === "lake" || !blocks(w, z, hgt)) continue;
       const cx = Math.max(w.x, Math.min(e.x, w.x + w.w)), cy = Math.max(w.y, Math.min(e.y, w.y + w.h));
       const dx = e.x - cx, dy = e.y - cy, d2 = dx * dx + dy * dy;
       if (d2 >= r * r) continue;
@@ -30,13 +34,14 @@ var MV = (function () {
   }
   // the highest surface under a point that is at or below `z` (+ a step)
   function floorAt(x, y, r, z, boxes) {
-    let h = 0, box = null;
-    for (const b of boxes) if (b.z1 <= z + STEP && b.z1 > h && touches(b, x, y, r)) { h = b.z1; box = b; }
+    const lk = lakeAt(boxes, x, y);
+    let h = lk ? lk.z0 : 0, box = null;
+    for (const b of boxes) if (b.kind !== "lake" && b.z1 <= z + STEP && b.z1 > h && touches(b, x, y, r)) { h = b.z1; box = b; }
     return { h, box };
   }
   function ceilAt(x, y, r, headWas, boxes) {
     let c = Infinity;
-    for (const b of boxes) if (b.z0 >= headWas - 1 && b.z0 < c && touches(b, x, y, r)) c = b.z0;
+    for (const b of boxes) if (b.kind !== "lake" && b.z0 >= headWas - 1 && b.z0 < c && touches(b, x, y, r)) c = b.z0;
     return c;
   }
   // apply gravity, floors, ceilings and jump pads. Returns "pad" if it launched off one.
@@ -63,7 +68,31 @@ var MV = (function () {
   // one step of player movement: ground friction and acceleration, Quake-style air strafing,
   // tap-strafing (a fresh direction key in the air redirects your momentum), bunny hops (jumping on the
   // landing tick skips friction), jump pads, stairs and ledges.
+  // swimming: water drag, slow strokes, Space swims up, C dives, and you float back to the surface
+  function swim(e, inp, dt, env) {
+    const keys = inp.keys | 0, w = env.frozen ? { x: 0, y: 0 } : wishDir(keys, inp.yaw, inp.rel), sp = env.sp * SWIM;
+    const up = !env.frozen && (keys & KEY.JUMP), down = !env.frozen && (keys & KEY.DOWN);
+    const k = Math.min(1, dt * 4);
+    e.vx += (w.x * sp - e.vx) * k; e.vy += (w.y * sp - e.vy) * k;
+    const tvz = up ? 230 : down ? -230 : 40;
+    e.vz += (tvz - e.vz) * Math.min(1, dt * 5);
+    e.x += e.vx * dt; e.y += e.vy * dt;
+    pushOut(e, 16, env.boxes, env.W, env.H);
+    e.z += e.vz * dt;
+    const f = floorAt(e.x, e.y, 9.6, e.z, env.boxes);
+    if (e.z < f.h) { e.z = f.h; if (e.vz < 0) e.vz = 0; }
+    const c = ceilAt(e.x, e.y, 16, e.z - e.vz * dt + HGT, env.boxes);
+    if (e.z + HGT > c) { e.z = c - HGT; if (e.vz > 0) e.vz = 0; }
+    if (e.z > SURF) { if (up && e.vz > 150) { e.vz = JUMP * 0.8; e.z = SURF + 1; e.gr = false; e.swim = false; e.pk = keys; return "leap"; } e.z = SURF; e.vz = Math.min(e.vz, 0); }
+    if (!lakeAt(env.boxes, e.x, e.y)) { const g = floorAt(e.x, e.y, 9.6, e.z + STEP, env.boxes); if (e.z <= g.h) { e.z = g.h; e.vz = 0; e.gr = true; e.swim = false; } } // climbed out onto the bank
+    else e.gr = false;
+    e.pk = keys;
+    return null;
+  }
+  const inWater = (e, boxes) => e.z < -6 && !!lakeAt(boxes, e.x, e.y);
   function step(e, inp, dt, env) {
+    if (inWater(e, env.boxes) && !(e.vz > 200)) { e.swim = true; return swim(e, inp, dt, env); }
+    e.swim = false;
     const keys = inp.keys | 0, sp = env.sp, w = env.frozen ? { x: 0, y: 0 } : wishDir(keys, inp.yaw, inp.rel);
     const jump = !env.frozen && (keys & KEY.JUMP) && e.gr;
     e.tt = (e.tt || 0) - dt;
@@ -99,5 +128,5 @@ var MV = (function () {
     e.pk = keys;
     return ev;
   }
-  return { GRAV, JUMP, STEP, HGT, EYE, PAD, KEY, touches, blocks, pushOut, floorAt, vertical, wishDir, step };
+  return { GRAV, JUMP, STEP, HGT, EYE, PAD, KEY, SURF, touches, blocks, pushOut, floorAt, vertical, wishDir, step, lakeAt, inWater };
 })();

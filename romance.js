@@ -1,0 +1,103 @@
+// Gifts, courting and marriage. Everyone in the valley has a favourite thing, a thing they like,
+// and a thing they can't stand. Love runs from -50 to 100: five hearts at 100.
+
+export const GIFTS = {
+  flowers: { name: "Wildflowers", cost: 10 },
+  pie:     { name: "A slop pie", cost: 20 },
+  grog:    { name: "A bottle of grog", cost: 25 },
+  trinket: { name: "A shiny trinket", cost: 40 },
+  seeds:   { name: "A packet of your seeds", seeds: 1 },
+  ear:     { name: "A zombie's ear (free, if you've killed one)", kills: 1 },
+};
+export const RING = 150; // what a ring costs
+
+export const TASTE = {
+  grubb:   { love: "trinket", like: "grog", hate: "ear" },
+  aldous:  { love: "pie", like: "flowers", hate: "grog" },
+  morwen:  { love: "ear", like: "seeds", hate: "flowers" },
+  vex:     { love: "trinket", like: "ear", hate: "seeds" },
+  pell:    { love: "grog", like: "pie", hate: "trinket" },
+  haddock: { love: "pie", like: "grog", hate: "flowers" },
+  chef:    { love: "seeds", like: "flowers", hate: "pie" },
+};
+
+// what they say. love / like / meh / hate are gift reactions; then asked out, married, the morning after, dumped, and turned down.
+export const SAYS = {
+  grubb: {
+    love: "\"Oh! Oh, it's shiny! It's so shiny! Nobody's given me anything without wanting a planning permit in years.\" He polishes it on his chain of office.",
+    like: "\"Grog! A man of the people drinks grog. I am a man of the people. Mostly.\"",
+    meh: "\"How... thoughtful. I'll have someone put it somewhere.\"",
+    hate: "Grubb goes the colour of old porridge. \"Is that an EAR? Get it off my desk. Get it out of my town.\"",
+    date: "\"A date? With me? I'll need to check my diary. It's empty. Yes. Yes! Somewhere discreet, mind. Election year.\"",
+    wed: "Grubb weeps through the entire ceremony and gives a forty-minute speech, mostly about himself, partly about you. It's the nicest thing anyone's said about you.",
+    spouse: "Grubb slipped some gold under your pillow. \"Expenses,\" says the note. Don't ask whose.",
+    dump: "\"I see. Well. I'll be issuing a statement.\" He does. It's very long.",
+    no: "\"Ha! Ha. No. I'm flattered. I'm a busy man. Very busy. No.\"",
+  },
+  aldous: {
+    love: "\"A pie. A real pie.\" He holds it like a relic. \"Bless you. Bless this pie. Bless whoever made it, even if it was you.\"",
+    like: "\"Flowers for the altar. How kind. The Hearth thanks you, and so do I.\"",
+    meh: "\"The Hearth accepts all offerings. Even this one.\"",
+    hate: "\"Grog? In the Hearth-Church? I'll pour it out. Slowly. While looking at you.\"",
+    date: "Brother Aldous blushes to the tips of his ears. \"I took a vow. A small one. It has a clause. Tuesday?\"",
+    wed: "Aldous marries himself to you, which raises some theological questions nobody wants to ask. The Hearth burns bright all night.",
+    spouse: "Aldous left you a warm loaf and a blessing. You feel fully healed. It's probably the loaf.",
+    dump: "\"I forgive you,\" he says, through gritted teeth. \"Eventually.\"",
+    no: "\"My child. No. But I will pray for you. Quite hard, by the sound of it.\"",
+  },
+  morwen: {
+    love: "Morwen's eyes light up. \"An ear! Fresh, too. You really do understand me.\" It goes straight into a jar.",
+    like: "\"Seeds. Good. Things grow, things die, things grow out of the things that died. Lovely.\"",
+    meh: "\"Hm.\" She sniffs it, licks it, and puts it in her pocket.",
+    hate: "\"Cut flowers? You murdered them for me? Get out of my reeds.\"",
+    date: "\"A date. Fine. Bring a lantern, a shovel and no questions.\"",
+    wed: "You're married in the reeds at midnight by a frog. Morwen says it's legally binding. The frog agrees.",
+    spouse: "Morwen left a potion on your doorstep. It tastes like pondwater and it heals everything.",
+    dump: "Morwen just smiles. Your left boot has been full of beetles ever since.",
+    no: "\"You're sweet. Like a slug. No.\"",
+  },
+  vex: {
+    love: "Vex bites it. \"Real! Darling, you shouldn't have. I'll sell it for twice what you paid. Out of love.\"",
+    like: "\"An ear! There's a market for these. Don't ask which market.\"",
+    meh: "\"I'll put it with the stock.\"",
+    hate: "\"Seeds? Seeds are for farmers. I'm a businessman. A business-person. A business.\"",
+    date: "\"A date! Dinner, dancing, and a very small handling fee. I'm joking. Mostly.\"",
+    wed: "The wedding is sponsored. Every guest leaves with a Mystery Case and a loyalty card. Vex cries, then sells the tears.",
+    spouse: "Vex left you a little something from the stock, 'at cost'. He's never done that for anyone.",
+    dump: "\"Fine. I'm raising your prices.\" He doesn't. He wants to, though.",
+    no: "\"I don't mix business and pleasure. Unless there's a discount in it for me.\"",
+  },
+  pell: {
+    love: "\"GROG!\" Old Pell drinks it in one go and does a little jig on a grave. \"You'll do, you will. You'll do.\"",
+    like: "\"Pie. Proper food. Not like what they serve at wakes these days.\"",
+    meh: "\"Thank you kindly. I'll bury it with me.\"",
+    hate: "\"Shiny things attract magpies, and magpies attract trouble. Take it back.\"",
+    date: "\"At my age? Why not. I've dug a lot of holes waiting for something nice to happen.\"",
+    wed: "Pell marries you in the graveyard, because 'it's where all my friends are'. Somebody's ghost was definitely in the front row.",
+    spouse: "Pell dug you a little vegetable patch while you slept. And left grog. Mostly grog.",
+    dump: "\"Ah well,\" says Pell, and picks up his shovel. He digs a very specific-sized hole.",
+    no: "\"You're a lovely lot, but I'm married to my shovel.\"",
+  },
+  haddock: {
+    love: "\"A PIE. Requisitioned with gratitude.\" Sergeant Haddock salutes it, then eats it, then salutes you.",
+    like: "\"Grog. For morale. Purely for morale.\"",
+    meh: "\"Logged and filed. Thank you, citizen.\"",
+    hate: "\"Flowers? I'm a soldier. I have allergies. Disciplined allergies.\" He sneezes at attention.",
+    date: "\"A date. Right. Briefing at eighteen hundred. Dress code: armour.\"",
+    wed: "The town watch forms a guard of honour. It's just Haddock, standing on both sides of the aisle in turn. Beautiful.",
+    spouse: "Haddock left a grenade on your pillow with a little bow on it. Romance.",
+    dump: "\"Understood. Dismissed.\" He goes and does push-ups for six hours.",
+    no: "\"Negative. Fraternisation with civilians is against regulations. I wrote them.\"",
+  },
+  chef: {
+    love: "\"FRESH seeds! FINALLY someone in this valley understands PRODUCE!\" He nearly hugs you. He composes himself.",
+    like: "\"Edible flowers. Not bad. Not bad at all. Don't let it go to your head.\"",
+    meh: "\"What is this? WHAT IS IT? ...Fine. Thank you.\"",
+    hate: "He prods the pie. It wobbles. \"IT'S RAW! IT'S STILL MOOING! AND IT'S PIG SLOP!\"",
+    date: "\"A date? On camera? ...Ratings would be phenomenal. Yes. Wear something that isn't covered in slop.\"",
+    wed: "The wedding is filmed for television. Gordon cooks the whole feast himself and shouts at nobody. It's a miracle.",
+    spouse: "Gordon left you breakfast with a note: 'Not raw. You're welcome.'",
+    dump: "\"You're DONE! GET OUT!\" For once, he means it gently.",
+    no: "\"Absolutely not. You smell of the well.\"",
+  },
+};
