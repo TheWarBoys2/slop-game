@@ -108,6 +108,9 @@ var R3D = (function () {
     } else groundPiece(0, 0, MAP.W, MAP.H);
     // the world's edge: a low dark hedge all round
     for (const [x, y, w, d] of [[MAP.W / 2, -10, MAP.W + 40, 20], [MAP.W / 2, MAP.H + 10, MAP.W + 40, 20], [-10, MAP.H / 2, 20, MAP.H], [MAP.W + 10, MAP.H / 2, 20, MAP.H]]) level.add(at(box(w, d, 60, mat(0x2a3d20)), x, y, 30));
+    // farmland beyond the hedge, so the valley doesn't float in the sky when you fly
+    const far = mat(0x3f6430), E = 4000;
+    for (const [x, y, w, h] of [[-E, -E, MAP.W + 2 * E, E], [-E, MAP.H, MAP.W + 2 * E, E], [-E, 0, E, MAP.H], [MAP.W, 0, E, MAP.H]]) { const m = mesh(new T.PlaneGeometry(w, h), far, x + w / 2, -0.5, y + h / 2); m.rotation.x = -Math.PI / 2; level.add(m); }
     for (const w of MAP.walls) addWall(w);
     // plots
     // (plot beds are drawn per frame, since a hoe can add more)

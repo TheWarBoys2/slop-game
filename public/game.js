@@ -1797,11 +1797,11 @@ function drawHud(mine, t) {
   text(mine.sec ? "[1] Pistol  [2] Primary" : "", VW - 296, VH - 32, 12, "#999", "left");
   const myVeh = mine.vh && S.vh.find((v) => v[0] === mine.vh);
   if (myVeh) {
-    ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW - 312, VH - 190, 300, 52, 10); ctx.fill();
+    ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW - 312, VH - 212, 300, 74, 10); ctx.fill();
     const driving = myVeh[6] === me;
-    text(`${VEH_NAME[myVeh[1]]} · ${driving ? "driving" : "passenger"}`, VW - 296, VH - 176, 14, "#9fe0ff", "left");
-    text(`${AIR[myVeh[1]] ? `ALT ${Math.round((myVeh[9] || 0) / 10)}m · ` : ""}${Math.round(Math.abs(myVeh[8]) * 0.36)} km/h`, VW - 24, VH - 176, 14, "#fff", "right");
-    bar(VW - 296, VH - 158, 268, 8, myVeh[5] / 100, myVeh[5] > 35 ? "#8fd35a" : "#e84a3a");
+    text(`${VEH_NAME[myVeh[1]]} · ${driving ? (AIR[myVeh[1]] ? "pilot" : "driving") : AIR[myVeh[1]] ? "gunner" : "passenger"}`, VW - 296, VH - 194, 14, "#9fe0ff", "left");
+    text(`${AIR[myVeh[1]] ? `ALT ${Math.round((myVeh[9] || 0) / 10)}m · ` : ""}${Math.round(Math.abs(myVeh[8]) * 0.36)} km/h`, VW - 296, VH - 174, 13, "#fff", "left");
+    bar(VW - 296, VH - 156, 268, 8, myVeh[5] / 100, myVeh[5] > 35 ? "#8fd35a" : "#e84a3a");
   }
 
   // interaction hint

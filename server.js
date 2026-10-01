@@ -33,6 +33,7 @@ const ROYALE_ZONES = [ // [wait, shrink, radius]
 ].map(([w, s, r]) => [FAST ? w / 6 : w, FAST ? s / 4 : s, r]);
 const STORY_ZONE_R = [2300, 1850, 1450, 1180, 980, 820];
 const TEST_DMG = Number(process.env.SLOP_DMG || 1); // testing only
+const TEST_TP = !!process.env.SLOP_TP; // testing only: lets a test script move players about
 const UNLUCKY = process.env.SLOP_UNLUCKY ? 1 : 0.00004; // 0.004% per level-up or upgrade. As requested.
 const INFECT = process.env.SLOP_INFECT ? 1 : 0.08; // chance a bite infects you
 const FORCE_SYM = process.env.SLOP_SYM || ""; // testing only
@@ -1687,7 +1688,7 @@ function flyTick(v, def, driver, t, dt) {
   const c = Math.cos(v.a), sn = Math.sin(v.a), ka = Math.min(1, dt * 1.1);
   const tvx = air ? (c * pitch - sn * roll * 0.7) * def.max : 0, tvy = air ? (sn * pitch + c * roll * 0.7) * def.max : 0;
   v.vx += (tvx - v.vx) * ka; v.vy += (tvy - v.vy) * ka;
-  v.vz += ((on ? lift * 320 : -170) - v.vz) * Math.min(1, dt * 2.5); // nobody at the controls: it comes down
+  v.vz += ((on ? lift * (lift > 0 ? 260 : 230) : -170) - v.vz) * Math.min(1, dt * 2.5); // full down is a hard landing but not a crash; nobody at the controls: it comes down
   v.x += v.vx * dt; v.y += v.vy * dt;
   const hit = MV.pushOut(v, def.r, WALLS, W, H, v.z, 40);
   if (hit) {
@@ -2509,6 +2510,12 @@ function onMessage(ws, raw) {
       p.pt = typeof m.pt === "number" && isFinite(m.pt) ? clamp(m.pt, -1.5, 1.5) : null; p.rel = !!m.rel;
       p.fly = Array.isArray(m.fly) && m.fly.length === 4 ? m.fly.map((x) => clamp(+x || 0, -1, 1)) : null;
       break;
+    case "tp": if (TEST_TP) { // testing only
+      if (typeof m.x === "number") { p.x = m.x; p.y = m.y; p.z = m.z || 0; p.vx = p.vy = p.vz = 0; }
+      if (m.gold) p.gold = m.gold;
+      if (m.love) p.love[m.love[0]] = m.love[1];
+      if (m.breath !== undefined) p.breath = m.breath;
+    } break;
     case "reload": pressReload(p, p.weapons[p.active]); break;
     case "clean": cleanWeapon(p, m); break;
     case "hack": finishHack(p, m); break;
