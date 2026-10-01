@@ -3,10 +3,25 @@
 
 export const BAG_SIZE = 16; // slots; food and drink stack, gear doesn't
 
+// Crops. t = how long each growth stage takes (turnip = 1), sell = base price at the produce stall,
+// seed = price of one seed (they come in packets of 3), regrow = goes back to flowering after you pick it,
+// yield = how many you pick. Everything you grow is food too.
+export const CROPS = {
+  lettuce:    { name: "Lettuce", icon: "🥬", t: 0.5, seed: 2, sell: 10, f: 12, d: 10, col: "#7fd34d", desc: "Ready in no time. Worth next to nothing." },
+  turnip:     { name: "Turnip", icon: "🥕", t: 1, seed: 5, sell: 25, f: 20, d: 6, col: "#b35fd0", desc: "The valley's pride. Two make a stew at the Hearth." },
+  potato:     { name: "Potato", icon: "🥔", t: 1.5, seed: 8, sell: 42, f: 30, col: "#c8a060", desc: "Slow and steady. Two make a stew at the Hearth." },
+  tomato:     { name: "Tomato", icon: "🍅", t: 1.2, seed: 10, sell: 20, f: 10, d: 12, regrow: true, col: "#e83a2a", desc: "Keeps fruiting after you pick it." },
+  strawberry: { name: "Strawberry", icon: "🍓", t: 1, seed: 14, sell: 28, f: 8, d: 8, regrow: true, col: "#ff4060", desc: "Keeps fruiting after you pick it. Somebody loves these." },
+  corn:       { name: "Corn", icon: "🌽", t: 2, seed: 12, sell: 34, f: 22, yield: 2, col: "#ffd34d", desc: "Takes a while, gives two cobs." },
+  pumpkin:    { name: "Pumpkin", icon: "🎃", t: 3, seed: 30, sell: 150, f: 45, col: "#ff8a20", desc: "Huge, slow and valuable. Zombies love stepping on them." },
+  melon:      { name: "Slop Melon", icon: "🍉", t: 4.5, seed: 70, sell: 340, f: 50, d: 40, col: "#2aff9a", desc: "Grown from the well's own seeds. Glows faintly. Sells for a fortune." },
+};
+export const CROP_KEYS = Object.keys(CROPS);
+export const SEED_PACK = 3;
+
 export const ITEMS = {
   bread:   { name: "Loaf of bread", kind: "food", f: 35, bw: 12, cost: 12, icon: "🍞", desc: "Fills you up. Mostly air." },
   beans:   { name: "Tin of beans", kind: "food", f: 45, bw: 25, cost: 18, icon: "🥫", tinned: true, desc: "Safe from radiation. Not safe for your bowels." },
-  turnip:  { name: "Turnip", kind: "food", f: 20, d: 6, bw: 10, icon: "🥕", grown: true, desc: "Fresh from your plot. Cook two at the Hearth for stew." },
   stew:    { name: "Hearth stew", kind: "food", f: 70, d: 15, hp: 40, bw: 20, icon: "🍲", grown: true, desc: "Two turnips cooked in the Hearth. Heals you too." },
   pie:     { name: "Slop pie", kind: "food", f: 40, bw: 18, cost: 20, icon: "🥧", gift: "pie", desc: "Brother Aldous loves these." },
   ration:  { name: "Army ration", kind: "food", f: 60, d: 10, bw: 15, cost: 30, icon: "🎖", tinned: true, desc: "Sergeant Haddock swears by them." },
@@ -22,6 +37,10 @@ export const ITEMS = {
   radaway: { name: "Rad-Away", kind: "med", rad: -60, cost: 45, icon: "☢", desc: "Flushes out 60 rads. Tastes of batteries." },
   flowers: { name: "Wildflowers", kind: "gift", gift: "flowers", cost: 10, icon: "💐", desc: "A gift. Someone in town loves these." },
   trinket: { name: "Shiny trinket", kind: "gift", gift: "trinket", cost: 40, icon: "💍", desc: "A gift. Mayor Grubb can't resist shiny things." },
+  ...Object.fromEntries(Object.entries(CROPS).flatMap(([id, c]) => [
+    [id, { name: c.name, kind: "food", f: c.f, d: c.d, bw: Math.round(c.f / 2.5), icon: c.icon, grown: true, crop: id, veg: id === "turnip" || id === "potato", desc: c.desc }],
+    ["s_" + id, { name: `${c.name} seeds`, kind: "seed", crop: id, icon: "🌱", desc: `Plant at any plot [E]. ${c.desc}` }],
+  ])),
   pack:    { name: "Slop Snap card pack", kind: "pack", cost: 60, icon: "🃏", desc: "Four cards for your collection. Open it from your bag." },
 };
 

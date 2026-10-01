@@ -107,10 +107,16 @@ var R3D = (function () {
       water.rotation.x = -Math.PI / 2; water.renderOrder = 2; level.add(water); level.userData.water = water;
     } else groundPiece(0, 0, MAP.W, MAP.H);
     // the world's edge: a low dark hedge all round
-    for (const [x, y, w, d] of [[MAP.W / 2, -10, MAP.W + 40, 20], [MAP.W / 2, MAP.H + 10, MAP.W + 40, 20], [-10, MAP.H / 2, 20, MAP.H], [MAP.W + 10, MAP.H / 2, 20, MAP.H]]) level.add(at(box(w, d, 60, mat(0x2a3d20)), x, y, 30));
+    const hedge = new T.Group(); level.add(hedge); level.userData.hedge = hedge; // only royale keeps the hedge: everywhere else the wild goes on forever
+    for (const [x, y, w, d] of [[MAP.W / 2, -10, MAP.W + 40, 20], [MAP.W / 2, MAP.H + 10, MAP.W + 40, 20], [-10, MAP.H / 2, 20, MAP.H], [MAP.W + 10, MAP.H / 2, 20, MAP.H]]) hedge.add(at(box(w, d, 60, mat(0x2a3d20)), x, y, 30));
+    const wild = new T.Group(), wm = mat(0x3f6430), WE = 120000; level.add(wild); level.userData.wild = wild; // grass out to the horizon, with a hole for the lake
+    const L0 = lake || { x: -1, y: -1, w: 0, h: 0 };
+    for (const [x, y, w, h] of [[-WE, -WE, 2 * WE, L0.y + WE], [-WE, L0.y + L0.h, 2 * WE, WE - L0.y - L0.h], [-WE, L0.y, L0.x + WE, L0.h], [L0.x + L0.w, L0.y, WE - L0.x - L0.w, L0.h]]) {
+      if (w <= 0 || h <= 0) continue; const m = mesh(new T.PlaneGeometry(w, h), wm, x + w / 2, -1, y + h / 2); m.rotation.x = -Math.PI / 2; wild.add(m);
+    }
     // farmland beyond the hedge, so the valley doesn't float in the sky when you fly
     const far = mat(0x3f6430), E = 4000;
-    for (const [x, y, w, h] of [[-E, -E, MAP.W + 2 * E, E], [-E, MAP.H, MAP.W + 2 * E, E], [-E, 0, E, MAP.H], [MAP.W, 0, E, MAP.H]]) { const m = mesh(new T.PlaneGeometry(w, h), far, x + w / 2, -0.5, y + h / 2); m.rotation.x = -Math.PI / 2; level.add(m); }
+    for (const [x, y, w, h] of [[-E, -E, MAP.W + 2 * E, E], [-E, MAP.H, MAP.W + 2 * E, E], [-E, 0, E, MAP.H], [MAP.W, 0, E, MAP.H]]) { const m = mesh(new T.PlaneGeometry(w, h), far, x + w / 2, -0.5, y + h / 2); m.rotation.x = -Math.PI / 2; hedge.add(m); }
     for (const w of MAP.walls) addWall(w);
     // plots
     // (plot beds are drawn per frame, since a hoe can add more)
@@ -220,6 +226,32 @@ var R3D = (function () {
       const ring = mesh(new T.TorusGeometry(w.w / 2 - 4, 2.5, 6, 24), basic(0xbff8ff, 0.8), 0, 6, 0); ring.rotation.x = Math.PI / 2;
       const g = new T.Group(); g.add(p, ring); g.userData.ring = ring; at(g, cx, cy, 0); tgt.add(g);
       (level.userData.pads = level.userData.pads || []).push(g);
+    } else if (w.kind === "stall") { // a market stall: a counter, crates of veg, posts and a striped awning
+      tgt.add(at(box(w.w, w.h, hgt, mat(0x8a5a2a)), cx, cy, hgt / 2));
+      tgt.add(at(box(w.w + 4, w.h + 4, 3, mat(0xa87a4a)), cx, cy, hgt + 1.5));
+      const vc = [0xb35fd0, 0xc8a060, 0xe83a2a, 0xffd34d, 0xff8a20];
+      for (let i = 0; i < 5; i++) { const x = w.x + 12 + i * (w.w - 24) / 4; tgt.add(at(box(18, 16, 8, mat(0x6b4520)), x, cy, hgt + 7)); for (let j = 0; j < 3; j++) tgt.add(at(mesh(new T.SphereGeometry(3.6, 8, 6), mat(vc[i])), x - 4 + j * 4, cy + (j % 2) * 3 - 1, hgt + 12)); }
+      for (const [px, py] of [[w.x, w.y], [w.x + w.w, w.y], [w.x, w.y + w.h], [w.x + w.w, w.y + w.h]]) tgt.add(at(mesh(new T.CylinderGeometry(2, 2, 96, 6), mat(0x6b4520)), px, py, 48));
+      for (let i = 0; i < 6; i++) { const sw = (w.w + 16) / 6; tgt.add(at(box(sw, w.h + 30, 3, mat(i % 2 ? 0xf4f0e0 : 0x3a9a4a)), w.x - 8 + sw * (i + 0.5), cy, 98)); }
+      const sign = mesh(new T.BoxGeometry(70, 14, 2), mat(0xf4e0a0)); at(sign, cx, w.y + w.h + 16, 86); tgt.add(sign);
+    } else if (w.kind === "shop" && w.sid === "casino") { // the Golden Slop: a purple box, gold trim, a big spinning wheel on the front
+      tgt.add(at(box(w.w, w.h, hgt, mat(0x3a1640)), cx, cy, hgt / 2));
+      tgt.add(at(box(w.w + 8, w.h + 8, 6, mat(0xffd34d, 0x806010)), cx, cy, hgt + 3));
+      tgt.add(at(box(w.w + 2, w.h + 2, 4, mat(0xffd34d, 0x806010)), cx, cy, 2));
+      const wheel = new T.Group(); wheel.add(mesh(new T.CylinderGeometry(34, 34, 4, 16), mat(0xffd34d, 0x604000)));
+      for (let i = 0; i < 8; i++) { const sp = mesh(new T.BoxGeometry(3, 5, 62), mat(i % 2 ? 0xc03050 : 0xf4f0e0)); sp.rotation.y = i * Math.PI / 8; wheel.add(sp); }
+      wheel.rotation.x = Math.PI / 2; at(wheel, cx, w.y + w.h + 3, hgt * 0.62); tgt.add(wheel); (level.userData.spin = level.userData.spin || []).push(wheel);
+      tgt.add(at(box(50, 4, 70, mat(0x1a0a10)), cx, w.y + w.h + 1, 35)); // the door
+      const sign = mesh(new T.BoxGeometry(w.w * 0.8, 3, 26), mat(0xff5080, 0xc02050)); at(sign, cx, w.y + w.h + 2, hgt + 22); tgt.add(sign);
+    } else if (w.kind === "shop") { // a shopfront: the building behind, a counter at the front, a striped awning
+      const arm = w.sid === "armoury", body = mat(arm ? 0x4a5236 : 0x8a6a42);
+      tgt.add(at(box(w.w, w.h * 0.55, hgt + 40, body), cx, w.y + w.h * 0.275, (hgt + 40) / 2));
+      tgt.add(at(box(w.w, w.h * 0.45, 34, mat(arm ? 0x3a3a32 : 0x6b4520)), cx, w.y + w.h * 0.775, 17)); // the counter
+      tgt.add(at(box(w.w + 6, w.h * 0.6, 4, mat(arm ? 0x2a2a26 : 0x5a3a1e)), cx, w.y + w.h * 0.3, hgt + 42));
+      for (let i = 0; i < 8; i++) { const sw = (w.w + 12) / 8; tgt.add(at(box(sw, 30, 3, mat(i % 2 ? 0xf4f0e0 : arm ? 0x5a6a3a : 0xd06a2a)), w.x - 6 + sw * (i + 0.5), w.y + w.h + 6, hgt + 10)); }
+      if (arm) for (let i = 0; i < 6; i++) tgt.add(at(mesh(new T.CapsuleGeometry(6, 14, 3, 6), mat(0x8a7a52)), w.x + 14 + i * 24, w.y + w.h + 8, 6).rotateZ(Math.PI / 2));
+      else for (let i = 0; i < 6; i++) tgt.add(at(box(12, 10, 14, mat([0xd0a040, 0xe83a2a, 0x7ab0e0, 0xf4f0e0, 0x8a5a2a, 0x40a060][i])), w.x + 16 + i * 23, w.y + w.h * 0.775, 41));
+      const sign = mesh(new T.BoxGeometry(90, 3, 18), mat(0xf4e0a0)); at(sign, cx, w.y + w.h * 0.55 + 2, hgt + 22); tgt.add(sign);
     } else if (w.kind === "bunker") { // a squat concrete block with a hatch on top and a yellow sign
       const conc = mat(0x8a8a82), dk = mat(0x5a5a54);
       tgt.add(at(box(w.w, w.h, hgt, conc), cx, cy, hgt / 2));
@@ -233,13 +265,22 @@ var R3D = (function () {
     } else if (w.kind === "crate") {
       tgt.add(at(box(w.w, w.h, hgt, mat(0xd8b860)), cx, cy, hgt / 2));
       for (const s of [-0.25, 0.25]) tgt.add(at(box(w.w + 1, 3, hgt + 1, mat(0x8a6a32)), cx, cy + s * w.h, hgt / 2));
+    } else if (w.kind === "ruin") {
+      tgt.add(at(box(w.w, w.h, hgt, mat(0x8c867a)), cx, cy, z0 + hgt / 2));
+      tgt.add(at(box(w.w * 0.6, w.h + 2, 6, mat(0x5f7a3a)), cx - w.w * 0.15, cy, z1 - 2)); // moss on top
     } else if (w.kind === "rock") {
-      const r = mesh(new T.DodecahedronGeometry(1, 0), mat(0x7d7d80));
+      const r = mesh(new T.DodecahedronGeometry(1, 0), mat(w.stone ? 0x9a9690 : 0x7d7d80));
+      if (w.stone) { tgt.add(at(box(w.w, w.h, hgt, mat(0x9a9690)), cx, cy, z0 + hgt / 2)); level.add(tgt); if (w.id !== undefined) wallObjs.set(w.id, tgt); tgt.userData.ck = w.ck ? [cx, cy] : null; return; }
       r.scale.set(w.w * 0.62, hgt * 0.95, w.h * 0.62); at(r, cx, cy, z0 + hgt * 0.45); r.rotation.y = (w.x * 7) % 3; tgt.add(r);
     } else if (w.kind === "tree") {
       tgt.add(at(mesh(new T.CylinderGeometry(6, 9, 120, 8), mat(0x5a3a1e)), cx, cy, 60));
-      tgt.add(at(mesh(new T.ConeGeometry(w.w * 0.9, 130, 9), mat(0x2f5e28)), cx, cy, 150));
-      tgt.add(at(mesh(new T.ConeGeometry(w.w * 0.65, 100, 9), mat(0x3b7431)), cx, cy, 215));
+      if (w.fruit) { // a squat apple tree
+        tgt.add(at(mesh(new T.SphereGeometry(w.w * 0.75, 10, 8), mat(0x4a8a34)), cx, cy, 140));
+        for (let i = 0; i < 6; i++) { const a = i * 1.05 + (w.x % 7); tgt.add(at(mesh(new T.SphereGeometry(5, 6, 5), mat(0xd23a2a)), cx + Math.cos(a) * w.w * 0.6, cy + Math.sin(a) * w.w * 0.6, 125 + (i % 3) * 14)); }
+      } else {
+        tgt.add(at(mesh(new T.ConeGeometry(w.w * 0.9, 130, 9), mat(w.dark ? 0x1f4220 : 0x2f5e28)), cx, cy, 150));
+        tgt.add(at(mesh(new T.ConeGeometry(w.w * 0.65, 100, 9), mat(w.dark ? 0x28512a : 0x3b7431)), cx, cy, 215));
+      }
     } else if (w.kind === "fence") {
       tgt.add(at(box(w.w, w.h * 0.4, 8, mat(0x94693c)), cx, cy, 26));
       tgt.add(at(box(w.w, w.h * 0.4, 8, mat(0x94693c)), cx, cy, 12));
@@ -254,6 +295,7 @@ var R3D = (function () {
       tgt.add(at(box(w.w, w.h, hgt, mat(0x8a8a8a)), cx, cy, (z0 + z1) / 2));
     }
     level.add(tgt); if (w.id !== undefined) wallObjs.set(w.id, tgt);
+    tgt.userData.ck = w.ck ? [cx, cy] : null;
   }
   // walls can be destroyed (and rubble appears) without rebuilding the whole level
   function syncWalls(MAP) {
@@ -531,8 +573,19 @@ var R3D = (function () {
     }
     return g;
   }
-  function cropMesh(stage) {
+  function cropMesh(stage, crop) {
     const g = new T.Group();
+    if (stage === 3 && crop !== "turnip") {
+      const leafM = mat(0x3f8a2a), ball = (r, col, x, y, z, em) => g.add(mesh(new T.SphereGeometry(r, 10, 8), mat(col, em), x, y, z));
+      if (crop === "lettuce") for (let k = 0; k < 7; k++) { const l = mesh(new T.SphereGeometry(7, 8, 6), mat(k % 2 ? 0x8fe05a : 0x5aba3a), Math.cos(k) * 5, 6, Math.sin(k) * 5); l.scale.y = 0.7; g.add(l); }
+      else if (crop === "potato") { for (let k = 0; k < 5; k++) { const l = mesh(new T.SphereGeometry(1, 6, 5), leafM, (k - 2) * 5, 14, Math.sin(k) * 4); l.scale.set(3, 10, 3); l.rotation.z = (k - 2) * 0.3; g.add(l); } ball(6, 0xc8a060, -8, 3, 6); ball(5, 0xb89050, 7, 2.5, -5); }
+      else if (crop === "tomato" || crop === "strawberry") { const h = crop === "tomato" ? 26 : 10; const bush = mesh(new T.SphereGeometry(crop === "tomato" ? 11 : 10, 10, 8), leafM, 0, h * 0.6, 0); bush.scale.y = crop === "tomato" ? 1.4 : 0.6; g.add(bush); for (let k = 0; k < 5; k++) ball(crop === "tomato" ? 4 : 2.6, crop === "tomato" ? 0xe83a2a : 0xff4060, Math.cos(k * 1.3) * 9, h * 0.4 + (k % 3) * 4, Math.sin(k * 1.3) * 9); if (crop === "tomato") g.add(mesh(new T.CylinderGeometry(0.8, 0.8, 34, 5), mat(0x9a7a4a), 0, 17, 0)); }
+      else if (crop === "corn") { for (const [x, z] of [[-6, 0], [6, 4], [0, -7]]) { g.add(mesh(new T.CylinderGeometry(1.5, 2, 46, 6), mat(0x6aaa3a), x, 23, z)); const c = mesh(new T.CylinderGeometry(3, 2.6, 12, 8), mat(0xffd34d), x + 3, 28, z); c.rotation.z = -0.3; g.add(c); const l = mesh(new T.SphereGeometry(1, 6, 5), leafM, x - 4, 20, z); l.scale.set(2, 14, 2); l.rotation.z = 0.6; g.add(l); } }
+      else if (crop === "pumpkin") { const p = mesh(new T.SphereGeometry(18, 14, 10), mat(0xff8a20), 0, 13, 0); p.scale.y = 0.75; g.add(p); for (let k = 0; k < 6; k++) { const r = mesh(new T.TorusGeometry(17.5, 1.2, 4, 16, Math.PI), mat(0xc86010), 0, 13, 0); r.rotation.y = k * Math.PI / 6; r.scale.y = 0.75; g.add(r); } g.add(mesh(new T.CylinderGeometry(2, 2.5, 8, 6), mat(0x5a7a2a), 0, 29, 0)); }
+      else if (crop === "melon") { const m = mesh(new T.SphereGeometry(17, 14, 10), mat(0x2a8a4a, 0x0a5a2a), 0, 14, 0); m.scale.set(1.25, 0.85, 1); g.add(m); for (let k = -2; k <= 2; k++) { const r = mesh(new T.TorusGeometry(17.2, 0.9, 4, 18, Math.PI), mat(0x7dffb0, 0x2aff9a), 0, 14, k * 6); r.scale.set(1.25, 0.85, 1); g.add(r); } }
+      else ball(10, 0x88dd66, 0, 10, 0);
+      return g;
+    }
     if (stage === 1) g.add(mesh(new T.SphereGeometry(4, 8, 6), mat(0xc9a36a), 0, 4, 0));
     else if (stage === 2) { g.add(mesh(new T.CylinderGeometry(1.5, 1.5, 14, 5), mat(0x7fd34d), 0, 8, 0)); for (const s of [-1, 1]) { const l = mesh(new T.SphereGeometry(1, 8, 6), mat(0x7fd34d), s * 5, 14, 0); l.scale.set(6, 2, 3); g.add(l); } }
     else if (stage === 3) {
@@ -566,8 +619,15 @@ var R3D = (function () {
     frameNo++;
     const { S, MAP, t, dt, me } = st;
     const key = MAP.seed + ":" + (MAP.ver === undefined ? MAP.walls.length : "");
-    if (key !== levelKey) { buildLevel(MAP); levelKey = key; levelVer = MAP.ver; }
-    else if (MAP.ver !== levelVer) { syncWalls(MAP); levelVer = MAP.ver; }
+    if (key !== levelKey) { buildLevel(MAP); levelKey = key; levelVer = MAP.ver + ":" + (MAP.cv || 0); }
+    else if (MAP.ver + ":" + (MAP.cv || 0) !== levelVer) { syncWalls(MAP); levelVer = MAP.ver + ":" + (MAP.cv || 0); }
+    { // the wild: lose the hedge, keep grass under your feet, and only draw the chunks near you
+      const open = S.g.mode !== "royale", ud = level.userData;
+      if (ud.hedge) ud.hedge.visible = !open;
+      if (ud.wild) ud.wild.visible = open;
+      const pv = st.pred || (cam && { x: cam.position.x, y: cam.position.z });
+      if (pv && frameNo % 20 === 0) for (const o of wallObjs.values()) { const c = o.userData.ck; if (c) o.visible = Math.abs(c[0] - pv.x) < 3600 && Math.abs(c[1] - pv.y) < 3600; }
+    }
     // time of day
     let n = 0;
     if (S.g.ph === "night") n = 1;
@@ -609,6 +669,20 @@ var R3D = (function () {
     L.hearth.intensity = (1 + n * 7) * (1 + Math.sin(t * 9) * 0.08);
     const hg = level.userData.hearth;
     if (hg) { const fl = 1 + Math.sin(t * 9) * 0.1; hg.userData.flames.forEach((f, i) => f.scale.set(fl, fl * (i ? 1.1 : 1), fl)); hg.children[0].material = mat(hflash ? 0xcc7777 : 0x9a8a70); }
+    if (level.userData.spin) for (const w of level.userData.spin) w.rotation.y = t * 0.8;
+    // the Hearth Dome: a pylon for each quarter paid, and a shimmering bubble once it's up
+    if (S.g.dome && S.g.mode !== "royale" && MAP.hearth) {
+      const h = MAP.hearth, hx = h.x + h.w / 2, hy = h.y + h.h / 2, k = S.g.dome[0] / S.g.dome[1], n = Math.min(4, Math.floor(k * 4 + 1e-9));
+      [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy], i) => {
+        if (i >= n) return;
+        const e = pooled(`pylon:${i}`, () => { const g = new T.Group(); g.add(mesh(new T.CylinderGeometry(5, 9, 110, 8), mat(0x6a7a8a), 0, 55, 0)); const orb = mesh(new T.SphereGeometry(9, 12, 8), mat(0x9fe0ff, 0x4da6ff), 0, 116, 0); g.add(orb); g.userData.orb = orb; return g; });
+        at(e.obj, hx + sx * (h.w / 2 + 40), hy + sy * (h.h / 2 + 40), 0); e.obj.userData.orb.material.emissiveIntensity = 0.6 + 0.4 * Math.sin(t * 3 + i);
+      });
+      if (k >= 1) {
+        const R = st.domeR || 1000, e = pooled("dome", () => { const g = new T.Group(); g.add(mesh(new T.SphereGeometry(1, 40, 16, 0, Math.PI * 2, 0, Math.PI / 2), new T.MeshBasicMaterial({ color: 0x9fe0ff, transparent: true, opacity: 0.07, side: T.DoubleSide, depthWrite: false }))); const ring = mesh(new T.TorusGeometry(1, 0.004, 4, 96), basic(0x9fe0ff, 0.5)); ring.rotation.x = Math.PI / 2; g.add(ring); return g; });
+        at(e.obj, hx, hy, 0); e.obj.scale.set(R, R * 0.45, R); e.obj.children[0].material.opacity = (st.nukeFx && t - st.nukeFx.t < 3 ? 0.35 : 0.09) + 0.03 * Math.sin(t * 1.5);
+      }
+    }
     if (level.userData.well) { const s = level.userData.well.userData.slop; s.material.emissiveIntensity = 0.6 + Math.sin(t * 2) * 0.3; level.userData.well.visible = S.g.mode !== "royale"; }
     for (const pd of level.userData.pads || []) { const k = (t * 1.5) % 1; pd.userData.ring.position.y = 6 + k * 40; pd.userData.ring.material.opacity = 0.8 * (1 - k); }
 
@@ -617,13 +691,20 @@ var R3D = (function () {
       const e = pooled(`bed:${i}:${pl.x}:${pl.y}`, () => { const g = new T.Group(); g.add(mesh(new T.BoxGeometry(52, 3, 52), mat(0x5b3a1e), 0, 1.5, 0)); for (let r = -18; r <= 18; r += 12) g.add(mesh(new T.BoxGeometry(44, 3.4, 4), mat(0x6e4826), 0, 1.7, r)); return g; });
       at(e.obj, pl.x, pl.y, 0);
     });
-    S.pl.forEach((stage, i) => {
+    S.pl.forEach((v, i) => {
+      const stage = v % 4, crop = st.cropKeys[v >> 2] || "turnip";
       if (!stage) return;
       const pl = MAP.plots[i];
-      const e = pooled(`crop:${i}:${stage}`, () => cropMesh(stage));
+      const e = pooled(`crop:${i}:${stage}:${crop}`, () => cropMesh(stage, crop));
       at(e.obj, pl.x, pl.y, 3);
-      if (stage === 3) e.obj.position.y = 3 + Math.sin(t * 3 + i) * 1.5;
+      if (stage === 3 && crop !== "pumpkin" && crop !== "melon") e.obj.position.y = 3 + Math.sin(t * 3 + i) * 1.5;
     });
+    // shopkeepers, home for the night when it's dark
+    if (MAP.keepers) for (const k of MAP.keepers) {
+      if (k.hours === "day" && S.g.ph === "night") continue;
+      const e = pooled(`keeper:${k.id}`, () => personMesh(k.color, k.hat, "dot"));
+      at(e.obj, k.x, k.y, 0); e.obj.rotation.y = -Math.PI / 2; // facing the customers, south
+    }
     // messes
     for (const m of st.messes) {
       const age = t - m.t; if (age > 90) continue;

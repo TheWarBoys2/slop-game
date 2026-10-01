@@ -8,7 +8,7 @@ export const QUESTS = {
   had_pest:     { npc: "haddock", title: "Pest Control", desc: "Kill 30 of the dead.", stat: "kills", goal: 30 },
   had_marks:    { npc: "haddock", title: "Marksmanship", desc: "Land 15 headshots.", stat: "hs", goal: 15 },
   mor_voice:    { npc: "morwen", title: "The Voice", desc: "Hit 20 of the dead with your shout.", stat: "shoutHits", goal: 20 },
-  ald_labour:   { npc: "aldous", title: "Tithe of Labour", desc: "Repair the Hearth once, from the shop.", stat: "repairs", goal: 1 },
+  ald_labour:   { npc: "aldous", title: "Tithe of Labour", desc: "Repair the Hearth once (press E at the Hearth).", stat: "repairs", goal: 1 },
   vex_research: { npc: "vex", title: "Market Research", desc: "Open 2 Mystery Cases.", stat: "cases", goal: 2 },
   chef_raw:     { npc: "chef", title: "Kitchen Nightmare", desc: "Harvest 4 crops before Gordon leaves at nightfall.", stat: "crops", goal: 4 },
   bear_live:    { npc: "bear", title: "Live Off the Land", desc: "Eat 3 things you grew yourself (turnips or Hearth stew) before Bear leaves.", stat: "ateGrown", goal: 3 },
@@ -41,6 +41,7 @@ export const NPCS = {
         opts: [
           { label: "What happened to the well?", to: "well", if: (c) => !c.f.exposed },
           { label: "Tell me about the valley.", to: "history" },
+          { label: "Is there going to be a war?", to: "war", if: (c) => !c.f.exposed },
           { label: "Who was the drowned man?", to: "grandad", if: (c) => c.f.path === "drink" || c.aff.grubb >= 1 },
           { label: "Any chance of a campaign donation?", to: "donate", if: (c) => !c.f.exposed && !c.p.flags.grubbGold },
           { label: "We know it was you, Grubb.", to: "confront", if: (c) => c.clues.size >= 4 && !c.f.exposed && !c.f.blackmail && !c.f.pardoned },
@@ -53,6 +54,17 @@ export const NPCS = {
           { label: "That was suspiciously specific.", to: "sweat", do: (c) => { c.aff.grubb -= 1; } },
           { label: "Thanks, Mayor. Very helpful.", to: "start", do: (c) => { c.aff.grubb += 1; } },
         ],
+      },
+      war: {
+        text: (c) => { const [h, k] = c.api.dome(); return h >= k ? "\"War? Possibly! But we have the Dome now, and I shall be standing very close to the middle of it.\" He pats the Hearth like a dog." : `"War? Pfft. Well. Possibly. The old Hearth Dome would stop a bomb, they say, but it costs ${k} gold and the town has ${h}." He looks at your purse. "Patriotic citizens pay in at the Hearth. Just press E on it."`; },
+        opts: [
+          { label: "Why don't you pay for it?", to: "warcheap" },
+          { label: "Back.", to: "start" },
+        ],
+      },
+      warcheap: {
+        text: () => "\"I am contributing leadership.\" He adjusts his chain of office. \"Leadership is very expensive.\"",
+        opts: [{ label: "Back.", to: "start", do: (c) => { c.aff.grubb -= 1; } }],
       },
       sweat: {
         text: () => "Grubb laughs for slightly too long. \"Ha! Ha. Ha. Specific. No. Next question.\" A drop of sweat lands on his chain of office.",
@@ -298,9 +310,15 @@ export const NPCS = {
           { label: "Pest control done.", to: "pestdone", if: (c) => ready(c, "had_pest") },
           { label: "Got anything harder?", to: "quest2", if: (c) => q(c, "had_pest")?.done && !q(c, "had_marks") },
           { label: "Headshots done.", to: "marksdone", if: (c) => ready(c, "had_marks") },
+          { label: "What's the wireless saying?", to: "radio" },
           { label: "Any tips?", to: "tips" },
           { label: "Dismissed.", to: null },
         ],
+      },
+      radio: {
+        text: (c) => { const [h, k] = c.api.dome(), n = c.api.night(); return n >= 5 ? (h >= k ? "\"Bombs are falling all over, soldier. Our Dome's up. Keep it topped up and stand inside it when the siren goes.\"" : "\"They're falling now. Dome's not full. Get gold into it, and if the siren goes, the bunker or the bottom of the lake.\"")
+          : `He taps the set. "War, soldier. Both sides are pointing things at each other. Wireless reckons it starts after the fifth day." He nods at the Hearth. "Old Dome generator's still under there. ${k - h > 0 ? `Needs ${k - h} gold to run it. Hearth takes payment, press E on it. Every coin counts.` : "And it's running. Good work."}"`; },
+        opts: [{ label: "Understood, Sergeant.", to: "start" }],
       },
       watch: {
         text: (c) => q(c, "had_pest")?.done || c.aff.haddock >= 2 ? "His jaw tightens. \"Night it started, we got orders to guard the north wall. From the Mayor himself. First order he's ever given. Nothing came from the north. Everything came from the well.\""

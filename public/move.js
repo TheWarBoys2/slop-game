@@ -28,6 +28,7 @@ var MV = (function () {
         if (m === l) e.x = w.x - r; else if (m === rr) e.x = w.x + w.w + r; else if (m === t) e.y = w.y - r; else e.y = w.y + w.h + r;
       }
     }
+    if (W === Infinity) return hit; // the open world has no edge
     if (e.x < r || e.x > W - r || e.y < r || e.y > H - r) hit = hit || "edge";
     e.x = Math.max(r, Math.min(W - r, e.x)); e.y = Math.max(r, Math.min(H - r, e.y));
     return hit;
