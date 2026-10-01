@@ -69,7 +69,7 @@ var MV = (function () {
   // one step of player movement: ground friction and acceleration, Quake-style air strafing,
   // tap-strafing (a fresh direction key in the air redirects your momentum), bunny hops (jumping on the
   // landing tick skips friction), jump pads, stairs and ledges.
-  // swimming: water drag, slow strokes, Space swims up, C dives, and you float back to the surface
+  // swimming: water drag, slow strokes, Space swims up, CTRL dives, and you float back to the surface
   function swim(e, inp, dt, env) {
     const keys = inp.keys | 0, w = env.frozen ? { x: 0, y: 0 } : wishDir(keys, inp.yaw, inp.rel), sp = env.sp * SWIM;
     const up = !env.frozen && (keys & KEY.JUMP), down = !env.frozen && (keys & KEY.DOWN);

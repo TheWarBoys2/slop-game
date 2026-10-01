@@ -13,8 +13,8 @@ export const CROPS = {
   tomato:     { name: "Tomato", icon: "🍅", t: 1.2, seed: 10, sell: 20, f: 10, d: 12, regrow: true, col: "#e83a2a", desc: "Keeps fruiting after you pick it." },
   strawberry: { name: "Strawberry", icon: "🍓", t: 1, seed: 14, sell: 28, f: 8, d: 8, regrow: true, col: "#ff4060", desc: "Keeps fruiting after you pick it. Somebody loves these." },
   corn:       { name: "Corn", icon: "🌽", t: 2, seed: 12, sell: 34, f: 22, yield: 2, col: "#ffd34d", desc: "Takes a while, gives two cobs." },
-  pumpkin:    { name: "Pumpkin", icon: "🎃", t: 3, seed: 30, sell: 150, f: 45, col: "#ff8a20", desc: "Huge, slow and valuable. Zombies love stepping on them." },
-  melon:      { name: "Slop Melon", icon: "🍉", t: 4.5, seed: 70, sell: 340, f: 50, d: 40, col: "#2aff9a", desc: "Grown from the well's own seeds. Glows faintly. Sells for a fortune." },
+  pumpkin:    { name: "Pumpkin", icon: "🎃", t: 3, seed: 30, sell: 110, f: 45, col: "#ff8a20", desc: "Huge, slow and valuable. Zombies love stepping on them." },
+  melon:      { name: "Slop Melon", icon: "🍉", t: 4.5, seed: 70, sell: 220, f: 50, d: 40, col: "#2aff9a", desc: "Grown from the well's own seeds. Glows faintly. Sells for a fortune." },
 };
 export const CROP_KEYS = Object.keys(CROPS);
 export const SEED_PACK = 3;

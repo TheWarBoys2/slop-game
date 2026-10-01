@@ -18,7 +18,7 @@ const ENH = ["", "PRI", "DUO", "TRI", "TET", "PEN"];
 const WNAME = { pistol: "Pistol", smg: "SMG", shotgun: "Shotgun", rifle: "Rifle", sniper: "Sniper", staff: "Fire Staff", ak: "AK-Maybe", sword: "Slop Sword", rocket: "Rocket Launcher" };
 const TRACER = { pistol: "#ffe9a0", smg: "#ffe9a0", shotgun: "#ffcf70", rifle: "#fff3b0", sniper: "#ffffff", staff: "#ff7a2a", ak: "#ffb0ff", rocket: "#ffb040" };
 // ---------------------------------------------------------------- view: first person, third person, or the classic top-down map
-const VIEWS = ["fp", "tp", "top"], VIEW_NAME = { fp: "First person", tp: "Third person", top: "Classic top-down" };
+const VIEWS = ["fp", "tp"], VIEW_NAME = { fp: "First person", tp: "Third person" }; // top-down is gone as a playing view
 let viewMode = (() => { try { return localStorage.getItem("slop-view") || "fp"; } catch { return "fp"; } })();
 if (!VIEWS.includes(viewMode)) viewMode = "fp";
 const has3d = typeof R3D !== "undefined" && R3D.init();
@@ -158,7 +158,7 @@ function handleEvent(e) {
   else if (e.k === "feed") pushLim(feed, { text: e.text, color: e.color, t }, 6);
   else if (e.k === "chat") pushLim(chatLog, { from: e.from, text: e.text, color: e.color, t }, 8);
   else if (e.k === "say") bubbles.set(e.id, { text: e.text, t });
-  else if (e.k === "banner") { banner = { text: e.text, sub: e.sub, t }; sfx("banner"); if (e.npc) speakNpc(e.npc, ARRIVE_LINE[e.npc] || ""); }
+  else if (e.k === "banner") { banner = { text: e.text, sub: e.sub, t }; sfx("banner"); if (e.npc) { const n = S && S.np && S.np.find((q) => q[0] === e.npc); if (n && Math.hypot(n[1] - pred.x, n[2] - pred.y) < 600) speakNpc(e.npc, ARRIVE_LINE[e.npc] || ""); } } // only the people standing there hear them
   else if (e.k === "vote") { sfx("banner"); pushLim(toasts, { text: "The town meeting is open until dusk. Press N to vote.", color: "#e0c0ff", t }, 4); }
   else if (e.k === "clue") { sfx("lvl"); clueT = t; }
   else if (e.k === "land") fx.push({ kind: "boom", t0: t, dur: 0.35, x: e.x, y: e.y, r: 30, dust: true });
@@ -273,10 +273,13 @@ addEventListener("keydown", (e) => {
   if (k === "y") { if (!cgState) toggleCards(); return; }
   if (k === "escape" && (invOpen || mktOpen || stallOpen)) { toggleInv(false); toggleMarket(false); toggleStall(false); return; }
   if (k === "f" && S && (S.g.ph === "lobby" || S.g.ph === "over")) { send({ t: "ready" }); return; }
+  if (k === "f" && !e.repeat) { send({ t: "hoe" }); return; } // hold the hoe (click to till) or put it away
+  if (k === "control") { e.preventDefault(); if (!OPTS.crouchHold && !e.repeat) crouchOn = !crouchOn; } // CTRL: crouch on land, dive in water, descend in a helicopter
+  else if (e.ctrlKey && k.length === 1) e.preventDefault(); // CTRL+S, CTRL+D and friends shouldn't save the page mid-crouch
   if (k === "c" && !pred.swim && !flying()) { toggleBuild(); return; }
   if (building && /^[1-4]$/.test(k)) { buildKind = Object.keys(PIECES)[Number(k) - 1] || buildKind; renderBuildBar(); return; }
   if (building && k === "escape") { toggleBuild(false); return; }
-  if (dlgOpen && /^[1-9]$/.test(k)) { send({ t: "dlg", i: Number(k) - 1 }); return; }
+  if (dlgOpen && /^[0-9]$/.test(k)) { send({ t: "dlg", i: (Number(k) + 9) % 10 }); return; }
   if (k === "escape" && dlgOpen) { send({ t: "dlg", i: -1 }); showDlg({ close: 1 }); return; }
   if (k === "k") { toggleSkills(); return; }
   if (k === "n") { toggleBallot(); return; }
@@ -297,7 +300,7 @@ addEventListener("keydown", (e) => {
   if (k === "r") { const mine = S?.p.find((p) => p.id === me); if (mine && mine.rl && !mine.rtr) localReloadTry = T(); send({ t: "reload" }); }
   if (k === "e") send({ t: "use" });
   if (k === "q") send({ t: "shout" });
-  if (k === " ") { e.preventDefault(); const mine = S?.p.find((p) => p.id === me); if ((mine && mine.air === 1) || (S && S.g.ph === "intro")) send({ t: "dodge" }); } // jump (held); also bails out of the balloon
+  if (k === " ") { e.preventDefault(); crouchOn = false; const mine = S?.p.find((p) => p.id === me); if ((mine && mine.air === 1) || (S && S.g.ph === "intro")) send({ t: "dodge" }); } // jump (held); also bails out of the balloon
   if (k === "shift") { send({ t: "dodge" }); localDodge(); }
   if (k === "t") { viewMode = VIEWS[(VIEWS.indexOf(viewMode) + 1) % VIEWS.length]; try { localStorage.setItem("slop-view", viewMode); } catch {} viewT = T(); if (viewMode === "top") document.exitPointerLock?.(); }
   if (k === "1") send({ t: "swap", i: 0 });
@@ -308,6 +311,8 @@ addEventListener("keydown", (e) => {
   if (k === "l") openClean();
 });
 addEventListener("keyup", (e) => { if (fixOpen) fixKey(e, false); const k = e.key.toLowerCase(); keys.delete(k); if (radial && radial.key === k) pickRadial(radial.sel); if (k === "alt") e.preventDefault(); if (k === "tab") showScores = false; });
+// CTRL is crouch now, and CTRL+W closes a browser tab; ask before leaving mid-game
+addEventListener("beforeunload", (e) => { if (joined && S && ["day", "night", "royale"].includes(S.g.ph)) { e.preventDefault(); e.returnValue = ""; } });
 addEventListener("blur", () => { radial = null; keys.clear(); mouseDown = false; adsDown = false; showScores = false; });
 cv.addEventListener("mousemove", (e) => {
   if (radial) { // steer the wheel instead of the camera
@@ -321,9 +326,18 @@ cv.addEventListener("mousemove", (e) => {
   mouseX = e.clientX; mouseY = e.clientY;
 });
 const menusOpen = () => fixOpen || dlgOpen || bugOpen || ballotOpen || (S && S.g.ph === "lobby") || cleanOpen || hackOpen || optsOpen || chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || journalOpen || invOpen || mktOpen || cardsOpen || stallOpen || (S && S.g.ph === "over");
+// Browsers refuse to re-lock the mouse for about a second after it was released (closing a menu with Esc counts).
+// So if a click comes too soon, quietly try again once the browser allows it instead of leaving the mouse stuck.
+let lockRetry = 0;
+function lockMouse(tries = 0) {
+  clearTimeout(lockRetry);
+  const again = () => { if (tries < 3) lockRetry = setTimeout(() => { if (document.pointerLockElement !== cv && !menusOpen() && use3d) lockMouse(tries + 1); }, 1100); };
+  try { const r = cv.requestPointerLock?.(); if (r && r.catch) r.catch(again); } catch { again(); }
+}
+document.addEventListener("pointerlockerror", () => {});
 cv.addEventListener("mousedown", (e) => {
   if (radial) { if (e.button === 0) pickRadial(radial.sel); else radial = null; return; }
-  if (use3d && document.pointerLockElement !== cv) { if (e.button === 0 && !menusOpen()) cv.requestPointerLock?.(); return; }
+  if (use3d && document.pointerLockElement !== cv) { if (e.button === 0 && !menusOpen()) lockMouse(); return; }
   if (building) { if (e.button === 0) { const g = ghostCell(); send({ t: "build", kind: buildKind, x: g.x, y: g.y }); } else toggleBuild(false); return; }
   if (e.button === 0) mouseDown = true;
   if (e.button === 2) adsDown = true;
@@ -349,7 +363,8 @@ $("bugSend").onclick = () => {
   const text = $("bugText").value.trim();
   if (!text) { $("bugText").focus(); return; }
   if (!joined) { pushLim(toasts, { text: "Join the game first, then report it.", color: "#f88", t: T() }, 4); return; }
-  send({ t: "bug", text, errors: recentErrors.slice(-5), ua: navigator.userAgent }); toggleBug(false);
+  const kind = (document.querySelector('input[name="bugKind"]:checked') || {}).value || "Bug";
+  send({ t: "bug", kind, text, errors: kind === "Bug" ? recentErrors.slice(-5) : [], ua: navigator.userAgent }); toggleBug(false);
 };
 $("bugCancel").onclick = () => toggleBug(false);
 $("bugBtn").onclick = (e) => { e.target.blur(); toggleBug(); };
@@ -363,7 +378,7 @@ const RADIAL = {
   g: [["🎒", "Bag", "I", () => toggleInv()], ["⭐", "Skills", "K", () => toggleSkills()], ["📓", "Journal", "J", () => toggleJournal()], ["🃏", "Cards", "Y", () => { if (!cgState) toggleCards(); }],
       ["📈", "Stock market", "M", () => toggleMarket()], ["👒", "Wardrobe", "V", () => toggleWardrobe()], ["⚙️", "Options", "O", () => toggleOptions()]],
   x: [["🍞", "Eat or drink", "H", () => send({ t: "item", a: "quick" })], ["💣", "Grenade", "3", () => send({ t: "throw", k: "gren" })], ["🔥", "Molotov", "4", () => send({ t: "throw", k: "molo" })],
-      ["🧽", "Clean your gun", "L", () => openClean()], ["🔨", "Build", "C", () => { if (!pred.swim && !flying()) toggleBuild(); }], ["🌀", "Switch shout", "Z", () => send({ t: "elem" })], ["🚽", "Relieve yourself", "", () => send({ t: "go" })]],
+      ["🧽", "Clean your gun", "L", () => openClean()], ["🔨", "Build", "C", () => { if (!pred.swim && !flying()) toggleBuild(); }], ["🌀", "Switch shout", "Z", () => send({ t: "elem" })], ["🚽", "Relieve yourself", "", () => send({ t: "go" })], ["🌱", "Hoe out / away", "F", () => send({ t: "hoe" })]],
 };
 let radial = null;
 function openRadial(key) { radial = { key, sel: -1, ax: 0, ay: 0, t0: T() }; keys.clear(); mouseDown = false; }
@@ -404,7 +419,7 @@ const LOBBY_TIPS = [
   "Natural disasters can be stopped: find the control station on your map and press E at it.",
   "The town votes once a day. Press N to open the ballot any time before dusk.",
   "Hungry or thirsty? You'll eat and drink from your bag on your own when you're running low.",
-  "Something broken? Press F8 and tell us. It's saved straight to the host's computer.",
+  "Something broken, or got an idea? Press F8 and tell us. It's saved straight to the host's computer.",
 ];
 let lobbyTip = Math.floor(Math.random() * LOBBY_TIPS.length);
 function renderLobby(m, hostId) {
@@ -539,7 +554,7 @@ function toggleShop(force, sid) {
   if (shopOpen) { if (casinoOpen) toggleCasino(false); if (wardOpen) toggleWardrobe(false); toggleStall(false); keys.clear(); mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); renderShop(true); }
 }
 let shopTab = null, shopList = [];
-const SHOP_TABS = [["arms", "Weapons"], ["gear", "Gear"], ["food", "Food & medicine"], ["farm", "Farm & fun"], ["dome", "The Dome"]];
+const SHOP_TABS = [["arms", "Weapons"], ["gear", "Gear"], ["food", "Food & medicine"], ["gift", "Gifts 💐"], ["farm", "Farm & fun"], ["dome", "The Dome"]];
 const SHOP_VOICE = { general: "vex", armoury: "haddock", casino: "lou", produce: "giles" };
 const SHOP_BLURB = {
   general: "\"Everything a body needs. Mostly tins.\" Open by day.",
@@ -577,7 +592,7 @@ function renderShop(force) {
     if (id === "hoe" && mine) {
       const h = mine.hoe || 0;
       if (h >= 3) { label = "Golden Hoe (maxed): till 12 plots, two at a time"; cost = "MAX"; }
-      else { label = h ? `Upgrade to ${["", "Hoe", "Steel Hoe", "Golden Hoe"][h + 1]}: ${3 + 3 * (h + 1)} plots, faster crops, better harvests` : "Hoe: press E on open ground to till new plots"; cost = Math.round([40, 90, 160][h] * disc) + "g"; }
+      else { label = h ? `Upgrade to ${["", "Hoe", "Steel Hoe", "Golden Hoe"][h + 1]}: ${3 + 3 * (h + 1)} plots, faster crops, better harvests` : "Hoe: press F to hold it, then click open ground to till new plots"; cost = Math.round([40, 90, 160][h] * disc) + "g"; }
     }
     const d = document.createElement("div");
     d.className = "item";
@@ -759,7 +774,7 @@ function hush() { try { if ("speechSynthesis" in window && !shameSpeaking()) spe
 const shameSpeaking = () => T() - shameT < 4;
 
 // ---------------------------------------------------------------- options
-const OPTS = { vol: 1, music: 0.5, sens: 1, fov: 80, invert: false, shake: true, voices: true };
+const OPTS = { vol: 1, music: 0.5, sens: 1, fov: 80, invert: false, shake: true, voices: true, crouchHold: false };
 try { Object.assign(OPTS, JSON.parse(localStorage.getItem("slop-opts") || "{}")); } catch {}
 let optsOpen = false;
 function saveOpts() { try { localStorage.setItem("slop-opts", JSON.stringify(OPTS)); } catch {} }
@@ -787,7 +802,8 @@ function renderOptions() {
     `<div class="opt"><label><input type="checkbox" id="o-invert"${OPTS.invert ? " checked" : ""}> Invert mouse Y</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-shake"${OPTS.shake ? " checked" : ""}> Screen shake</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-voices"${OPTS.voices ? " checked" : ""}> NPC voices (the townsfolk talk out loud)</label></div>` +
-    `<div class="opt"><label>View</label><span>${{ fp: "First person", tp: "Third person", top: "Top-down" }[viewMode]} (press T to switch)</span></div>` +
+    `<div class="opt"><label>View</label><span>${VIEW_NAME[viewMode] || "First person"} (press T to switch)</span></div>` +
+    `<div class="opt"><label><input type="checkbox" id="o-crouch"${OPTS.crouchHold ? " checked" : ""}> Hold CTRL to crouch / dive (off: tap CTRL to toggle)</label></div>` +
     `<h3 class="opt-h">Flight stick / gamepad (helicopters)</h3><div class="opt-pad" id="o-pad"></div>` +
     [["pitch", "Pitch (stick forward/back)"], ["roll", "Roll / strafe (stick left/right)"], ["yaw", "Yaw (twist or rudder)"], ["thr", "Collective (throttle: up = climb)"]].map(([k, l]) =>
       `<div class="opt"><label>${l}</label><button class="cbtn alt bind" data-ax="${k}">Axis ${FLY[k]}</button><label class="inv"><input type="checkbox" data-inv="${k}"${FLY.inv[k] ? " checked" : ""}> invert</label><span id="o-ax-${k}"></span></div>`).join("") +
@@ -808,6 +824,7 @@ function renderOptions() {
     }, 50);
   };
   $("o-shake").onchange = (e) => { OPTS.shake = e.target.checked; saveOpts(); };
+  $("o-crouch").onchange = (e) => { OPTS.crouchHold = e.target.checked; crouchOn = false; saveOpts(); };
   $("o-voices").onchange = (e) => { OPTS.voices = e.target.checked; saveOpts(); if (OPTS.voices) speakNpc("grubb", "\"Splendid. Can you hear me? Splendid.\""); else hush(); };
 }
 $("options").addEventListener("click", (e) => { if (e.target === $("options")) toggleOptions(false); });
@@ -827,7 +844,7 @@ function showDlg(e) {
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const love = e.love !== undefined ? `<span class="dl-love">${hearts(e.love)}${e.rel ? ` · ${e.rel === "spouse" ? "married" : "dating"}` : ""}</span>` : "";
   box.innerHTML = `<div class="dl-n">${esc(e.name)} <span>${esc(e.role)}</span>${love}</div><div class="dl-t">${esc(e.text)}</div>` +
-    e.opts.map((o, i) => `<div class="dl-o" data-i="${i}"><b>${i + 1}.</b> ${esc(o)}</div>`).join("") +
+    e.opts.map((o, i) => `<div class="dl-o" data-i="${i}"><b>${i < 10 ? (i + 1) % 10 + "." : "·"}</b> ${esc(o)}</div>`).join("") +
     `<div class="dl-x" title="Esc">✕ Walk away <kbd>Esc</kbd></div>`;
   for (const el of box.querySelectorAll(".dl-o")) el.onclick = () => send({ t: "dlg", i: Number(el.dataset.i) });
   box.querySelector(".dl-x").onclick = () => { send({ t: "dlg", i: -1 }); showDlg({ close: 1 }); };
@@ -860,6 +877,8 @@ function renderJournal() {
 }
 setInterval(() => { if (journalOpen) renderJournal(); }, 500);
 
+let crouchOn = false, crouchEye = 0, lastWet = false;
+const crouching = () => OPTS.crouchHold ? keys.has("control") : crouchOn;
 function keyMask() {
   if (chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || (S && S.g.ph === "intro")) return 0;
   const mine = S && S.p.find((p) => p.id === me);
@@ -867,7 +886,10 @@ function keyMask() {
   // infected: forward is P, back is INSERT, left is ALT. There is no right.
   const jump = keys.has(" ") ? 16 : 0;
   if (mine && mine.inf === "keys") return jump | (keys.has("p") ? 1 : 0) | (keys.has("alt") ? 2 : 0) | (keys.has("insert") ? 4 : 0);
-  return jump | (keys.has("w") ? 1 : 0) | (keys.has("a") ? 2 : 0) | (keys.has("s") ? 4 : 0) | (keys.has("d") ? 8 : 0) | (keys.has("c") && (pred.swim || flying()) ? 32 : 0);
+  const wet = !!(pred.swim || flying());
+  if (wet !== lastWet) { lastWet = wet; crouchOn = false; } // getting in the water or a helicopter stands you up
+  const down = crouching();
+  return jump | (keys.has("w") ? 1 : 0) | (keys.has("a") ? 2 : 0) | (keys.has("s") ? 4 : 0) | (keys.has("d") ? 8 : 0) | ((down && wet) || (keys.has("c") && flying()) ? 32 : 0) | (down && !wet ? 64 : 0);
 }
 function aimAngle() { if (use3d) return aimYaw; const o = myScr(); return Math.atan2(mouseY - o.y, mouseX - o.x); }
 const aiming = () => adsDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen;
@@ -1272,7 +1294,8 @@ function render3d(mine, t, dt) {
   if (document.pointerLockElement === cv && menusOpen()) document.exitPointerLock();
   adsZoom += ((mine && !mine.d && aiming() ? 1.35 : 1) - adsZoom) * Math.min(1, dt * 10);
   const adsK = Math.max(0, (adsZoom - 1) / 0.35), fp = viewMode === "fp";
-  const eye = { x: pred.x, y: pred.y, z: pred.z + MV.EYE };
+  crouchEye += ((crouching() && !pred.swim && !flying() ? 20 : 0) - crouchEye) * Math.min(1, dt * 12);
+  const eye = { x: pred.x, y: pred.y, z: pred.z + MV.EYE - crouchEye };
   let cam, ownView = false;
   watcher = null;
   aimYaw = yaw; aimPitch = pitch;
@@ -2097,7 +2120,8 @@ function drawHud(mine, t) {
   text(`${mine.g}g`, 24, VH - 45, 20, "#ffd34d", "left");
   text(`🌱 ${mine.sd}`, 110, VH - 45, 18, "#8f8", "left");
   if (mine.spn) text(`🎰 ${mine.spn} spin${mine.spn > 1 ? "s" : ""} at the casino`, 324, VH - 22, 13, "#ffd34d", "right");
-  text(`[3] 💣 ${mine.gn ?? 0}   [4] 🔥 ${mine.mo ?? 0}${mine.hoe ? `   ${["", "Hoe", "Steel Hoe", "Golden Hoe"][mine.hoe]}` : ""}`, VW - 296, VH - 116, 13, "#ffb070", "left");
+  text(`[3] 💣 ${mine.gn ?? 0}   [4] 🔥 ${mine.mo ?? 0}${mine.hoe ? `   [F] ${["", "Hoe", "Steel Hoe", "Golden Hoe"][mine.hoe]}${mine.ho ? " (in hand)" : ""}` : ""}`, VW - 296, VH - 116, 13, "#ffb070", "left");
+  if (mine.ho) text("🌱 Hoe in hand: click open ground to till · F puts it away", VW / 2, VH - 150, 14, "#c8e0a0");
   if (mine.st > 0) { ctx.fillStyle = "#ffcc00"; for (let i = 0; i < 5; i++) { ctx.globalAlpha = i < mine.st ? 1 : 0.2; star(190 + i * 22, VH - 45, 9); } ctx.globalAlpha = 1; }
   const sc = mine.sc;
   const shEl = ELEMS[mine.el] || ELEMS.force;

@@ -916,7 +916,7 @@ var R3D = (function () {
       at(e.obj, e.x, e.y, e.z); e.obj.rotation.y = -yaw;
       e.obj.visible = !(mine && st.fp) && !p.vh;
       const body = e.obj.userData.body;
-      body.scale.y = p.go ? 0.72 : 1;
+      body.scale.y = p.go ? 0.72 : p.cro ? 0.7 : 1;
       body.rotation.z = p.sw ? lerp(body.rotation.z, -1.25, Math.min(1, dt * 6)) : lerp(body.rotation.z, 0, Math.min(1, dt * 8)); // swimming: flat out
       body.position.y = p.sw ? 22 : 0;
       const walk = p.sw ? 1 : Math.min(1, e.sp / 120), wt = (e.wt = (e.wt || 0) + dt * (p.sw ? 7 : 4 + e.sp / 30));

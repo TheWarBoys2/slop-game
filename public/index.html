@@ -194,7 +194,7 @@
   .hk-f { color: #9fb; font-size: 13px; margin: 12px 0 6px; }
   .modeBtns button { padding: 10px 16px; font-size: 16px; font-weight: bold; background: #2a3423; color: #cfe0b8; border: 2px solid #4b5e38; border-radius: 8px; cursor: pointer; }
   .modeBtns button.sel { border-color: #ffd34d; color: #ffd34d; }
-  #dlg { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); width: min(640px, calc(100% - 32px)); z-index: 7; background: #1a1624f2; border: 2px solid #8a6ab0; border-radius: 12px; padding: 14px 18px; }
+  #dlg { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); width: min(640px, calc(100% - 32px)); z-index: 7; background: #1a1624f2; border: 2px solid #8a6ab0; border-radius: 12px; padding: 14px 18px; max-height: calc(100vh - 200px); overflow-y: auto; }
   .dl-n { font-size: 20px; font-weight: bold; color: #e0c0ff; margin-bottom: 6px; }
   .dl-n span { font-size: 13px; color: #a090b8; font-weight: normal; margin-left: 8px; }
   .dl-t { color: #eee; line-height: 1.5; margin-bottom: 10px; font-size: 15px; }
@@ -296,7 +296,7 @@
       </div>
     </div>
     <div class="lp-tips" id="lpTip"></div>
-    <div class="lp-links"><button class="cbtn alt" id="lpOpts">⚙ Options</button><button class="cbtn alt" id="lpBug">🐞 Report a bug</button></div>
+    <div class="lp-links"><button class="cbtn alt" id="lpOpts">⚙ Options</button><button class="cbtn alt" id="lpBug">🐞 Features and bugs</button></div>
   </div>
 </div>
 <div id="buildBar" class="hidden"></div>
@@ -328,13 +328,14 @@
 <div id="dlg" class="hidden"></div>
 
 <button id="optBtn" title="Options (O)">⚙ Options [O]</button>
-<button id="bugBtn" title="Report a bug (F8)">🐞 Bug [F8]</button>
+<button id="bugBtn" title="Features and bugs (F8)">🐞 Ideas &amp; bugs [F8]</button>
 <div id="bug" class="overlay hidden">
   <div class="panel" style="max-width:560px">
-    <h2 style="margin:0 0 4px;color:#ffd34d">Report a bug</h2>
-    <div class="tag">What happened, and what were you doing just before? It's saved to a file on the host's computer along with where you were and what the game was doing.</div>
+    <h2 style="margin:0 0 4px;color:#ffd34d">Features and bugs</h2>
+    <div class="tag">Something broken, or an idea for the game? It's saved to a file on the host's computer along with where you were and what the game was doing.</div>
+    <div class="bugKind" style="display:flex;gap:8px;margin:8px 0"><label><input type="radio" name="bugKind" value="Bug" checked> 🐞 Bug</label><label><input type="radio" name="bugKind" value="Idea"> 💡 Idea</label></div>
     <textarea id="bugText" maxlength="2000" placeholder="I closed the shop and it stayed open..."></textarea>
-    <div style="display:flex;gap:8px;margin-top:10px"><button class="cbtn" id="bugSend">Send report</button><button class="cbtn alt" id="bugCancel">Cancel</button></div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="cbtn" id="bugSend">Send it</button><button class="cbtn alt" id="bugCancel">Cancel</button></div>
     <div class="keys"><kbd>F8</kbd> opens this any time. <kbd>Esc</kbd> to close.</div>
   </div>
 </div>
