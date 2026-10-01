@@ -44,7 +44,7 @@ const STORY_ZONE_R = [2300, 1850, 1450, 1180, 980, 820];
 const TEST_DMG = Number(process.env.SLOP_DMG || 1); // testing only
 const TEST_TP = !!process.env.SLOP_TP; // testing only: lets a test script move players about
 const NUKE_CHANCE = process.env.SLOP_NUKE ? 1 : 0.04; // chance, each dawn and dusk from night 5 (after the first, certain strike), that somebody presses the button
-const NUKE_WARN = FAST ? 12 : 45; // seconds to get to the bunker
+const NUKE_WARN = FAST ? 12 : 20; // seconds to get to the bunker
 const GUESTS = ["chef", "bear", "boulder", "david", "warren"]; // one celebrity visits each story run
 const UNLUCKY = process.env.SLOP_UNLUCKY ? 1 : 0.00004; // 0.004% per level-up or upgrade. As requested.
 const INFECT = process.env.SLOP_INFECT ? 1 : 0.03; // chance a bite infects you
@@ -91,8 +91,8 @@ const stallOpen = (k) => k.hours !== "day" || game.phase !== "night";
 const nearStall = (p) => rectHitsCircle(STALL, p, 80);
 // what a crop sells for right now: the farmers' co-op share price moves the whole market
 function cropPrice(p, id) {
-  const fair = STOCKS.FARM.p, k = clamp(game.market.px.FARM / fair, 0.6, 1.7);
-  return Math.max(1, Math.round(CROPS[id].sell * k * (p && p.cls === "farmer" ? 1.5 : 1) * (1 + 0.15 * ((p && p.hoe) || 0))));
+  const fair = STOCKS.FARM.p, k = clamp(game.market.px.FARM / fair, 0.4, 1.5);
+  return Math.max(1, Math.round(CROPS[id].sell * k * (p && p.cls === "farmer" ? 1.25 : 1) * (1 + 0.08 * ((p && p.hoe) || 0))));
 }
 const seedPrice = (p, id) => price(p, CROPS[id].seed * SEED_PACK);
 const seedCount = (p) => p.bag.reduce((a, b) => a + (ITEMS[b.id] && ITEMS[b.id].kind === "seed" ? b.n : 0), 0);
@@ -124,7 +124,7 @@ function damageWall(w, dmg) {
   WALLS = WALLS.filter((o) => o !== w && !(w.kind === "house" && o.hid === w.id));
   events.push({ k: "collapse", x: Math.round(w.x + w.w / 2), y: Math.round(w.y + w.h / 2), w: Math.round(w.w), h: Math.round(w.h), z: w.z1 || 40, kind: w.kind });
   if (w.kind === "house") WALLS.push({ id: wallId++, x: w.x + 10, y: w.y + 10, w: w.w - 20, h: w.h - 20, kind: "rubble", roof: w.roof, z0: 0, z1: 22 });
-  if (w.kind === "crate" && Math.random() < 0.3) crates.push({ id: nextId++, x: w.x + w.w / 2, y: w.y + w.h / 2, w: newWeapon(pick(LOOT_TYPES), lootRarity(game.night)) });
+  if (w.kind === "crate" && Math.random() < 0.15) crates.push({ id: nextId++, x: w.x + w.w / 2, y: w.y + w.h / 2, w: newWeapon(pick(LOOT_TYPES), lootRarity(game.night)) });
   mapVer++; mapDirty = true;
 }
 // the distance from a point to a box, in 3D
@@ -416,7 +416,7 @@ const SHOP = {
   molotov: { name: "Molotovs x2", cost: 30 },
   case:    { name: "Mystery Case", cost: 100 },
   gcase:   { name: "Golden Case (wheel spins!)", cost: 150 },
-  hoe:     { name: "Hoe (till new plots with E)", cost: 40 },
+  hoe:     { name: "Hoe (F to hold it, click to till new plots)", cost: 40 },
   enhance: { name: "Enhance weapon", cost: 0 },
   repair:  { name: "Repair Hearth", cost: 75 },
   antidote: { name: "Antidote (goes in your bag)", cost: 40 },
@@ -425,6 +425,7 @@ for (const [id, it] of Object.entries(SHOP)) it.cat = ["seeds", "hoe", "repair",
 for (const id of ["bread", "beans", "ration", "pie", "water", "cola", "grog", "bandage", "iodine", "radaway", "flowers", "trinket", "pack"]) SHOP[id] = { name: ITEMS[id].name, cost: ITEMS[id].cost, cat: id === "pack" ? "farm" : "food", desc: ITEMS[id].desc };
 for (const id of GEAR_KEYS) SHOP[id] = { name: GEAR[id].name, cost: GEAR[id].cost, cat: "gear", desc: GEAR[id].desc || "" };
 SHOP.repair.cat = "dome";
+SHOP.flowers.cat = SHOP.trinket.cat = "gift"; // their own tab, so people can find them
 SHOP.dome50 = { name: "Put 50g towards the Hearth Dome", cost: 50, cat: "dome" };
 SHOP.dome250 = { name: "Put 250g towards the Hearth Dome", cost: 250, cat: "dome" };
 // which counter sells what
@@ -608,11 +609,13 @@ function addGold(p, amt, reason) {
   if (reason) p.pe.push({ k: "gold", amt, reason });
 }
 const wading = (e) => game.disaster && game.disaster.kind === "flood" && (e.z || 0) < game.disaster.water - 6;
+const crouched = (p) => !!(p.keys & 64) && p.gr && !p.swim && !p.veh && !p.dead; // CTRL on land
 function speedOf(p) {
   let s = 210 * CLASSES[p.cls].speed * (1 + (traitOf(p).speed || 0)) * (1 + 0.06 * sk(p, "fleet")) * game.mods.speed;
   if (inAura(p)) s *= 1.1;
   if (p.weapons[p.active]?.type === "sniper") s *= 0.85;
   if (p.ads) s *= 0.6;
+  if (crouched(p)) s *= 0.5;
   if (now() < p.soggy) s *= 0.8;
   if (wading(p)) s *= 0.55;
   if (p.swim) s *= 1 + gearSum(p.gear, "swim"); else s *= Math.max(0.5, 1 + gearSum(p.gear, "speed"));
@@ -638,6 +641,7 @@ function spreadOf(p, w) {
   if (moving) s *= w.type === "sniper" ? 8 : 1.7;
   if (w.type === "shotgun") s = def.spread * (moving ? 1.15 : 1);
   if (p.ads) s *= w.type === "shotgun" ? 0.75 : 0.4;
+  if (crouched(p)) s *= 0.6; // a steadier aim, crouched
   if (p.stress > 60) s *= 1 + (p.stress - 60) / 50; // shaky hands
   if (p.drunk > 0) s *= 1 + p.drunk / 45; // grog
   s *= 1 - Math.min(0.5, gearSum(p.gear, "spread"));
@@ -1099,7 +1103,7 @@ function shoot(p, w) {
     for (const z of zombies) { const tt = cyl(z, z.r, z.z || 0, (z.z || 0) + zHeight(z)); if (tt < wallT) hits.push([tt, z, "z"]); }
     for (const q of players.values()) {
       if (q === p || q.dead || q.veh || q.air) continue;
-      const tt = cyl(q, 16, q.z, q.z + MV.HGT); if (tt < wallT) hits.push([tt, q, "p"]);
+      const tt = cyl(q, 16, q.z, q.z + (crouched(q) ? 40 : MV.HGT)); if (tt < wallT) hits.push([tt, q, "p"]);
     }
     if (game.mode === "royale") for (const v of vehicles) { if (v.id === p.veh) continue; const tt = cyl(v, VEHICLES[v.kind].r, v.z || 0, (v.z || 0) + 40); if (tt < wallT) hits.push([tt, v, "v"]); }
     hits.sort((a, b) => a[0] - b[0]);
@@ -1125,7 +1129,7 @@ function shoot(p, w) {
         // precision: in 3D a headshot is the top fifth of the target; top-down, it's a shot through the middle
         let tag = "", head;
         if (flat) { const hl = Math.hypot(dx, dy) || 1; head = Math.abs((target.x - mx) * dy / hl - (target.y - my) * dx / hl) < (kind === "z" ? target.r : 16) * 0.38; }
-        else { const th = hits.find((h) => h[1] === target)[0], hz = mz + dz * th, tz = target.z || 0, hh = kind === "z" ? zHeight(target) : MV.HGT; head = hz > tz + hh * 0.8; }
+        else { const th = hits.find((h) => h[1] === target)[0], hz = mz + dz * th, tz = target.z || 0, hh = kind === "z" ? zHeight(target) : crouched(target) ? 40 : MV.HGT; head = hz > tz + hh * 0.8; }
         if (head && w.type !== "shotgun") { dmg *= 1.75 + 0.25 * sk(p, "deadeye"); tag = "hs"; p.st.hs++; }
         if (p.cls === "rogue" && Math.random() < 0.25 + (traitOf(p).luck ? 0.1 : 0)) { dmg *= 2; tag = tag || "crit"; }
         if (kind === "z") {
@@ -1232,7 +1236,7 @@ function interact(p) {
   }
   let plot = null; bd = 48 * 48;
   for (const pl of PLOTS) { const d = dist2(pl, p); if (d < bd) { bd = d; plot = pl; } }
-  if (!plot) return p.hoe ? till(p) : undefined;
+  if (!plot) return p.hoeOut ? till(p) : undefined; // only with the hoe in your hands; E is for talking otherwise
   if (plot.stage === 0) {
     const crop = takeSeed(p);
     if (!crop) return toast(p, "No seeds. Old Giles sells them at the produce stall.", "#f88");
@@ -1299,7 +1303,7 @@ function buy(p, item) {
     return toast(p, `Bought ${it.name}. It's in your bag [I].`, "#8f8");
   }
   if (item === "kevlar") p.armor = 60;
-  else if (item === "hoe") { p.hoe++; toast(p, `${p.hoe === 1 ? "Bought" : "Upgraded to"} a ${HOES[p.hoe]}. Press E on open ground to till a plot (${hoeLimit(p.hoe)} max${p.hoe === 3 ? ", two at a time" : ""}).`, "#8f8"); }
+  else if (item === "hoe") { p.hoe++; toast(p, `${p.hoe === 1 ? "Bought" : "Upgraded to"} a ${HOES[p.hoe]}. Press F to take it out, then click open ground to till a plot (${hoeLimit(p.hoe)} max${p.hoe === 3 ? ", two at a time" : ""}).`, "#8f8"); }
   else if (item === "grenade") p.gren = Math.min(9, p.gren + 2);
   else if (item === "molotov") p.molo = Math.min(9, p.molo + 2);
   else if (item === "antidote" || item === "medkit") { if (!bagAdd(p.bag, item)) { p.gold += cost; return toast(p, "Your bag is full.", "#f88"); } p.invDirty = true; }
@@ -1312,7 +1316,7 @@ function buy(p, item) {
   }
   else if (item === "case") {
     const r = Math.random() * 100 - (traitOf(p).luck ? 8 : 0);
-    const rarity = r < 0.8 ? 4 : r < 4 ? 3 : r < 15 ? 2 : r < 40 ? 1 : 0;
+    const rarity = r < 0.3 ? 4 : r < 2 ? 3 : r < 10 ? 2 : r < 40 ? 1 : 0;
     const w = newWeapon(pick(LOOT_TYPES), rarity);
     giveWeapon(p, w);
     p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) }); p.st.cases++;
@@ -1789,7 +1793,7 @@ function stallAct(p, m) {
       if (!take) continue;
       const each = cropPrice(p, id);
       bagTake(p.bag, id, take); got += each * take; n += take;
-      shock(game.market, "FARM", -0.0015 * take * Math.sqrt(CROPS[id].sell / 25)); // flood the market and prices drop
+      shock(game.market, "FARM", -0.004 * take * Math.sqrt(CROPS[id].sell / 25)); // flood the market and prices drop
     }
     if (!n) return toast(p, "You've nothing he wants. He buys anything you've grown.", "#bbb");
     p.invDirty = true; p.st.sold = (p.st.sold || 0) + n;
@@ -1888,7 +1892,7 @@ function radioNews() {
   }, 6000);
 }
 // The war is coming. Everyone chips in at the Hearth; once it's paid for, the dome stops a nuke flattening the town.
-const DOME_COST = 800, DOME_PER = 250, DOME_R = 1000, FIRST_NUKE = 5; // nothing falls before night 5
+const DOME_COST = 1200, DOME_PER = 400, DOME_R = 1000, FIRST_NUKE = 5; // nothing falls before night 5
 const domeK = () => (game.dome ? clamp(game.dome.have / game.dome.cost, 0, 1) : 0);
 const inDome = (e) => Math.hypot(e.x - (HEARTH.x + HEARTH.w / 2), e.y - (HEARTH.y + HEARTH.h / 2)) < DOME_R;
 const DOME_STAGES = ["", "The first pylon hums into life beside the Hearth.", "Two pylons up. The air round the Hearth tastes of pennies.", "Three pylons. Grubb says it's \"nearly a dome\". It's a triangle.", ""];
@@ -2063,8 +2067,8 @@ function zoneNext(t) {
   z.tcx = clamp(z.cx + Math.cos(a) * d, 200, W - 200); z.tcy = clamp(z.cy + Math.sin(a) * d, 200, H - 200); z.tr = r;
   z.t0 = t + wait; z.t1 = z.t0 + shrink;
 }
-function zoneShrinkTo(r, secs) { // story mode: the fog closes in around the Hearth each night
-  const z = game.zone, t = now();
+function zoneShrinkTo(r, secs) {
+  const z = game.zone, t = now(); if (!z) return;
   z.fcx = z.cx; z.fcy = z.cy; z.fr = z.r; z.tcx = z.cx; z.tcy = z.cy; z.tr = r; z.t0 = t; z.t1 = t + secs;
 }
 function zoneTick(t) {
@@ -2143,7 +2147,7 @@ function enterVehicle(p, v) {
   if (seat < 0) return false;
   v.seats[seat] = p.id; p.veh = v.id; p.dlg = null;
   const air = VEHICLES[v.kind].air;
-  toast(p, seat === 0 ? (air ? `Flying the ${VEHICLES[v.kind].name}. W/S pitch, A/D strafe, the nose follows your mouse, SPACE climbs, C descends.${VEHICLES[v.kind].gun ? " Click: chain gun. Right-click: rockets." : ""} A flight stick or gamepad works too (Options). E to get out.` : `Driving the ${VEHICLES[v.kind].name}. WASD to drive, E to get out.`)
+  toast(p, seat === 0 ? (air ? `Flying the ${VEHICLES[v.kind].name}. W/S pitch, A/D strafe, the nose follows your mouse, SPACE climbs, C or CTRL descends.${VEHICLES[v.kind].gun ? " Click: chain gun. Right-click: rockets." : ""} A flight stick or gamepad works too (Options). E to get out.` : `Driving the ${VEHICLES[v.kind].name}. WASD to drive, E to get out.`)
     : air ? "Door gunner. Shoot anything that moves. E to jump out (careful)." : `Riding shotgun. You can shoot. E to get out.`, "#9fe0ff");
   return true;
 }
@@ -2364,7 +2368,7 @@ function beginPlay() {
   }
   game.ends = now() + DAY_LEN;
   const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
-  zoneInit(hc.x, hc.y, STORY_ZONE_R[0]); zoneShrinkTo(40000, 0.01); // by day the wild is open; the fog only comes at night
+  // the closing fog ring is Royale's; in Story and Endless the night itself is the pressure
   startDrop(hc);
   if (game.mode === "endless") { events.push({ k: "banner", text: `ENDLESS: ${VALLEY.toUpperCase()}`, sub: "No story. No end. Keep the Hearth burning as long as you can. A boss comes every fifth night." }); openVote(1); openElection(); return; }
   events.push({ k: "banner", text: `WELCOME TO ${VALLEY.toUpperCase()}`, sub: "SPACE to jump. Talk to the townsfolk [E]. Build defences [C]. Night is coming." });
@@ -2388,7 +2392,7 @@ function setupStory() {
   game.cameo = GUESTS.includes(process.env.SLOP_GUEST) ? process.env.SLOP_GUEST : pick(GUESTS);
   game.market = newMarket(); game.mayor = null; game.elec = null; game.nuke = null; game.waste = false; game.hot = []; game.posadAt = 0; game.tip = null;
   game.fog = false;
-  game.dome = { have: 0, cost: Math.min(3000, DOME_COST + DOME_PER * (n - 1)), struck: false };
+  game.dome = { have: 0, cost: Math.min(4500, DOME_COST + DOME_PER * (n - 1)), struck: false };
 }
 // a celebrity turns up for one day of the story, then leaves at nightfall
 function cameoArrive() {
@@ -2414,7 +2418,7 @@ function cameoLeave() {
 }
 function lootRarity(bonus = 0) {
   const r = Math.random() * 100;
-  return r < 0.5 + bonus * 0.3 ? 4 : r < 6 + bonus * 2 ? 3 : r < 22 + bonus * 3 ? 2 : r < 55 ? 1 : 0;
+  return r < 0.15 + bonus * 0.05 ? 4 : r < 1.5 + bonus * 0.5 ? 3 : r < 8 + bonus * 1.5 ? 2 : r < 42 ? 1 : 0; // rare is rare: a Legendary should be a moment
 }
 // ---------------------------------------------------------------- Slop-Tech caches: hack them open
 let caches = [];
@@ -2475,12 +2479,12 @@ function finishHack(p, m) {
   if (solved === 3) { p.molo = Math.min(9, p.molo + 2); feed(`${fullName(p)} cracked a Slop-Tech cache wide open.`, "#7dffb0"); }
   toast(p, `ACCESS GRANTED (${solved}/3 daemons). ${solved >= 2 ? "Something good dropped out." : ""}`, "#7dffb0");
 }
-function spawnCrates() {
-  const n = 3 + players.size;
+function spawnCrates() { // town gets a trickle; the good stuff is out in the wild
+  const n = 1 + Math.floor(players.size / 2);
   spawnCaches(game.mode === "royale" ? 4 : 2);
   for (let i = 0; i < n; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon(pick(LOOT_TYPES), lootRarity(game.night)) });
-  for (let i = 0; i < 1 + Math.ceil(players.size / 2); i++) crates.push({ id: nextId++, ...freeSpot(), it: { id: pick(game.waste && Math.random() < 0.4 ? ["gasmask", "hazmat"] : GEAR_KEYS), r: Math.min(3, lootRarity(game.night)) } });
-  for (let i = 0; i < 2; i++) crates.push({ id: nextId++, ...freeSpot(), it: { id: pick(game.waste ? ["beans", "ration", "radaway", "iodine", "water"] : ["beans", "ration", "water", "cola", "bandage", "pie", "grog"]), n: 1 + (Math.random() < 0.4 ? 1 : 0) } });
+  for (let i = 0; i < 1; i++) crates.push({ id: nextId++, ...freeSpot(), it: { id: pick(game.waste && Math.random() < 0.4 ? ["gasmask", "hazmat"] : GEAR_KEYS), r: Math.min(3, lootRarity(game.night)) } });
+  for (let i = 0; i < 1; i++) crates.push({ id: nextId++, ...freeSpot(), it: { id: pick(game.waste ? ["beans", "ration", "radaway", "iodine", "water"] : ["beans", "ration", "water", "cola", "bandage", "pie", "grog"]), n: 1 + (Math.random() < 0.4 ? 1 : 0) } });
 }
 // ---------------------------------------------------------------- the wild, past the hedge
 function ensureChunks() {
@@ -2715,8 +2719,6 @@ function startNight() {
   game.spawnLeft = Math.round(Math.min(120, (8 + 6 * game.night) * (0.7 + 0.3 * n) * game.mods.zCount * game.mods.nightCut));
   game.mods.nightCut = 1;
   game.spawnNext = now() + 2;
-  zoneShrinkTo(STORY_ZONE_R[Math.min(game.night, STORY_ZONE_R.length - 1)], 45);
-  events.push({ k: "feed", text: "The slop fog is closing in. Stay near the Hearth.", color: "#c080ff" });
   // the story's last night only comes once the mystery is solved; until then the waves never stop
   const final = game.mode === "story" && game.night >= LAST_NIGHT && solved();
   const endlessBoss = game.mode === "endless" && game.night % ENDLESS_BOSS_EVERY === 0;
@@ -2747,6 +2749,17 @@ function startNight() {
   }
   maybeNuke();
 }
+// Rates: every morning the valley takes a tenth of anything over 1500g. Hoarding gold is the one thing it taxes.
+const RATES_FREE = 1500, RATES = 0.1;
+function collectRates() {
+  if (game.mode === "royale") return;
+  for (const p of players.values()) {
+    const due = Math.floor((p.gold - RATES_FREE) * RATES * (game.mayor === "vex" ? 0.5 : game.mayor === "posad" ? 2 : 1));
+    if (due < 1) continue;
+    p.gold -= due; p.st.rates = (p.st.rates || 0) + due;
+    toast(p, `Town rates: ${due}g (a tenth of everything over ${RATES_FREE}g). Spend it or lose it.`, "#ffb070");
+  }
+}
 function startDay() {
   game.phase = "day"; game.ends = now() + DAY_LEN; game.fog = false; game.dino = false; game.duskWarned = false;
   game.dinoDay = isDinoDay(game.night + 1); game.dinoNext = now() + 12;
@@ -2756,6 +2769,7 @@ function startDay() {
     p.gifted = new Set();
     if (p.spouse && !p.dead && SAYS[p.spouse]) { p.hp = maxHp(p); p.gren = Math.min(9, p.gren + 1); addGold(p, 30, `${NPCS[p.spouse].name} looks after you`); toast(p, SAYS[p.spouse].spouse, "#ff8fc8"); }
   }
+  collectRates();
   maybeDisaster();
   shock(game.market, "FARM", 0.02);
   if (game.tip) { shock(game.market, game.tip.sym, 0.3, `${STOCKS[game.tip.sym].name} soars on a mystery buyer`); game.tip = null; }
@@ -2953,7 +2967,9 @@ function tick() {
     const w = p.weapons[p.active];
     w.bloom = Math.max(0, w.bloom - dt * 2.2);
     reloadTick(p, w, t);
-    if (p.firing && !p.dlg && !p.cg && !p.cleaning && !(t < p.going) && !(t < p.meltdown) && !(veh && veh.seats[0] === p.id) && playing && t >= w.nextShot) {
+    if (p.hoeOut && (!p.hoe || p.veh || p.swim)) p.hoeOut = false;
+    if (p.firing && p.hoeOut && !p.dlg && t >= (p.tillAt || 0)) { p.tillAt = t + 0.5; till(p); } // the hoe's out: clicking digs, it doesn't shoot
+    else if (p.firing && !p.dlg && !p.cg && !p.cleaning && !(t < p.going) && !(t < p.meltdown) && !(veh && veh.seats[0] === p.id) && playing && t >= w.nextShot) {
       if (w.reloadUntil) { /* busy reloading */ }
       else if (w.jam) { w.nextShot = t + 0.4; p.pe.push({ k: "click" }); }
       else if (w.ammo > 0) {
@@ -3136,7 +3152,7 @@ function snapshot() {
         jam: w.jam ? 1 : 0, dirt: Math.round(w.dirt || 0), cln: p.cleaning ? 1 : 0,
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
         lv: p.lvl, xp: p.xp, xn: xpNeed(p.lvl), pts: p.pts, sk: p.sk, ch: p.champion ? 1 : 0,
-        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : p.air === "bunker" ? 3 : 0, gr: SLOTS.map((k) => (p.gear[k] ? p.gear[k].id : "")), fd: Math.round(p.food), wt: Math.round(p.water), rad: Math.round(p.rad), dr: p.drunk > 5 ? 1 : 0, cg: p.cg ? 1 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, out: p.out ? 1 : 0, pk: p.st.pk, ss: r(p.stress || 0), br: Math.ceil(p.breath ?? 15), sw: p.swim ? 1 : 0, lo: p.love, ro: [p.dating || "", p.spouse || ""], el: p.elem || "force", els: elemsFor(p).join(","), fz: p.frozen > t ? 1 : 0, dl: p.dlg ? 1 : 0, md: p.meltdown > t ? 1 : 0, hoe: p.hoe || 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
+        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : p.air === "bunker" ? 3 : 0, gr: SLOTS.map((k) => (p.gear[k] ? p.gear[k].id : "")), fd: Math.round(p.food), wt: Math.round(p.water), rad: Math.round(p.rad), dr: p.drunk > 5 ? 1 : 0, cg: p.cg ? 1 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, cro: crouched(p) ? 1 : 0, out: p.out ? 1 : 0, pk: p.st.pk, ss: r(p.stress || 0), br: Math.ceil(p.breath ?? 15), sw: p.swim ? 1 : 0, lo: p.love, ro: [p.dating || "", p.spouse || ""], el: p.elem || "force", els: elemsFor(p).join(","), fz: p.frozen > t ? 1 : 0, dl: p.dlg ? 1 : 0, md: p.meltdown > t ? 1 : 0, hoe: p.hoe || 0, ho: p.hoeOut ? 1 : 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
         nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
         k: p.st.kills, de: p.st.deaths, cr: p.st.crops, tk: p.st.tk, hs: p.st.hs, acc: p.st.shots ? Math.round(p.st.hits / p.st.shots * 100) : 0,
       };
@@ -3216,7 +3232,8 @@ function onMessage(ws, raw) {
     case "reload": pressReload(p, p.weapons[p.active]); break;
     case "clean": cleanWeapon(p, m); break;
     case "hack": finishHack(p, m); break;
-    case "swap": if (p.weapons.length > 1) { p.active = m.i === 0 || m.i === 1 ? Math.min(m.i, p.weapons.length - 1) : 1 - p.active; } break;
+    case "hoe": if (!p.hoe) toast(p, "You haven't got a hoe. Vex's store sells them.", "#bbb"); else { p.hoeOut = !p.hoeOut; toast(p, p.hoeOut ? `${HOES[p.hoe]} out. Click to till a plot. F or 1/2 puts it away.` : "Hoe away.", "#c8e0a0"); } break;
+    case "swap": p.hoeOut = false; if (p.weapons.length > 1) { p.active = m.i === 0 || m.i === 1 ? Math.min(m.i, p.weapons.length - 1) : 1 - p.active; } break;
     case "use": if (game.phase === "intro") game.skip.add(p.id); else if (p.air === "plane") jump(p); else if (!p.dead) interact(p); break;
     case "skip": if (game.phase === "intro") game.skip.add(p.id); break;
     case "ready": if (game.phase === "lobby" || game.phase === "over") { p.ready = m.v === undefined ? !p.ready : !!m.v; feed(`${fullName(p)} is ${p.ready ? "ready" : "not ready"}`, p.ready ? "#8f8" : "#aaa"); } break;
@@ -3264,8 +3281,9 @@ function fileBug(p, m) {
     `Where: x ${Math.round(p.x)}, y ${Math.round(p.y)}, z ${Math.round(p.z)}${p.dead ? " (dead)" : ""}${p.veh ? " (in a vehicle)" : ""}${p.dlg ? ` (talking to ${p.dlg.npc})` : ""} · hp ${Math.round(p.hp)} · ${w ? w.type : "?"} ${w ? w.ammo : ""} · ${p.gold}g`,
     `Browser: ${String(m.ua || "").slice(0, 160)}`,
   ].join("\n");
-  const ok = bugLog(`${info}\n\n${text}${errs ? `\n\nRecent browser errors:\n${errs}` : ""}`);
-  toast(p, ok ? "Bug report saved. Thanks!" : "Couldn't save the report on the host's PC. Tell them in chat.", ok ? "#8f8" : "#f88");
+  const kind = m.kind === "Idea" ? "IDEA" : "BUG";
+  const ok = bugLog(`[${kind}] ${info}\n\n${text}${errs ? `\n\nRecent browser errors:\n${errs}` : ""}`);
+  toast(p, ok ? (kind === "IDEA" ? "Idea saved. Thanks!" : "Bug report saved. Thanks!") : "Couldn't save the report on the host's PC. Tell them in chat.", ok ? "#8f8" : "#f88");
   if (ok) console.log(`  Bug report from ${fullName(p)} saved to ${BUG_FILE}`);
 }
 
