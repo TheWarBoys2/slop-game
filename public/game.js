@@ -84,6 +84,7 @@ $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("go").cl
 // ---------------------------------------------------------------- network
 let WHEEL = [], COSM = {}, FREE_HATS = [], myCos = [];
 let ws, MAP = null, SHOP = null, ENH_COST = [], ENH_CHANCE = [], PIECES = {}, VEH = {}, LEGENDS = {};
+let ITEMS = {}, GEAR = {}, CARDS = {}, LOCS = {}, STOCKS = {}, CANDS = {}, INV = null;
 let S = null; // latest snapshot
 let me = 0, joined = false;
 const disp = new Map(); // smoothed positions by key
@@ -91,7 +92,7 @@ function connect() {
   ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
-    if (m.t === "hello") { WHEEL = m.wheel || []; COSM = m.cosmetics || {}; FREE_HATS = m.freeHats || []; SHOP = m.shop; ENH_COST = m.enhCost; ENH_CHANCE = m.enhChance; PIECES = m.pieces || {}; VEH = m.vehicles || {}; LEGENDS = m.legends || {}; renderBuildBar(); if (joined) send({ t: "join", ...choice }); return; }
+    if (m.t === "hello") { WHEEL = m.wheel || []; COSM = m.cosmetics || {}; FREE_HATS = m.freeHats || []; SHOP = m.shop; ENH_COST = m.enhCost; ENH_CHANCE = m.enhChance; PIECES = m.pieces || {}; VEH = m.vehicles || {}; LEGENDS = m.legends || {}; ITEMS = m.items || {}; GEAR = m.gear || {}; CARDS = m.cards || {}; LOCS = m.locs || {}; STOCKS = m.stocks || {}; CANDS = m.cands || {}; renderBuildBar(); if (joined) send({ t: "join", ...choice }); return; }
     if (m.t === "map") { const fresh = !MAP || MAP.seed !== m.map.seed; MAP = m.map; if (fresh) { buildDecor(); disp.clear(); } return; }
     if (m.t === "s") onSnap(m);
   };
@@ -174,6 +175,9 @@ function handleEvent(e) {
   else if (e.k === "zap") { fx.push({ kind: "zap", t0: t, dur: 0.35, pts: e.pts }); if (Math.hypot(e.pts[0][0] - pred.x, e.pts[0][1] - pred.y) < 900) sfx("zap"); }
   else if (e.k === "meteor") { fx.push({ kind: "boom", t0: t, dur: 0.8, x: e.x, y: e.y, z: e.z, r: 170 }); fx.push({ kind: "boom", t0: t, dur: 1.4, x: e.x, y: e.y, z: e.z, r: 120, dust: true }); const d = Math.hypot(e.x - pred.x, e.y - pred.y); if (d < 1200) { sfx("boom", 1 - d / 1400); shake = Math.max(shake, 16 * (1 - d / 1200)); } }
   else if (e.k === "quake") shake = Math.max(shake, 14);
+  else if (e.k === "siren") { sirenT = t; sfx("siren"); }
+  else if (e.k === "nuke") { nukeFx = { x: e.x, y: e.y, t }; shake = Math.max(shake, 30); sfx("nuke"); }
+  else if (e.k === "hatch") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 500) sfx("click"); }
   else if (e.k === "ballkick") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("kick"); }
   else if (e.k === "goal") { sfx("goal"); fx.push({ kind: "text", t0: t, dur: 2, x: e.x, y: e.y, z: 80, text: "GOAL!", color: "#ffd34d", big: true }); }
   else if (e.k === "alarm") { fx.push({ kind: "shout", t0: t, dur: 1.5, x: e.x, y: e.y, a: 0, full: true, col: 0xff3030, c2: "255,48,48" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 1000) sfx("alarm"); }
@@ -200,6 +204,10 @@ function handlePersonal(e) {
   else if (e.k === "deaf") { deafT = t; shake = Math.max(shake, 8); }
   else if (e.k === "wasted") { wasted = t; wastedPlace = e.place || 0; }
   else if (e.k === "dlg") showDlg(e);
+  else if (e.k === "inv") { INV = e; if (invOpen) renderInv(); if (cardsOpen && !cgState) renderCards(); if (mktOpen) renderMarket(); }
+  else if (e.k === "mkh") { mkHist = e.hist; if (mktOpen) renderMarket(); }
+  else if (e.k === "cg") { if (e.close) { cgState = null; if (cardsOpen) toggleCards(false); } else { const fresh = !cgState || cgState.v.turn !== e.v.turn || e.v.over; cgState = e; if (fresh) cgStaged = []; toggleCards(true); renderCards(); } }
+  else if (e.k === "pack") { pushLim(toasts, { text: `New card${e.cards.length > 1 ? "s" : ""}: ${e.cards.map((c) => CARDS[c] ? CARDS[c].name : c).join(", ")}  [Y]`, color: "#ffd34d", t }, 4); sfx("perfect"); }
   else if (e.k === "wheel") { wheelAnim = { t0: t, from: wheelAngle, seg: e.seg }; sfx("banner"); toggleCasino(true); }
   else if (e.k === "casino") { casinoState = e; if (e.game || (e.spins && wantCasino)) { wantCasino = false; toggleCasino(true); } renderCasino(); }
   else if (e.k === "cos") { myCos = e.list; if (wardOpen) renderWardrobe(); }
@@ -244,7 +252,13 @@ addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   if (k === "tab") { e.preventDefault(); showScores = true; return; }
   if (k === "enter") { openChat(); e.preventDefault(); return; }
+  if (cardsOpen && k === "escape") { if (cgState && !cgState.v.over) return; toggleCards(false); if (cgState) send({ t: "cg", a: "quit" }); return; }
+  if (cardsOpen && cgState) return; // mid-match: the table has your full attention
   if (k === "b") { toggleSkills(false); toggleBuild(false); toggleShop(); return; }
+  if (k === "i") { toggleInv(); return; }
+  if (k === "m") { toggleMarket(); return; }
+  if (k === "y") { if (!cgState) toggleCards(); return; }
+  if (k === "escape" && (invOpen || mktOpen)) { toggleInv(false); toggleMarket(false); return; }
   if (k === "f" && S && (S.g.ph === "lobby" || S.g.ph === "over")) { send({ t: "ready" }); return; }
   if (k === "c" && !pred.swim && !flying()) { toggleBuild(); return; }
   if (building && /^[1-4]$/.test(k)) { buildKind = Object.keys(PIECES)[Number(k) - 1] || buildKind; renderBuildBar(); return; }
@@ -259,11 +273,12 @@ addEventListener("keydown", (e) => {
   if (k === "escape" && optsOpen) { toggleOptions(false); return; }
   if (k === "escape" && (casinoOpen || wardOpen)) { toggleCasino(false); toggleWardrobe(false); return; }
   if (k === "escape") { toggleShop(false); toggleSkills(false); toggleJournal(false); return; }
-  if (shopOpen && /^[0-9]$/.test(k)) { const items = Object.keys(SHOP); const i = (Number(k) + 9) % 10; if (items[i]) send({ t: "buy", item: items[i] }); return; }
+  if (shopOpen && /^[0-9]$/.test(k)) { const i = (Number(k) + 9) % 10; if (shopList[i]) send({ t: "buy", item: shopList[i] }); return; }
   if (k === "alt" || k === "insert") e.preventDefault();
   if (e.repeat) return;
   keys.add(k);
   if (k === "x") send({ t: "go" });
+  if (k === "h") send({ t: "item", a: "quick" });
   if (k === "r") { const mine = S?.p.find((p) => p.id === me); if (mine && mine.rl && !mine.rtr) localReloadTry = T(); send({ t: "reload" }); }
   if (k === "e") send({ t: "use" });
   if (k === "q") send({ t: "shout" });
@@ -283,7 +298,7 @@ cv.addEventListener("mousemove", (e) => {
   if (document.pointerLockElement === cv) { const sens = 0.0024 * OPTS.sens * (adsZoom > 1.05 ? 0.55 : 1); yaw += e.movementX * sens; pitch = Math.max(-1.45, Math.min(1.45, pitch - e.movementY * sens * (OPTS.invert ? -1 : 1))); return; }
   mouseX = e.clientX; mouseY = e.clientY;
 });
-const menusOpen = () => cleanOpen || hackOpen || optsOpen || chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || journalOpen || (S && S.g.ph === "over");
+const menusOpen = () => cleanOpen || hackOpen || optsOpen || chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || journalOpen || invOpen || mktOpen || cardsOpen || (S && S.g.ph === "over");
 cv.addEventListener("mousedown", (e) => {
   if (use3d && document.pointerLockElement !== cv) { if (e.button === 0 && !menusOpen()) cv.requestPointerLock?.(); return; }
   if (building) { if (e.button === 0) { const g = ghostCell(); send({ t: "build", kind: buildKind, x: g.x, y: g.y }); } else toggleBuild(false); return; }
@@ -422,12 +437,16 @@ function toggleShop(force) {
   $("shop").classList.toggle("hidden", !shopOpen);
   if (shopOpen) { if (casinoOpen) toggleCasino(false); if (wardOpen) toggleWardrobe(false); keys.clear(); mouseDown = false; renderShop(); }
 }
+let shopTab = "arms", shopList = [];
+const SHOP_TABS = [["arms", "Weapons"], ["gear", "Gear"], ["food", "Food & medicine"], ["farm", "Farm & fun"]];
 function renderShop() {
   if (!SHOP) return;
   const mine = S?.p.find((p) => p.id === me);
-  $("shopgold").textContent = mine ? `You have ${mine.g}g and ${mine.sd} seeds` : "";
-  $("shopitems").innerHTML = "";
-  Object.entries(SHOP).forEach(([id, it], i) => {
+  $("shopgold").textContent = mine ? `You have ${mine.g}g and ${mine.sd} seeds${INV ? ` · bag ${INV.bag.length}/${INV.size}` : ""}` : "";
+  $("shopitems").innerHTML = `<div class="tabs">${SHOP_TABS.map(([k, l]) => `<button class="tab${k === shopTab ? " on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div>`;
+  for (const b of $("shopitems").querySelectorAll(".tab")) b.onclick = (e) => { e.stopPropagation(); shopTab = b.dataset.tab; renderShop(); };
+  shopList = Object.keys(SHOP).filter((id) => (SHOP[id].cat || "arms") === shopTab);
+  shopList.map((id) => [id, SHOP[id]]).forEach(([id, it], i) => {
     const disc = 1 - 0.1 * ((mine && mine.sk.haggler) || 0);
     let label = it.name, cost = Math.round(it.cost * disc) + "g";
     if (id === "enhance" && mine) {
@@ -442,7 +461,8 @@ function renderShop() {
     }
     const d = document.createElement("div");
     d.className = "item";
-    d.innerHTML = `<span><span class="k">${i < 10 ? (i + 1) % 10 : ""}</span>${label}</span><span>${cost}</span>`;
+    const g = GEAR[id], stat = g ? gearDesc(g) : it.desc || "";
+    d.innerHTML = `<span><span class="k">${i < 10 ? (i + 1) % 10 : ""}</span>${ITEMS[id] ? ITEMS[id].icon + " " : g ? GEAR_ICON[g.slot] + " " : ""}${label}${stat ? `<small class="sd">${stat}</small>` : ""}</span><span>${cost}</span>`;
     d.onclick = () => send({ t: "buy", item: id });
     $("shopitems").appendChild(d);
   });
@@ -539,6 +559,8 @@ function sfx(kind, vol = 1, sub) {
   else if (kind === "goal") { noise(1.6, 0.35, 500); tone("triangle", 523, 1046, 0.7, 0.3); }
   else if (kind === "alarm") [0, 0.3, 0.6, 0.9].forEach((d) => { const o = actx.createOscillator(); o.type = "square"; o.frequency.setValueAtTime(880, t + d); o.frequency.setValueAtTime(660, t + d + 0.15); const gg = actx.createGain(); gg.gain.setValueAtTime(0.15, t + d); gg.gain.setValueAtTime(0.001, t + d + 0.29); o.connect(gg); gg.connect(g); o.start(t + d); o.stop(t + d + 0.3); });
   else if (kind === "rex") { tone("sawtooth", 90, 40, 1.4, 0.5); noise(1.2, 0.4, 100); }
+  else if (kind === "siren") { for (let i = 0; i < 6; i++) { const o = actx.createOscillator(), gg = actx.createGain(); o.type = "sawtooth"; o.frequency.setValueAtTime(380, t + i * 1.6); o.frequency.linearRampToValueAtTime(820, t + i * 1.6 + 0.8); o.frequency.linearRampToValueAtTime(380, t + i * 1.6 + 1.6); gg.gain.setValueAtTime(0.12, t + i * 1.6); gg.gain.linearRampToValueAtTime(0.001, t + i * 1.6 + 1.6); o.connect(gg); gg.connect(g); o.start(t + i * 1.6); o.stop(t + i * 1.6 + 1.6); } }
+  else if (kind === "nuke") { noise(4, 1, 30); tone("sine", 70, 18, 4, 0.9); tone("sawtooth", 50, 20, 3, 0.3); }
   else if (kind === "splash") { noise(0.5, 0.5, 400); tone("sine", 300, 80, 0.3, 0.15); }
 }
 
@@ -553,7 +575,7 @@ function sayShame(who) {
 }
 
 // ---------------------------------------------------------------- options
-const OPTS = { vol: 1, sens: 1, fov: 80, invert: false, shake: true };
+const OPTS = { vol: 1, music: 0.5, sens: 1, fov: 80, invert: false, shake: true };
 try { Object.assign(OPTS, JSON.parse(localStorage.getItem("slop-opts") || "{}")); } catch {}
 let optsOpen = false;
 function saveOpts() { try { localStorage.setItem("slop-opts", JSON.stringify(OPTS)); } catch {} }
@@ -575,6 +597,7 @@ function renderOptions() {
   const pct = (v) => Math.round(v * 100) + "%";
   $("optsBody").innerHTML =
     row("vol", "Volume", 0, 1.5, 0.05, OPTS.vol, pct) +
+    row("music", "Music", 0, 1.5, 0.05, OPTS.music, pct) +
     row("sens", "Mouse sensitivity", 0.2, 3, 0.05, OPTS.sens, (v) => (+v).toFixed(2) + "x") +
     row("fov", "Field of view", 60, 110, 1, OPTS.fov, (v) => v + "°") +
     `<div class="opt"><label><input type="checkbox" id="o-invert"${OPTS.invert ? " checked" : ""}> Invert mouse Y</label></div>` +
@@ -584,8 +607,8 @@ function renderOptions() {
     [["pitch", "Pitch (stick forward/back)"], ["roll", "Roll / strafe (stick left/right)"], ["yaw", "Yaw (twist or rudder)"], ["thr", "Collective (throttle: up = climb)"]].map(([k, l]) =>
       `<div class="opt"><label>${l}</label><button class="cbtn alt bind" data-ax="${k}">Axis ${FLY[k]}</button><label class="inv"><input type="checkbox" data-inv="${k}"${FLY.inv[k] ? " checked" : ""}> invert</label><span id="o-ax-${k}"></span></div>`).join("") +
     `<div class="opt-note">Click an axis button, then push that control all the way. Trigger fires the chain gun, button 2 fires rockets, button 3 gets out. Set the throttle to the middle to hover. A standard gamepad needs no setup.</div>`;
-  for (const id of ["vol", "sens", "fov"]) {
-    const el = $("o-" + id), fmt = id === "vol" ? pct : id === "sens" ? (v) => (+v).toFixed(2) + "x" : (v) => v + "°";
+  for (const id of ["vol", "music", "sens", "fov"]) {
+    const el = $("o-" + id), fmt = id === "vol" || id === "music" ? pct : id === "sens" ? (v) => (+v).toFixed(2) + "x" : (v) => v + "°";
     el.oninput = () => { OPTS[id] = +el.value; $("o-" + id + "-v").textContent = fmt(OPTS[id]); saveOpts(); if (id === "vol") sfx("hit"); };
   }
   $("o-invert").onchange = (e) => { OPTS.invert = e.target.checked; saveOpts(); };
@@ -723,7 +746,7 @@ function stepPred(dt) {
   let left = Math.min(dt, 0.1);
   while (left > 1e-4) {
     const h = Math.min(left, 1 / 60); left -= h;
-    MV.step(pred, { keys: keyMask(), yaw: use3d ? yaw : aimAngle(), rel: use3d }, h, { sp: mine.sp, boxes: worldBoxes(), W: MAP.W, H: MAP.H, frozen: !!mine.go || dlgOpen || !!mine.fz });
+    MV.step(pred, { keys: keyMask(), yaw: use3d ? yaw : aimAngle(), rel: use3d }, h, { sp: mine.sp, boxes: worldBoxes(), W: MAP.W, H: MAP.H, frozen: !!mine.go || dlgOpen || !!mine.fz || !!mine.cg || mine.air === 3 });
   }
   // gently pull toward the server's opinion (projected forward a little, since it's slightly out of date)
   const s = pred.srv;
@@ -931,6 +954,8 @@ function drawMinimap(mine, t) {
   ctx.fillStyle = "#3f6030"; ctx.fillRect(mx, my, mw, mh);
   ctx.fillStyle = "#0006"; for (const w of MAP.walls) if (w.z1 > 0 && w.kind !== "hwall" && w.kind !== "furn") ctx.fillRect(mx + w.x * k, my + w.y * k, Math.max(1, w.w * k), Math.max(1, w.h * k));
   for (const w of MAP.walls) if (w.kind === "lake") { ctx.fillStyle = "#2a6a8e"; ctx.fillRect(mx + w.x * k, my + w.y * k, w.w * k, w.h * k); }
+  for (const [hx, hy, hr, lk] of S.g.hot || []) if (!lk) { ctx.fillStyle = "rgba(150,255,60,0.35)"; ctx.beginPath(); ctx.arc(mx + hx * k, my + hy * k, Math.max(2, hr * k), 0, 7); ctx.fill(); }
+  for (const w of MAP.walls) if (w.kind === "bunker") { ctx.fillStyle = S.g.nuke && Math.floor(t * 4) % 2 ? "#ff4030" : "#ffd34d"; ctx.fillRect(mx + w.x * k - 1, my + w.y * k - 1, w.w * k + 2, w.h * k + 2); }
   if (S.g.mode !== "royale") { const h = MAP.hearth; ctx.fillStyle = "#ff8a2a"; ctx.fillRect(mx + h.x * k, my + h.y * k, h.w * k, h.h * k); }
   ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
   if (S.g.zone) {
@@ -940,14 +965,14 @@ function drawMinimap(mine, t) {
   }
   if (S.g.drop && S.g.drop[4] < 1) { const [x0, y0, x1, y1, dk] = S.g.drop; ctx.strokeStyle = "#ffd34d"; ctx.beginPath(); ctx.moveTo(mx + x0 * k, my + y0 * k); ctx.lineTo(mx + x1 * k, my + y1 * k); ctx.stroke(); ctx.fillStyle = "#ffd34d"; ctx.beginPath(); ctx.arc(mx + (x0 + (x1 - x0) * dk) * k, my + (y0 + (y1 - y0) * dk) * k, 3, 0, 7); ctx.fill(); }
   ctx.restore();
-  if (MAP.npcs && S.g.mode !== "royale") for (const n of MAP.npcs) { ctx.fillStyle = n.id === "chef" ? "#ff8fc8" : "#e0c0ff"; ctx.fillRect(mx + n.x * k - 1.5, my + n.y * k - 1.5, 3, 3); }
+  if (MAP.npcs && S.g.mode !== "royale") for (const n of MAP.npcs) { ctx.fillStyle = n.guest ? "#ff8fc8" : "#e0c0ff"; ctx.fillRect(mx + n.x * k - 1.5, my + n.y * k - 1.5, 3, 3); }
   if (MAP.pitch) { ctx.strokeStyle = "#ffffffaa"; ctx.lineWidth = 1; ctx.strokeRect(mx + MAP.pitch.x * k, my + MAP.pitch.y * k, MAP.pitch.w * k, MAP.pitch.h * k); }
   if (S.ball) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(mx + S.ball[0] * k, my + S.ball[1] * k, 2, 0, 7); ctx.fill(); }
   for (const [, cx2, cy2] of S.ca || []) { ctx.fillStyle = "#7dffb0"; ctx.fillRect(mx + cx2 * k - 2, my + cy2 * k - 2, 4, 4); }
   if (S.g.dis && S.g.dis.k === "tornado") text("🌪", mx + S.g.dis.x * k, my + S.g.dis.y * k, 12, "#ccc");
   for (const v of S.vh) { ctx.fillStyle = AIR[v[1]] ? "#ffd34d" : "#9fe0ff"; ctx.fillRect(mx + v[2] * k - 2, my + v[3] * k - 2, 4, 4); }
   for (const p of S.p) {
-    if (p.d || p.air === 1) continue;
+    if (p.d || p.air === 1 || p.air === 3) continue;
     if (S.g.mode === "royale" && p.id !== me) continue; // no wallhacks in the Royale
     const x = p.id === me ? pred.x : p.x, y = p.id === me ? pred.y : p.y;
     ctx.fillStyle = p.id === me ? "#fff" : p.c; ctx.beginPath(); ctx.arc(mx + x * k, my + y * k, p.id === me ? 3.5 : 2.5, 0, 7); ctx.fill();
@@ -1092,7 +1117,7 @@ function render3d(mine, t, dt) {
   for (let i = fx.length - 1; i >= 0; i--) if ((t - fx[i].t0) / fx[i].dur >= 1) fx.splice(i, 1);
   const sl = slashT.get(me), moving = Math.hypot(pred.vx, pred.vy) > 30 && pred.gr;
   const vm = ownView && mine && !mine.d ? { type: mine.w, rar: mine.wr, show: true, kick: Math.max(0, 1 - (t - lastShotT) / 0.12), bob: moving ? t * 11 : 0, ads: adsK, swing: sl ? Math.min(1, (t - sl) / 0.25) : 1 } : null;
-  R3D.frame({ S, MAP, t, dt, me, pred, aimYaw, aimPitch, fp: ownView, cam, fx, messes, hearthHitT, ghost, vm, slashT });
+  R3D.frame({ S, MAP, t, dt, me, pred, aimYaw, aimPitch, fp: ownView, cam, fx, messes, hearthHitT, ghost, vm, slashT, nukeFx });
   overlay3d(mine, t, dt);
   if (t - hurtFlash < 0.3) { const g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VH * 0.8); g.addColorStop(0, "#f000"); g.addColorStop(1, `rgba(200,0,0,${0.5 * (1 - (t - hurtFlash) / 0.3)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
   if (t - fogT < 1.2) { ctx.fillStyle = `rgba(120,40,160,${0.25 * (1 - (t - fogT) / 1.2)})`; ctx.fillRect(0, 0, VW, VH); }
@@ -1110,7 +1135,7 @@ function overlay3d(mine, t, dt) {
   const seen = (x, y, z) => { if (!camNow || camNow.x === undefined) return true; const v = [x - camNow.x, y - camNow.y, z - camNow.z], L = Math.hypot(...v); if (L < 1) return true; return rayWorld([camNow.x, camNow.y, camNow.z], v.map((c) => c / L), L, me, true) >= L - 12; };
   const P = (x, y, z) => { const s = R3D.project(x, y, z); return s && s.d < 1500 && seen(x, y, z) ? s : null; };
   for (const p of S.p) {
-    if (p.d || p.air === 1 || p.vh) continue;
+    if (p.d || p.air === 1 || p.air === 3 || p.vh) continue;
     const own = p.id === me;
     const d = own ? { x: pred.x, y: pred.y } : smooth("p" + p.id, p.x, p.y, dt), z = own ? pred.z : (p.z || 0);
     if (p.trl && !(own && viewMode === "fp")) { const n = fx.length; trailFx(p, d, t); if (fx.length > n) fx[fx.length - 1].z = z + 4; }
@@ -1136,7 +1161,7 @@ function overlay3d(mine, t, dt) {
     text(n.name, s.x, s.y, 12, "#e0c0ff"); text(n.role, s.x, s.y + 13, 10, "#b0a0c8");
     if (myLove(n.id) >= 20) text(hearts(myLove(n.id)), s.x, s.y + 26, 11, "#ff8fc8");
     if (mine && (!mine.nt.includes(n.id) || mine.qr.includes(n.id))) { const q = mine.qr.includes(n.id); text(q ? "?" : "!", s.x, s.y - 20 + Math.sin(t * 4) * 3, 24, q ? "#7dffb0" : "#ffd34d"); }
-    if (n.id === "chef" && Math.sin(t * 1.3 + n.x) > 0.6) text(["IT'S RAW!", "DONKEY!", "SHUT IT DOWN!", "WHERE'S THE LAMB SAUCE?"][Math.floor(t / 4.8 + n.x) % 4], s.x, s.y - 40, 14, "#ff5050");
+    if (n.quips && Math.sin(t * 1.3 + n.x) > 0.6) text(n.quips[Math.floor(t / 4.8 + n.x) % n.quips.length], s.x, s.y - 40, 14, "#ff5050");
   }
   for (const [, type, zx, zy, hp, , zh] of S.z) {
     if (hp >= 100 || type === "b") continue;
@@ -1308,6 +1333,14 @@ function render() {
     }
     if (w.kind === "rubble") { ctx.fillStyle = "#00000030"; ctx.fillRect(w.x + 4, w.y + 6, w.w, w.h); ctx.fillStyle = "#6d5a4a"; ctx.fillRect(w.x + 8, w.y + 8, w.w - 16, w.h - 16); ctx.fillStyle = "#8b5a3a"; for (let i = 0; i < 9; i++) ctx.fillRect(w.x + ((i * 37) % 97) / 97 * (w.w - 20), w.y + ((i * 61) % 89) / 89 * (w.h - 16), 20, 14); continue; }
     if (w.kind === "post") { ctx.fillStyle = "#f4f4f4"; ctx.fillRect(w.x, w.y, w.w, w.h); continue; }
+    if (w.kind === "bunker") { // a concrete lump with a hatch and a sign
+      ctx.fillStyle = "#00000040"; ctx.fillRect(w.x + 8, w.y + 10, w.w, w.h);
+      ctx.fillStyle = "#8a8a82"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#a2a29a"; ctx.fillRect(w.x + 6, w.y + 6, w.w - 12, w.h - 12);
+      ctx.fillStyle = "#4a5a3a"; ctx.beginPath(); ctx.arc(w.x + w.w / 2, w.y + w.h / 2, 18, 0, 7); ctx.fill(); ctx.strokeStyle = "#2a2a2a"; ctx.lineWidth = 3; ctx.stroke();
+      ctx.fillStyle = "#ffd34d"; ctx.fillRect(w.x + w.w - 30, w.y + 6, 24, 24); text("☢", w.x + w.w - 18, w.y + 24, 18, "#111", "center", false);
+      text("BUNKER", w.x + w.w / 2, w.y - 6, 12, "#e8e8d0");
+      continue;
+    }
     if (w.kind === "pad") { const cx = w.x + w.w / 2, cy = w.y + w.h / 2, k = (t * 1.5) % 1; ctx.fillStyle = "#1090c0"; ctx.beginPath(); ctx.arc(cx, cy, w.w / 2, 0, 7); ctx.fill(); ctx.strokeStyle = `rgba(190,248,255,${1 - k})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, w.w / 2 * (0.4 + k * 0.8), 0, 7); ctx.stroke(); continue; }
     if (w.kind === "step" || w.kind === "tower" || w.kind === "bridge" || w.kind === "ledge" || w.kind === "crate") {
       const lift = Math.min(18, (w.z1 || 0) / 12);
@@ -1347,11 +1380,19 @@ function render() {
   text("THE HEARTH", hw.x + hw.w / 2, hw.y - 28, 14, "#ffe9a0");
   bar(hw.x, hw.y - 16, hw.w, 8, S.g.hh / S.g.hm, S.g.hh / S.g.hm > 0.3 ? "#e8703a" : "#ff3030");
 
+  // radioactive hot spots
+  for (const [hx, hy, hr, lk] of S.g.hot || []) {
+    if (lk) continue;
+    const pu = 0.5 + Math.sin(t * 2 + hx) * 0.15, g = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr);
+    g.addColorStop(0, `rgba(150,255,60,${0.42 * pu + 0.1})`); g.addColorStop(1, "rgba(150,255,60,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, hr, 0, 7); ctx.fill();
+  }
   // crates
-  for (const [id, x, y, rar, grave] of S.cr) {
+  for (const [id, x, y, rar, grave, ck] of S.cr) {
     const glow = 0.5 + Math.sin(t * 4 + id) * 0.3;
     ctx.fillStyle = RARITY_COL[rar] + "55"; ctx.beginPath(); ctx.arc(x, y, 26 + glow * 6, 0, 7); ctx.fill();
     if (grave) { ctx.fillStyle = "#888"; ctx.beginPath(); ctx.roundRect(x - 12, y - 16, 24, 30, [12, 12, 2, 2]); ctx.fill(); text("RIP", x, y - 2, 10, "#333", "center", false); }
+    else if (ck === 1) { ctx.fillStyle = "#3a4a3a"; ctx.fillRect(x - 15, y - 12, 30, 24); ctx.fillStyle = RARITY_COL[rar]; ctx.fillRect(x - 15, y - 12, 30, 5); text("🦺", x, y + 7, 14, "#fff", "center", false); }
+    else if (ck === 2) { ctx.fillStyle = "#8a6a3a"; ctx.fillRect(x - 13, y - 10, 26, 20); ctx.fillStyle = "#e8e0c8"; ctx.fillRect(x - 13, y - 2, 26, 4); text("🥫", x, y + 6, 12, "#fff", "center", false); }
     else { ctx.fillStyle = "#6b4a2a"; ctx.fillRect(x - 15, y - 12, 30, 24); ctx.fillStyle = RARITY_COL[rar]; ctx.fillRect(x - 15, y - 3, 30, 6); ctx.fillRect(x - 3, y - 12, 6, 24); }
   }
 
@@ -1413,7 +1454,7 @@ function render() {
     ctx.strokeStyle = "#0008"; ctx.lineWidth = 2; ctx.stroke();
     drawEyes("dot", n.x, n.y + bob - 3, t, 0);
     drawNpcHat(n.hat, n.x, n.y + bob);
-    if (n.id === "chef") { drawVehicle("limo", n.x + 90, n.y + 20, 0.2, t, [], 0); if (Math.sin(t * 1.3 + n.x) > 0.6) { ctx.fillStyle = "#fffe"; ctx.beginPath(); ctx.roundRect(n.x - 60, n.y - 92, 120, 22, 8); ctx.fill(); text(["IT'S RAW!", "DONKEY!", "SHUT IT DOWN!", "WHERE'S THE LAMB SAUCE?"][Math.floor(t / 4.8 + n.x) % 4], n.x, n.y - 81, 12, "#c02020", "center", false); } }
+    if (n.guest) { drawVehicle(n.ride === "jeep" ? "buggy" : "limo", n.x + 90, n.y + 20, 0.2, t, [], 0); if (n.quips && Math.sin(t * 1.3 + n.x) > 0.6) { ctx.fillStyle = "#fffe"; ctx.beginPath(); ctx.roundRect(n.x - 60, n.y - 92, 120, 22, 8); ctx.fill(); text(n.quips[Math.floor(t / 4.8 + n.x) % n.quips.length], n.x, n.y - 81, 12, "#c02020", "center", false); } }
     text(n.name, n.x, n.y - 38, 12, "#e0c0ff");
     text(n.role, n.x, n.y - 25, 10, "#b0a0c8");
     if (myLove(n.id) >= 20) text(hearts(myLove(n.id)), n.x, n.y + 30, 11, "#ff8fc8");
@@ -1439,8 +1480,9 @@ function render() {
   }
   // zombies
   const ZCOL2 = { e: "#3a6a8a", t: "#3f6b3a", r: "#a0d070", w: "#6fa35a", c: "#7a5a3a", f: "#4a3a5a", x: "#8aa04a", s: "#d8d0c0", d: "#7a8a3a", y: "#5a6a2a" };
-  for (const [id, type, zx, zy, hpPct, burn, zh, charging, frozen] of S.z) {
+  for (const [id, type, zx, zy, hpPct, burn, zh, charging, frozen, glowZ] of S.z) {
     const d = smooth("z" + id, zx, zy, dt);
+    if (glowZ) { ctx.fillStyle = `rgba(150,255,60,${0.25 + Math.sin(t * 6 + id) * 0.1})`; ctx.beginPath(); ctx.arc(d.x, d.y - (ZR[type] || 15) * 0.4, (ZR[type] || 15) * 1.8, 0, 7); ctx.fill(); }
     const bk = S.g.bk;
     const r = ZR[type] || 15;
     const bossCol = { leshen: "#3a5a2a", drowned: "#3a6a8a", golem: "#b08a3a" }[bk];
@@ -1481,7 +1523,7 @@ function render() {
 
   // players
   for (const p of S.p) {
-    if (p.d || p.air === 1 || p.vh) continue;
+    if (p.d || p.air === 1 || p.air === 3 || p.vh) continue;
     const d = p.id === me ? { x: pred.x, y: pred.y } : smooth("p" + p.id, p.x, p.y, dt);
     if (p.air === 2) { // parachuting
       ctx.save(); ctx.translate(d.x, d.y); ctx.scale(1.4, 1.4);
@@ -1752,6 +1794,7 @@ function drawHud(mine, t) {
     bar(VW / 2 - 50, VH - 245, 150, 8, b, b < 0.3 ? "#e33" : "#7fd0ff");
   }
   if (mine.fz) { ctx.fillStyle = "rgba(150,220,255,0.22)"; ctx.fillRect(0, 0, VW, VH); text("FROZEN", VW / 2, VH * 0.36, 30, "#bfefff"); }
+  drawNukeHud(mine, t);
   if (g.dis && g.dis.k === "flood" && g.dis.w > 1 && pred.z < g.dis.w) { ctx.fillStyle = `rgba(40,110,170,${Math.min(0.3, g.dis.w / 100)})`; ctx.fillRect(0, VH * 0.55, VW, VH * 0.45); text("wading", VW / 2, VH * 0.55 + 16, 12, "#bfe0ff"); }
   // bottom left: bladder and bowels
   if (["day", "night", "royale"].includes(S.g.ph)) {
@@ -1759,14 +1802,20 @@ function drawHud(mine, t) {
     const nb = (x, lbl, v, col) => { text(lbl, x, VH - 162, 12, v >= 80 && Math.floor(t * 3) % 2 ? "#f55" : "#ddd", "left"); bar(x + 58, VH - 167, 90, 8, v / 100, v >= 80 ? "#e33" : col); };
     nb(22, "💧 Pee", mine.bl, "#e8d84a"); nb(178, "💩 Poo", mine.bw, "#a0703a");
     if (Math.max(mine.bl, mine.bw) >= 60) text("[X] go", 336, VH - 162, 11, "#ffc030", "right");
-    // stress (football is the cure) and the Thu'um element
+    // hunger and thirst (and radiation, once there is any)
     ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(12, VH - 206, 330, 26, 8); ctx.fill();
+    const fb = (x, lbl, v, col) => { text(lbl, x, VH - 192, 12, v <= 20 && Math.floor(t * 3) % 2 ? "#f55" : "#ddd", "left"); bar(x + 58, VH - 197, 70, 8, v / 100, v <= 20 ? "#e33" : col); };
+    fb(22, "🍞 Food", mine.fd ?? 100, "#d8a050"); fb(160, "💧 Drink", mine.wt ?? 100, "#5ab0ff");
+    if (mine.rad > 0) text(`☢ ${mine.rad}`, 336, VH - 192, 12, mine.rad > 50 && Math.floor(t * 3) % 2 ? "#f55" : "#9fff60", "right");
+    else if ((mine.fd ?? 100) < 30 || (mine.wt ?? 100) < 30) text("[H] eat", 336, VH - 192, 11, "#ffc030", "right");
+    // stress (football is the cure) and the Thu'um element
+    ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(12, VH - 236, 330, 26, 8); ctx.fill();
     const ss = mine.ss || 0;
-    text("😰 Stress", 22, VH - 192, 12, ss >= 60 && Math.floor(t * 3) % 2 ? "#f55" : "#ddd", "left");
-    bar(92, VH - 197, 90, 8, ss / 100, ss >= 80 ? "#e33" : ss >= 60 ? "#ff9a40" : "#8fb0d0");
+    text("😰 Stress", 22, VH - 222, 12, ss >= 60 && Math.floor(t * 3) % 2 ? "#f55" : "#ddd", "left");
+    bar(92, VH - 227, 90, 8, ss / 100, ss >= 80 ? "#e33" : ss >= 60 ? "#ff9a40" : "#8fb0d0");
     const el = ELEMS[mine.el] || ELEMS.force;
-    text(`${el.icon} ${el.name}${(mine.els || "").includes(",") ? "  [Z] swap" : ""}`, 332, VH - 192, 12, el.color, "right");
-    if (ss >= 60) text("Stressed out. Kick a ball about on the pitch to calm down.", 22, VH - 218, 12, "#ffb070", "left");
+    text(`${el.icon} ${el.name}${(mine.els || "").includes(",") ? "  [Z] swap" : ""}`, 332, VH - 222, 12, el.color, "right");
+    if (ss >= 60) text("Stressed out. Kick a ball about on the pitch to calm down.", 22, VH - 248, 12, "#ffb070", "left");
   }
   // bottom left: vitals
   ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(12, VH - 146, 330, 134, 10); ctx.fill();
@@ -2067,6 +2116,253 @@ function renderHack() {
   $("hkReset").onclick = () => { hk.picks = []; renderHack(); };
   $("hkQuit").onclick = () => closeHack(true);
 }
+
+// ---------------------------------------------------------------- the bag (I)
+const GEAR_ICON = { head: "⛑", body: "🦺", hands: "🧤", feet: "🥾" };
+const SLOT_NAME = { head: "Head", body: "Body", hands: "Hands", feet: "Feet" };
+const RAR_COL = ["#ddd", "#4da6ff", "#c070ff", "#ffc030", "#ff4b4b"], RAR_NAME = ["Common", "Rare", "Epic", "Legendary", "Mythic"], GEAR_MULT = [1, 1.25, 1.5, 1.8, 2.2];
+function gearDesc(g, r = 0) {
+  const m = GEAR_MULT[r] || 1, pc = (v) => Math.round(v * (v > 0 ? m : 1) * 100) + "%";
+  const out = [];
+  if (g.def) out.push(`-${pc(g.def)} damage`); if (g.rad) out.push(`-${pc(g.rad)} radiation`); if (g.speed) out.push(`${g.speed > 0 ? "+" : ""}${pc(g.speed)} speed`);
+  if (g.swim) out.push(`+${pc(g.swim)} swim speed`); if (g.reload) out.push(`${pc(g.reload)} faster reloads`); if (g.spread) out.push(`${pc(g.spread)} steadier aim`); if (g.dirt) out.push(`guns get ${pc(g.dirt)} less dirty`);
+  return out.join(", ") + (g.desc ? `. ${g.desc}` : "");
+}
+let invOpen = false;
+function toggleInv(force) {
+  invOpen = force === undefined ? !invOpen : force;
+  $("inv").classList.toggle("hidden", !invOpen);
+  if (invOpen) { toggleShop(false); toggleMarket(false); keys.clear(); mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); renderInv(); }
+}
+function renderInv() {
+  if (!INV) { $("invBody").innerHTML = `<div class="tag">Nothing yet.</div>`; return; }
+  const meter = (lbl, v, col) => `<div class="meter"><b>${lbl}</b><i><s style="width:${Math.max(0, Math.min(100, v))}%;background:${col}"></s></i><span>${v}</span></div>`;
+  const slots = ["head", "body", "hands", "feet"].map((k) => {
+    const g = INV.gear[k], d = g && GEAR[g.id];
+    return `<div class="gslot${d ? " on" : ""}" data-slot="${k}" title="${d ? "Click to take it off" : ""}"><small>${SLOT_NAME[k]}</small>${d ? `<b style="color:${RAR_COL[g.r || 0]}">${GEAR_ICON[k]} ${escH(d.name)}</b><small>${escH(gearDesc(d, g.r || 0))}</small>` : `<b class="empty">${GEAR_ICON[k]} nothing</b>`}</div>`;
+  }).join("");
+  const cells = [];
+  for (let i = 0; i < INV.size; i++) {
+    const it = INV.bag[i];
+    if (!it) { cells.push(`<div class="bslot empty"></div>`); continue; }
+    const g = GEAR[it.id], d = ITEMS[it.id];
+    const name = g ? g.name : d ? d.name : it.id, icon = g ? GEAR_ICON[g.slot] : d ? d.icon : "?";
+    const tip = g ? `${RAR_NAME[it.r || 0]} ${g.name}: ${gearDesc(g, it.r || 0)}. Click to wear it.` : d ? `${d.name}: ${d.desc || ""}${d.f ? ` Food +${d.f}.` : ""}${d.d ? ` Drink +${d.d}.` : ""}${d.hp ? ` Heals ${d.hp > 500 ? "fully" : d.hp}.` : ""} Click to use.` : "";
+    cells.push(`<div class="bslot" data-i="${i}" title="${escH(tip)} Right-click to drop it."><span class="ic">${icon}</span><span class="nm" style="color:${g ? RAR_COL[it.r || 0] : "#eee"}">${escH(name)}</span>${it.n > 1 ? `<span class="ct">${it.n}</span>` : ""}</div>`);
+  }
+  $("invBody").innerHTML = `<div class="invL">${meter("🍞 Food", INV.food, "#d8a050")}${meter("💧 Drink", INV.water, "#5ab0ff")}${meter("☢ Radiation", INV.rad, INV.rad > 50 ? "#e33" : "#9fff60")}<h3>Wearing</h3>${slots}</div>` +
+    `<div class="invR"><h3>Bag ${INV.bag.length}/${INV.size}</h3><div class="bag">${cells.join("")}</div><div class="fine">Click to eat, drink, use or wear. Right-click to drop (someone else can pick it up). <kbd>H</kbd> eats or drinks whatever you need most. Cook two turnips at the Hearth [E] for stew. Fill bottles at the lake.</div></div>`;
+  for (const el of $("invBody").querySelectorAll(".bslot[data-i]")) {
+    el.onclick = () => send({ t: "item", a: "use", i: +el.dataset.i });
+    el.oncontextmenu = (e) => { e.preventDefault(); send({ t: "item", a: "drop", i: +el.dataset.i }); };
+  }
+  for (const el of $("invBody").querySelectorAll(".gslot.on")) el.onclick = () => send({ t: "item", a: "unequip", slot: el.dataset.slot });
+}
+$("inv").addEventListener("click", (e) => { if (e.target === $("inv")) toggleInv(false); });
+
+// ---------------------------------------------------------------- the stock exchange (M)
+let mktOpen = false, mkHist = null, mkLastT = 0;
+function toggleMarket(force) {
+  mktOpen = force === undefined ? !mktOpen : force;
+  $("market").classList.toggle("hidden", !mktOpen);
+  if (mktOpen) { toggleShop(false); toggleInv(false); keys.clear(); mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); send({ t: "mkh" }); renderMarket(); }
+}
+function trackMarket(t) { // keep our own copy of the price history between full refreshes
+  if (!S || !S.g.mk || !mkHist || t - mkLastT < 1) return;
+  mkLastT = t;
+  Object.keys(STOCKS).forEach((s, i) => { const h = mkHist[s] || (mkHist[s] = []); h.push(S.g.mk[i]); if (h.length > 120) h.shift(); });
+}
+setInterval(() => { trackMarket(T()); if (mktOpen) renderMarket(); }, 1000);
+function spark(h, w, h0) {
+  if (!h || h.length < 2) return "";
+  const lo = Math.min(...h), hi = Math.max(...h), k = hi - lo || 1;
+  const pts = h.map((v, i) => `${(i / (h.length - 1) * w).toFixed(1)},${(h0 - (v - lo) / k * (h0 - 2) - 1).toFixed(1)}`).join(" ");
+  return `<svg width="${w}" height="${h0}" viewBox="0 0 ${w} ${h0}"><polyline fill="none" stroke="${h[h.length - 1] >= h[0] ? "#7fd34d" : "#ff6060"}" stroke-width="1.6" points="${pts}"/></svg>`;
+}
+function renderMarket() {
+  const mine = S?.p.find((p) => p.id === me);
+  if (!S || !S.g.mk) return;
+  const syms = Object.keys(STOCKS), sh = (INV && INV.shares) || {}, basis = (INV && INV.basis) || {};
+  let worth = 0;
+  const rows = syms.map((s, i) => {
+    const px = S.g.mk[i], h = mkHist && mkHist[s], ch = h && h.length > 1 ? (px / h[0] - 1) * 100 : 0, n = sh[s] || 0, val = n * px, pl = n ? val - (basis[s] || 0) : 0;
+    worth += val;
+    return `<tr><td><b>${s}</b><small>${escH(STOCKS[s].name)}</small></td><td>${spark(h, 110, 30)}</td><td class="px">${px.toFixed(2)}g<small style="color:${ch >= 0 ? "#7fd34d" : "#ff6060"}">${ch >= 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(1)}%</small></td>` +
+      `<td>${n ? `${n}<small>${Math.round(val)}g <span style="color:${pl >= 0 ? "#7fd34d" : "#ff6060"}">${pl >= 0 ? "+" : ""}${Math.round(pl)}</span></small>` : "<small>-</small>"}</td>` +
+      `<td class="btns"><button data-s="${s}" data-n="1">Buy 1</button><button data-s="${s}" data-n="10">Buy 10</button><button data-s="${s}" data-n="-1"${n ? "" : " disabled"}>Sell 1</button><button data-s="${s}" data-n="${-n}"${n ? "" : " disabled"}>Sell all</button></td></tr>`;
+  }).join("");
+  const news = (S.g.news || []).map(([txt, up]) => `<div class="nw" style="color:${up ? "#7fd34d" : "#ff8080"}">${up ? "▲" : "▼"} ${escH(txt)}</div>`).join("") || `<div class="tag">Quiet day on the exchange.</div>`;
+  const M = S.g.mayor && CANDS[S.g.mayor];
+  $("marketBody").innerHTML = `<div class="tag">You have ${mine ? mine.g : 0}g. Your shares are worth ${Math.round(worth)}g. Shares pay 1.5% dividends every dawn. Trading fee: ${M && S.g.mayor === "vex" ? "none (Mayor Vex)" : "2%"}.</div>` +
+    `<table class="mkt">${rows}</table><h3>Valley news</h3>${news}<div class="fine">Prices react to what happens: kills, harvests, hacks, disasters, elections, bombs. <kbd>M</kbd>/<kbd>Esc</kbd> to close.</div>`;
+  for (const b of $("marketBody").querySelectorAll("button[data-s]")) b.onclick = () => { send({ t: "trade", sym: b.dataset.s, n: +b.dataset.n }); sfx("click"); };
+}
+$("market").addEventListener("click", (e) => { if (e.target === $("market")) toggleMarket(false); });
+
+// ---------------------------------------------------------------- elections
+let electSig = "";
+function renderElection() {
+  const box = $("elect"), E = S?.g.elec;
+  if (!E) { if (electSig) { box.classList.add("hidden"); electSig = ""; } return; }
+  const sig = JSON.stringify(E);
+  if (sig === electSig) return;
+  electSig = sig; box.classList.remove("hidden");
+  const counts = E.c.map(() => 0); let mineV = -1;
+  for (const [pid, i] of Object.entries(E.v)) { counts[i]++; if (Number(pid) === me) mineV = i; }
+  box.innerHTML = `<div class="st-h">🗳 ELECTION <span>${E.left}s</span></div><div class="st-t">Pick the mayor of ${escH(MAP.valley || "the valley")} for the next five nights.</div>` +
+    E.c.map((id, i) => { const C = CANDS[id] || {}; return `<div class="st-c${mineV === i ? " mine" : ""}${C.posadist ? " posad" : ""}" data-i="${i}"><b>${escH(C.name)}</b><small><i>"${escH(C.slogan)}"</i></small><small>${escH(C.desc)}</small><span class="st-n">${"●".repeat(counts[i])}</span></div>`; }).join("") +
+    `<div class="st-f">${use3d ? "Press Esc to free your mouse, then click" : "Click"} to vote. One vote each.</div>`;
+  for (const el of box.querySelectorAll(".st-c")) el.onclick = () => send({ t: "elect", i: Number(el.dataset.i) });
+}
+setInterval(renderElection, 250);
+
+// ---------------------------------------------------------------- the bomb, the bunker, the wasteland
+let sirenT = -99, nukeFx = null;
+function compass(dx, dy) { const a = Math.atan2(dy, dx); return ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"][((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8]; }
+function drawNukeHud(mine, t) {
+  const g = S.g;
+  if (g.nuke) {
+    const b = MAP.walls.find((w) => w.kind === "bunker"), left = g.nuke[2];
+    ctx.fillStyle = `rgba(160,20,10,${0.12 + 0.08 * Math.sin(t * 8)})`; ctx.fillRect(0, 0, VW, VH);
+    const ny = 240;
+    ctx.fillStyle = "#000c"; ctx.beginPath(); ctx.roundRect(VW / 2 - 260, ny, 520, 54, 10); ctx.fill();
+    text(`☢ NUCLEAR STRIKE IN ${Math.ceil(left)}s ☢`, VW / 2, ny + 18, 24, Math.floor(t * 4) % 2 ? "#ff4030" : "#ffd34d");
+    if (b && mine.air !== 3) { const dx = b.x + b.w / 2 - pred.x, dy = b.y + b.h / 2 - pred.y; text(`Bunker: ${Math.round(Math.hypot(dx, dy) / 10)}m ${compass(dx, dy)}. Press E at the hatch. Or dive deep in the lake.`, VW / 2, ny + 42, 13, "#fff"); }
+    else text("You're safe in the bunker. Wait for the blast.", VW / 2, ny + 42, 13, "#9fff60");
+  }
+  if (mine.air === 3) {
+    ctx.fillStyle = "rgba(10,12,8,0.82)"; ctx.fillRect(0, 0, VW, VH);
+    text("IN THE BUNKER", VW / 2, VH * 0.42, 32, "#c8d0a0");
+    text(g.nuke ? "The hatch is sealed. Wait for the bomb." : "Tinned peaches, a camp bed, a dartboard. Press E to climb out.", VW / 2, VH * 0.42 + 40, 16, "#aab");
+  }
+  if (nukeFx && t - nukeFx.t < 5) { const k = (t - nukeFx.t) / 5; ctx.fillStyle = `rgba(255,250,230,${(1 - k) ** 1.5})`; ctx.fillRect(0, 0, VW, VH); }
+  if (g.waste && mine.air !== 3) { ctx.fillStyle = "rgba(90,110,20,0.08)"; ctx.fillRect(0, 0, VW, VH); }
+  if (mine.rad >= 50) { ctx.fillStyle = `rgba(120,255,60,${0.05 + 0.05 * Math.sin(t * 5)})`; ctx.fillRect(0, 0, VW, VH); }
+  // the Geiger counter
+  if (g.hot && g.hot.length && mine.air !== 3 && actx && Math.random() < hotLevel(pred.x, pred.y, g.hot) * 0.5) sfx("click", 0.4);
+}
+function hotLevel(x, y, hot) { let v = 0; for (const [hx, hy, r] of hot) { const d = Math.hypot(x - hx, y - hy); if (d < r) v += 1 - d / r; } return Math.min(1, v); }
+
+// ---------------------------------------------------------------- Slop Snap (Y)
+let cardsOpen = false, cgState = null, cgStaged = [], cgSel = null;
+function toggleCards(force) {
+  cardsOpen = force === undefined ? !cardsOpen : force;
+  $("cards").classList.toggle("hidden", !cardsOpen);
+  if (cardsOpen) { toggleShop(false); toggleInv(false); toggleMarket(false); keys.clear(); mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); renderCards(); }
+}
+const CARD_RAR = ["#9a8a70", "#b8b8b8", "#4da6ff", "#c070ff", "#ffc030"];
+function snapCard(id, pow, extra = "", attrs = "") {
+  const c = CARDS[id] || { name: id, cost: 0, pow: 0, txt: "" };
+  return `<div class="sc ${extra}" style="border-color:${CARD_RAR[c.r || 0]}" ${attrs} title="${escH(c.txt)}"><span class="cc">${c.cost}</span><span class="cp">${pow ?? c.pow}</span><b>${escH(c.name)}</b><small>${escH(c.txt)}</small></div>`;
+}
+function renderCards() {
+  if (!cardsOpen) return;
+  const body = $("cardsBody");
+  if (!cgState) { // the collection and your deck
+    const coll = (INV && INV.cards) || {}, deck = (INV && INV.deck) || [];
+    const ids = Object.keys(CARDS).sort((a, b) => CARDS[a].cost - CARDS[b].cost || CARDS[a].r - CARDS[b].r);
+    const owned = ids.filter((id) => coll[id]).length;
+    body.innerHTML = `<h2 style="margin:0;color:#ffd34d">Slop Snap: your collection</h2><div class="tag">${owned}/${ids.length} cards collected. Challenge any townsperson [E] to a game to win theirs. Packs in the shop [B]. Click cards to build your deck of 12 (${deck.length} picked; the rest are filled with your best cards).</div>` +
+      `<div class="coll">${ids.map((id) => { const n = coll[id] || 0, inDeck = deck.filter((d) => d === id).length; return snapCard(id, null, `${n ? "" : "locked"}${inDeck ? " indeck" : ""}`, `data-id="${id}"`).replace("</div>", "") + `<span class="cn">${n ? `x${n}` : "?"}${inDeck ? ` · ${inDeck} in deck` : ""}</span></div>`; }).join("")}</div>` +
+      `<div class="fine"><button class="cbtn alt" id="deckClear">Clear deck</button> <kbd>Y</kbd>/<kbd>Esc</kbd> to close.</div>`;
+    for (const el of body.querySelectorAll(".sc[data-id]")) el.onclick = () => {
+      const id = el.dataset.id, n = coll[id] || 0; if (!n) return;
+      let d = deck.slice(); const have = d.filter((x) => x === id).length;
+      if (have < n && d.length < 12) d.push(id); else d = d.filter((x) => x !== id);
+      INV.deck = d; send({ t: "cg", a: "deck", ids: d }); renderCards();
+    };
+    $("deckClear").onclick = () => { INV.deck = []; send({ t: "cg", a: "deck", ids: [] }); renderCards(); };
+    return;
+  }
+  const v = cgState.v, staged = cgStaged;
+  const used = staged.reduce((a, [uid]) => { const h = v.hand.find((x) => x[1] === uid); return a + (h ? CARDS[h[0]].cost : 0); }, 0), energy = v.energy - used;
+  const lanes = v.lanes.map(([mine, theirs, my, op], l) => {
+    const loc = LOCS[v.locs[l]] || {};
+    const st = staged.filter((x) => x[1] === l).map(([uid]) => { const h = v.hand.find((x) => x[1] === uid); return h ? snapCard(h[0], null, "staged", `data-unstage="${uid}"`) : ""; }).join("");
+    const win = my > op ? "win" : op > my ? "lose" : "";
+    return `<div class="lane ${cgSel !== null ? "pick" : ""}" data-l="${l}"><div class="opside">${theirs.map(([id, pw, , on]) => snapCard(id, on ? pw : "?", on ? "" : "hidden")).join("")}</div>` +
+      `<div class="loc"><b>${escH(loc.name || "")}</b><small>${escH(loc.txt || "")}</small><div class="score ${win}"><span>${op}</span> vs <span>${my}</span></div></div>` +
+      `<div class="myside">${mine.map(([id, pw]) => snapCard(id, pw)).join("")}${st}</div></div>`;
+  }).join("");
+  const hand = v.hand.filter(([, uid]) => !staged.some((x) => x[0] === uid)).map(([id, uid]) => snapCard(id, null, `${CARDS[id].cost > energy ? "dim" : ""}${cgSel === uid ? " sel" : ""}`, `data-uid="${uid}"`)).join("");
+  const over = v.over ? `<div class="cg-over ${v.result}">${v.result === "win" ? "YOU WIN!" : v.result === "draw" ? "A DRAW" : "YOU LOSE"}</div>` : "";
+  body.innerHTML = `<div class="cg-head"><b>vs ${escH(cgState.name)}</b>${cgState.stake ? ` · ${cgState.stake}g on it` : ""}<span>Turn ${Math.min(v.turn, v.turns)}/${v.turns} · Energy <b class="en">${energy}</b>/${v.energy} · their hand ${v.opHand}</span></div>` +
+    `<div class="lanes">${lanes}</div>${over}<div class="hand">${v.over ? "" : hand}</div>` +
+    `<div class="cg-btns">${v.over ? `<button class="cbtn" id="cgClose">Close</button>` : `<button class="cbtn" id="cgEnd">End turn</button><button class="cbtn alt" id="cgUndo">Undo</button><button class="cbtn alt" id="cgFold">Fold</button>`}</div>` +
+    `<div class="fine">Click a card, then a lane. Cards are revealed at the end of the turn, yours first. Win 2 of the 3 lanes. ${v.log.length ? "· " + escH(v.log.join(" · ")) : ""}</div>`;
+  for (const el of body.querySelectorAll(".hand .sc")) el.onclick = () => { const uid = +el.dataset.uid, h = v.hand.find((x) => x[1] === uid); if (!h || CARDS[h[0]].cost > energy) return; cgSel = cgSel === uid ? null : uid; renderCards(); };
+  for (const el of body.querySelectorAll(".lane")) el.onclick = () => { if (cgSel === null) return; cgStaged.push([cgSel, +el.dataset.l]); cgSel = null; sfx("click"); renderCards(); };
+  for (const el of body.querySelectorAll("[data-unstage]")) el.onclick = (e) => { e.stopPropagation(); cgStaged = cgStaged.filter((x) => x[0] !== +el.dataset.unstage); renderCards(); };
+  if ($("cgEnd")) $("cgEnd").onclick = () => { send({ t: "cg", a: "play", plays: cgStaged }); cgSel = null; sfx("perfect"); };
+  if ($("cgUndo")) $("cgUndo").onclick = () => { cgStaged = []; cgSel = null; renderCards(); };
+  if ($("cgFold")) $("cgFold").onclick = () => send({ t: "cg", a: "quit" });
+  if ($("cgClose")) $("cgClose").onclick = () => { send({ t: "cg", a: "quit" }); cgState = null; toggleCards(false); };
+}
+
+// ---------------------------------------------------------------- music: made up on the spot, never the same twice
+const MUSIC = {
+  day: { bpm: 100, root: 60, scale: [0, 2, 4, 7, 9], prog: [[0, 4, 7], [5, 9, 12], [7, 11, 14], [0, 4, 7]], lead: "triangle", drums: 1, swing: 0 },
+  night: { bpm: 84, root: 57, scale: [0, 2, 3, 7, 8], prog: [[0, 3, 7], [8, 12, 15], [5, 8, 12], [7, 10, 14]], lead: "sawtooth", drums: 2, swing: 0 },
+  boss: { bpm: 140, root: 52, scale: [0, 1, 3, 7, 8], prog: [[0, 3, 7], [1, 5, 8], [0, 3, 7], [6, 10, 13]], lead: "square", drums: 3, swing: 0 },
+  casino: { bpm: 118, root: 62, scale: [0, 2, 4, 7, 9, 10], prog: [[0, 4, 7, 10], [5, 9, 12, 15], [2, 5, 9, 12], [7, 11, 14, 17]], lead: "sine", drums: 4, swing: 0.18 },
+  cards: { bpm: 92, root: 60, scale: [0, 3, 5, 7, 10], prog: [[0, 3, 7, 10], [5, 8, 12, 15], [3, 7, 10, 14], [7, 10, 14, 17]], lead: "sine", drums: 4, swing: 0.15 },
+  nuke: { bpm: 70, root: 45, scale: [0, 1, 6, 7], prog: [[0, 1, 6], [0, 6, 7], [1, 6, 12], [0, 7, 13]], lead: "sawtooth", drums: 2, swing: 0 },
+  waste: { bpm: 76, root: 50, scale: [0, 3, 5, 6, 10], prog: [[0, 3, 7], [6, 10, 13], [3, 7, 10], [5, 8, 12]], lead: "triangle", drums: 2, swing: 0 },
+  lobby: { bpm: 96, root: 62, scale: [0, 2, 4, 7, 9], prog: [[0, 4, 7], [9, 12, 16], [5, 9, 12], [7, 11, 14]], lead: "triangle", drums: 0, swing: 0 },
+};
+let mus = { bus: null, mood: "", next: 0, step: 0, bar: 0 };
+const mf = (n) => 440 * 2 ** ((n - 69) / 12);
+function musicMood() {
+  if (!S || !joined) return "lobby";
+  const g = S.g;
+  if (g.nuke) return "nuke";
+  if (cardsOpen && cgState) return "cards";
+  if (casinoOpen) return "casino";
+  if (g.ph === "night" && g.boss) return "boss";
+  if (g.ph === "night" || g.ph === "royale") return g.waste ? "waste" : "night";
+  if (g.ph === "day") return g.waste ? "waste" : "day";
+  return "lobby";
+}
+function note(type, f, t0, dur, vol, out, filt) {
+  const o = actx.createOscillator(), g = actx.createGain(); o.type = type; o.frequency.value = f;
+  g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  if (filt) { const f2 = actx.createBiquadFilter(); f2.type = "lowpass"; f2.frequency.value = filt; o.connect(f2); f2.connect(g); } else o.connect(g);
+  g.connect(out); o.start(t0); o.stop(t0 + dur + 0.05);
+}
+function drum(kind, t0, out, vol) {
+  if (kind === "k") { const o = actx.createOscillator(), g = actx.createGain(); o.frequency.setValueAtTime(140, t0); o.frequency.exponentialRampToValueAtTime(40, t0 + 0.15); g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.2); o.connect(g); g.connect(out); o.start(t0); o.stop(t0 + 0.22); return; }
+  const len = kind === "s" ? 0.16 : 0.04, b = actx.createBuffer(1, Math.ceil(actx.sampleRate * len), actx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 2;
+  const src = actx.createBufferSource(), f = actx.createBiquadFilter(), g = actx.createGain(); src.buffer = b; f.type = "highpass"; f.frequency.value = kind === "s" ? 1200 : 6000; g.gain.value = vol * (kind === "s" ? 0.6 : 0.3);
+  src.connect(f); f.connect(g); g.connect(out); src.start(t0);
+}
+function musicTick() {
+  if (!actx) return;
+  if (!mus.bus) { mus.bus = actx.createGain(); mus.bus.connect(actx.destination); }
+  mus.bus.gain.value = 0.16 * OPTS.music * OPTS.vol;
+  if (OPTS.music < 0.02) return;
+  const mood = musicMood(), M = MUSIC[mood];
+  if (mood !== mus.mood) { mus.mood = mood; mus.step = 0; mus.next = Math.max(mus.next, actx.currentTime + 0.05); }
+  const sixteenth = 60 / M.bpm / 4;
+  while (mus.next < actx.currentTime + 0.25) {
+    const st = mus.step % 16, bar = Math.floor(mus.step / 16), ch = M.prog[bar % M.prog.length], t0 = mus.next + (st % 2 ? M.swing * sixteenth : 0), out = mus.bus;
+    if (st === 0) for (const n of ch) note(mood === "nuke" || mood === "waste" ? "sawtooth" : "triangle", mf(M.root + n - 12), t0, sixteenth * 15, 0.05, out, 900); // pad
+    if (st % 4 === 0 || (M.drums === 3 && st % 2 === 0)) note("sine", mf(M.root + ch[0] - 24 + (st === 8 && Math.random() < 0.5 ? 7 : 0)), t0, sixteenth * 3, 0.22, out); // bass
+    if (M.drums && M.drums !== 4 && (st === 0 || st === 8 || (M.drums === 3 && st % 4 === 0))) drum("k", t0, out, 0.5);
+    if (M.drums === 1 && (st === 4 || st === 12)) drum("s", t0, out, 0.3);
+    if (M.drums === 2 && st === 8 && bar % 2) drum("s", t0, out, 0.25);
+    if (M.drums === 3 && (st === 4 || st === 12)) drum("s", t0, out, 0.5);
+    if (M.drums && st % 2 === 0) drum("h", t0, out, M.drums === 4 ? 0.25 : 0.35);
+    if (M.drums === 4 && (st === 4 || st === 12)) drum("s", t0, out, 0.15);
+    const density = mood === "nuke" ? 0.15 : mood === "night" || mood === "waste" ? 0.3 : 0.45;
+    if ((st % 2 === 0 || mood === "boss") && Math.random() < density) { // a wandering melody over the chord
+      const deg = M.scale[(Math.random() * M.scale.length) | 0] + (Math.random() < 0.3 ? 12 : 0);
+      note(M.lead, mf(M.root + deg + (Math.random() < 0.5 ? ch[0] % 12 : 0)), t0, sixteenth * (Math.random() < 0.3 ? 4 : 2), M.lead === "sawtooth" || M.lead === "square" ? 0.03 : 0.07, out, M.lead === "sine" ? null : 2400);
+    }
+    mus.next += sixteenth; mus.step++;
+  }
+}
+setInterval(musicTick, 60);
 
 window.slopDebug = { get S() { return S; }, get me() { return me; }, get MAP() { return MAP; }, get mask() { return keyMask(); }, look(y, p) { yaw = y; pitch = p; }, get pred() { return pred; }, get use3d() { return use3d; }, send, ev: (e) => { handleEvent(e); handlePersonal(e); } }; // for tools/ and curious people
 requestAnimationFrame(render);
