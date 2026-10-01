@@ -46,6 +46,17 @@ for (let i = 0; i < count; i++) {
       if (Math.random() < 0.5) dfs([], new Set(), 0, 0, 0); else best = [[0, 0], [1, 0]];
       setTimeout(() => ws.send(JSON.stringify({ t: "hack", picks: best })), 1500);
     }
+    for (const e of m.pe) if (e.k === "fix" && !e.close) {
+      seen.fixTry = (seen.fixTry || 0) + 1;
+      const wait = { meteor: 11, flood: 4, tornado: 5, quake: 11 }[e.kind] * 1000;
+      setTimeout(() => ws.send(JSON.stringify(e.kind === "flood" ? { t: "fix", rots: e.g.map((c) => c[1]) } : { t: "fix", ok: true })), wait);
+    }
+    for (const e of m.e) if (e.k === "banner" && / STOPPED$/.test(e.text)) seen.fixed = (seen.fixed || 0) + 1;
+    for (const e of m.e) if (e.k === "banner" && /DINOSAUR/.test(e.text)) seen.dinoBanner = e.text;
+    if (m.g.dd) seen.dinoDay = (seen.dinoDay || 0) + 1;
+    if (m.vote) seen.voteTitles = [...new Set([...(seen.voteTitles || []), m.vote.title])];
+    if (m.g.elec) seen.elecSeen = 1;
+    if (m.g.ph === "lobby" && mine && mine.g) seen.lobbyGold = mine.g;
     for (const e of m.e) if (e.k === "hacked") seen.hacked = (seen.hacked || 0) + 1;
     for (const e of m.e) if (e.k === "alarm") seen.alarms = (seen.alarms || 0) + 1;
     for (const e of m.e) if (e.k === "collapse") seen.collapse = (seen.collapse || 0) + 1;
@@ -65,10 +76,14 @@ for (let i = 0; i < count; i++) {
     const p = S.p.find((q) => q.id === me); if (!p) return;
     let tgt = null, bd = 1e12;
     for (const z of S.z) { const d = (z[2] - p.x) ** 2 + (z[3] - p.y) ** 2; if (d < bd) { bd = d; tgt = z; } }
-    const a = tgt ? Math.atan2(tgt[3] - p.y, tgt[2] - p.x) : Math.random() * 7;
-    const k = [1, 2, 4, 8][(Date.now() / 700 + i) % 4 | 0] | (i % 2 && Math.random() < 0.3 ? 16 : 0); // odd bots bunny hop
+    const st = S.g.dis && S.g.dis.st, goSt = st && i === 0;
+    const a = goSt ? Math.atan2(st[1] - p.y, st[0] - p.x) : tgt ? Math.atan2(tgt[3] - p.y, tgt[2] - p.x) : Math.random() * 7;
+    if (goSt && (st[0] - p.x) ** 2 + (st[1] - p.y) ** 2 < 60 * 60 && Math.random() < 0.1) ws.send(JSON.stringify({ t: "use" }));
+    if (!seen.bugSent && i === 0 && S.g.ph === "day") { seen.bugSent = 1; ws.send(JSON.stringify({ t: "bug", text: "Bot test report: the turnips look at me funny.", errors: ["TypeError: test @ game.js:1"], ua: "bot" })); }
+    if (S.g.elec && Math.random() < 0.02) ws.send(JSON.stringify({ t: "elect", i: (Math.random() * S.g.elec.c.length) | 0 }));
+    const k = goSt ? 1 : [1, 2, 4, 8][(Date.now() / 700 + i) % 4 | 0] | (i % 2 && Math.random() < 0.3 ? 16 : 0); // odd bots bunny hop
     seen.maxZ3 = Math.max(seen.maxZ3 || 0, p.z || 0);
-    ws.send(JSON.stringify({ t: "in", k, a, f: !process.env.PASSIVE && !!tgt && bd < 700 ** 2, ads: i % 3 === 0 && !!tgt }));
+    ws.send(JSON.stringify({ t: "in", k, a, rel: goSt ? 1 : 0, f: !goSt && !process.env.PASSIVE && !!tgt && bd < 700 ** 2, ads: i % 3 === 0 && !!tgt }));
     if (i % 2 === 0 && Math.max(p.bl, p.bw) > 70 && Math.random() < 0.05) ws.send(JSON.stringify({ t: "go" })); // odd bots just have accidents
     const r = Math.random();
     if (p.air === 1 && Math.random() < 0.05) ws.send(JSON.stringify({ t: "dodge" }));
@@ -81,7 +96,7 @@ for (let i = 0; i < count; i++) {
     else if (r < 0.07) ws.send(JSON.stringify({ t: "reload" }));
     else if (r < 0.075) ws.send(JSON.stringify({ t: "throw", k: Math.random() < 0.5 ? "gren" : "molo" }));
     else if (r < 0.08) ws.send(JSON.stringify({ t: "elem" }));
-    if ((p.rw || p.jam) && Math.random() < 0.3) ws.send(JSON.stringify({ t: "reload" }));
+    if ((p.rl > 0 || p.jam) && Math.random() < 0.3) ws.send(JSON.stringify({ t: "reload" }));
     if (p.dirt > 60 && Math.random() < 0.01) { ws.send(JSON.stringify({ t: "clean", start: true })); setTimeout(() => ws.send(JSON.stringify({ t: "clean", mistakes: (Math.random() * 3) | 0 })), 3000); seen.cleans = (seen.cleans || 0) + 1; }
     seen.stress = Math.max(seen.stress || 0, p.ss || 0); seen.maxWalls = S.ball ? 1 : 0;
     seen.zt = seen.zt || {}; for (const z of S.z) seen.zt[z[1]] = 1;
@@ -92,4 +107,4 @@ for (let i = 0; i < count; i++) {
     if (S.story && !seen.stories.includes(S.story.title + ": " + S.story.pick)) seen.stories.push(S.story.title + ": " + S.story.pick);
   }, 50);
 }
-setInterval(() => console.log(JSON.stringify({ phases: [...seen.phases], maxZ: seen.maxZ, hh: seen.hh, errors: seen.errors, lv: seen.lv, dlg: seen.dlg, clues: seen.clues, alive: seen.alive, zone: seen.zone, casino: seen.casino, spins: seen.spins, games: seen.games, cos: seen.cos, lastMsg: seen.lastMsg, maxZ3: seen.maxZ3, sym: seen.sym, mess: seen.mess, unlucky: seen.unlucky, intro: seen.intro, cd: seen.cd, veh: seen.veh, builds: seen.builds, legend: seen.legend, reckoned: seen.reckoned, deeds: seen.deeds, stories: seen.stories, ending: seen.ending, zt: seen.zt && Object.keys(seen.zt).join(""), fires: seen.fires, projs: seen.projs, fog: seen.fog, night: seen.night, hoe: seen.hoe, shame: seen.shame, hacks: seen.hacks, hacked: seen.hacked, alarms: seen.alarms, collapse: seen.collapse, dis: seen.dis && Object.keys(seen.dis).join(","), goals: seen.goals, zaps: seen.zaps, jams: seen.jams, eff: seen.eff, cleans: seen.cleans, stress: seen.stress, ball: seen.maxWalls, over: seen.over && seen.over.map((r) => [r.name, r.rating, r.kills, r.hs, r.acc, r.deaths]) })), 5000);
+setInterval(() => console.log(JSON.stringify({ phases: [...seen.phases], maxZ: seen.maxZ, hh: seen.hh, errors: seen.errors, lv: seen.lv, dlg: seen.dlg, clues: seen.clues, alive: seen.alive, zone: seen.zone, casino: seen.casino, spins: seen.spins, games: seen.games, cos: seen.cos, lastMsg: seen.lastMsg, maxZ3: seen.maxZ3, sym: seen.sym, mess: seen.mess, unlucky: seen.unlucky, intro: seen.intro, cd: seen.cd, veh: seen.veh, builds: seen.builds, legend: seen.legend, reckoned: seen.reckoned, deeds: seen.deeds, stories: seen.stories, ending: seen.ending, zt: seen.zt && Object.keys(seen.zt).join(""), fires: seen.fires, projs: seen.projs, fog: seen.fog, night: seen.night, hoe: seen.hoe, shame: seen.shame, hacks: seen.hacks, hacked: seen.hacked, alarms: seen.alarms, collapse: seen.collapse, dis: seen.dis && Object.keys(seen.dis).join(","), fixTry: seen.fixTry, fixed: seen.fixed, dinoBanner: seen.dinoBanner, dinoDay: seen.dinoDay, votes: seen.voteTitles, elec: seen.elecSeen, lobbyGold: seen.lobbyGold, goals: seen.goals, zaps: seen.zaps, jams: seen.jams, eff: seen.eff, cleans: seen.cleans, stress: seen.stress, ball: seen.maxWalls, over: seen.over && seen.over.map((r) => [r.name, r.rating, r.kills, r.hs, r.acc, r.deaths]) })), 5000);

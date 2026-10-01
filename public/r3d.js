@@ -863,6 +863,25 @@ var R3D = (function () {
         const e = pooled("flood", () => { const m = mesh(new T.PlaneGeometry(MAP.W + 400, MAP.H + 400), new T.MeshLambertMaterial({ color: 0x2a6aa0, transparent: true, opacity: 0.6, depthWrite: false })); m.rotation.x = -Math.PI / 2; return m; });
         at(e.obj, MAP.W / 2, MAP.H / 2, dis.w + Math.sin(t * 1.5) * 0.6);
       }
+      if (dis.st) { // the control station that can stop it
+        const [sx, sy, busy] = dis.st;
+        const e = pooled(`station:${dis.k}`, () => {
+          const g = new T.Group();
+          g.add(mesh(new T.BoxGeometry(40, 34, 30), mat(0x2a3a4a), 0, 17, 0));
+          const scr = mesh(new T.BoxGeometry(2, 14, 24), new T.MeshLambertMaterial({ color: 0x9fe0ff, emissive: 0x3a8ad0 }), 21, 24, 0); g.add(scr); g.userData.scr = scr;
+          if (dis.k === "tornado") { const rk = mesh(new T.CylinderGeometry(5, 5, 50, 8), mat(0xdddddd), -8, 60, 0); rk.rotation.z = 0.4; g.add(rk); g.add(mesh(new T.ConeGeometry(5, 12, 8), mat(0xff4030), -18, 88, 0)); }
+          else if (dis.k === "meteor") { const dish = mesh(new T.SphereGeometry(18, 12, 6, 0, Math.PI * 2, 0, 1.1), mat(0xcccccc), 0, 50, 0); dish.rotation.x = Math.PI; g.add(dish); g.userData.dish = dish; }
+          else if (dis.k === "flood") { const wh = mesh(new T.TorusGeometry(12, 2.5, 6, 16), mat(0xc03030), 0, 50, 0); g.add(wh); g.userData.wheel = wh; }
+          else { g.add(mesh(new T.CylinderGeometry(8, 8, 30, 10), mat(0x8a8a50), 0, 49, 0)); }
+          const beacon = mesh(new T.SphereGeometry(5, 8, 6), new T.MeshLambertMaterial({ color: 0xffd34d, emissive: 0xffa000 }), 12, 44, 10); g.add(beacon); g.userData.beacon = beacon;
+          return g;
+        });
+        at(e.obj, sx, sy, 0);
+        e.obj.userData.scr.material.emissive.setHex(busy ? 0xffc020 : Math.floor(t * 3) % 2 ? 0x3a8ad0 : 0x0a2a40);
+        e.obj.userData.beacon.material.emissive.setHex(Math.floor(t * 4) % 2 ? 0xffa000 : 0x302000);
+        if (e.obj.userData.dish) e.obj.userData.dish.rotation.z = Math.sin(t) * 0.4;
+        if (e.obj.userData.wheel) e.obj.userData.wheel.rotation.y = t * (busy ? 4 : 0.5);
+      }
       if (dis.k === "tornado") {
         const e = pooled("tornado", () => { const g = new T.Group(); for (let i = 0; i < 3; i++) { const c = mesh(new T.ConeGeometry(170 - i * 45, 520 - i * 80, 20, 1, true), new T.MeshBasicMaterial({ color: [0x8a8078, 0x9a9088, 0x6a625a][i], transparent: true, opacity: 0.35 + i * 0.1, side: T.DoubleSide, depthWrite: false })); c.rotation.x = Math.PI; c.position.y = (520 - i * 80) / 2; g.add(c); } return g; });
         smoothTo(e, dis.x, dis.y, 0, dt, 1000);
