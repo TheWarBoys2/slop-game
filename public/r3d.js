@@ -93,7 +93,7 @@ var R3D = (function () {
       for (let i = 0; i < pos.count; i++) uv.setXY(i, (x + w / 2 + pos.getX(i)) / MAP.W, 1 - (y + h / 2 - pos.getY(i)) / MAP.H);
       const m = mesh(geo, gm, x + w / 2, 0, y + h / 2); m.rotation.x = -Math.PI / 2; level.add(m);
     };
-    level.userData.lake = lake || null;
+    level.userData.lake = lake || null; level.userData.gm = gm;
     if (lake) { // the ground goes round the lake, not over it
       groundPiece(0, 0, MAP.W, lake.y); groundPiece(0, lake.y + lake.h, MAP.W, MAP.H - lake.y - lake.h);
       groundPiece(0, lake.y, lake.x, lake.h); groundPiece(lake.x + lake.w, lake.y, MAP.W - lake.x - lake.w, lake.h);
@@ -220,6 +220,16 @@ var R3D = (function () {
       const ring = mesh(new T.TorusGeometry(w.w / 2 - 4, 2.5, 6, 24), basic(0xbff8ff, 0.8), 0, 6, 0); ring.rotation.x = Math.PI / 2;
       const g = new T.Group(); g.add(p, ring); g.userData.ring = ring; at(g, cx, cy, 0); tgt.add(g);
       (level.userData.pads = level.userData.pads || []).push(g);
+    } else if (w.kind === "bunker") { // a squat concrete block with a hatch on top and a yellow sign
+      const conc = mat(0x8a8a82), dk = mat(0x5a5a54);
+      tgt.add(at(box(w.w, w.h, hgt, conc), cx, cy, hgt / 2));
+      tgt.add(at(box(w.w + 6, w.h + 6, 4, dk), cx, cy, hgt + 2));
+      const hatch = mesh(new T.CylinderGeometry(16, 16, 4, 16), mat(0x4a5a3a), 0, 0, 0); at(hatch, cx, cy, hgt + 5); tgt.add(hatch);
+      const wheel = mesh(new T.TorusGeometry(9, 1.6, 6, 16), mat(0x2a2a2a)); wheel.rotation.x = Math.PI / 2; at(wheel, cx, cy, hgt + 9); tgt.add(wheel);
+      const sign = mesh(new T.BoxGeometry(2, 26, 26), mat(0xffd34d, 0x403000)); at(sign, w.x + w.w + 1.5, cy, hgt * 0.6); tgt.add(sign);
+      for (let i = 0; i < 3; i++) { const bl = mesh(new T.BoxGeometry(2.4, 2, 10), mat(0x111111)); bl.rotation.x = i * Math.PI * 2 / 3; at(bl, w.x + w.w + 2.8, cy, hgt * 0.6); bl.position.z += Math.cos(i * Math.PI * 2 / 3) * 0; tgt.add(bl); }
+      tgt.add(at(mesh(new T.SphereGeometry(2.6, 8, 6), mat(0x111111)), w.x + w.w + 2.8, cy, hgt * 0.6));
+      for (const [vx, vy] of [[w.x + 12, w.y + 12], [w.x + w.w - 12, w.y + w.h - 12]]) tgt.add(at(mesh(new T.CylinderGeometry(3, 3, 22, 8), dk), vx, vy, hgt + 11)); // air vents
     } else if (w.kind === "crate") {
       tgt.add(at(box(w.w, w.h, hgt, mat(0xd8b860)), cx, cy, hgt / 2));
       for (const s of [-0.25, 0.25]) tgt.add(at(box(w.w + 1, 3, hgt + 1, mat(0x8a6a32)), cx, cy + s * w.h, hgt / 2));
@@ -336,6 +346,39 @@ var R3D = (function () {
     }
     return g;
   }
+  // gear, worn on top of the body: head replaces the hat; body, hands and feet go over the clothes
+  function gearMesh(g, gr) {
+    const [head, bod, hands, feet] = gr || [];
+    const body = g.userData.body;
+    if (head) {
+      const hg = new T.Group(); hg.position.y = 42; body.add(hg);
+      if (head === "pot") { hg.add(mesh(new T.CylinderGeometry(13.5, 12.5, 9, 14), mat(0xb8bcc4), 0, 10, 0)); hg.add(mesh(new T.BoxGeometry(18, 2, 3), mat(0x222222), -20, 10, 0)); }
+      else if (head === "helmet") { hg.add(mesh(new T.SphereGeometry(14.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x4a5a32), 0, 4, 0)); hg.add(mesh(new T.CylinderGeometry(16, 16, 1.5, 14), mat(0x3e4c2a), 0, 4, 0)); }
+      else if (head === "gasmask") { hg.add(mesh(new T.SphereGeometry(13.6, 14, 10), mat(0x2e3a2e))); for (const s2 of [-1, 1]) hg.add(mesh(new T.CylinderGeometry(3.6, 3.6, 2, 12), mat(0x9fd8ff, 0x204050), 12.6, 3, s2 * 5).rotateZ(Math.PI / 2)); const f = mesh(new T.CylinderGeometry(4.5, 5, 7, 10), mat(0x555555), 14, -6, 0); f.rotation.z = Math.PI / 2; hg.add(f); }
+      g.userData.hat.visible = false;
+    }
+    if (bod) {
+      const col = { vest: 0x2a3a4a, plate: 0x4a5a32, hazmat: 0xe8d020 }[bod] || 0x444444;
+      body.add(mesh(new T.CylinderGeometry(bod === "hazmat" ? 12.2 : 11.8, bod === "hazmat" ? 13 : 12.4, bod === "plate" ? 15 : 13, 14), mat(col), 0, 23.5, 0));
+      if (bod === "plate") for (let i = 0; i < 3; i++) body.add(mesh(new T.BoxGeometry(3, 4, 4.5), mat(0x3a4628), 12, 20 + 0, -7 + i * 7)); // pouches
+      if (bod === "hazmat") { for (const s2 of [-1, 1]) body.add(mesh(new T.SphereGeometry(5.6, 10, 8), mat(col), 0, 30, s2 * 10.5)); for (const leg of g.userData.legs) leg.add(mesh(new T.CylinderGeometry(4.6, 4.1, 12, 8), mat(col), 0, -6, 0)); }
+    }
+    if (hands) {
+      const col = hands === "tactical" ? 0x1e1e1e : 0xb08a50;
+      g.userData.arm.add(mesh(new T.SphereGeometry(4.1, 8, 6), mat(col), 4, 0, 0));
+      g.userData.off.add(mesh(new T.SphereGeometry(4.1, 8, 6), mat(col), 8.5, -6, 5));
+    }
+    if (feet) {
+      const col = { wellies: 0x2a7a2a, trainers: 0xf0f0f0, boots: 0x2a2418, flippers: 0xffd020 }[feet] || 0x333333;
+      for (const leg of g.userData.legs) {
+        if (feet === "flippers") leg.add(mesh(new T.BoxGeometry(22, 1.5, 9), mat(col), 8, -14.5, 0));
+        else if (feet === "wellies") leg.add(mesh(new T.CylinderGeometry(4.6, 4.6, 10, 8), mat(col), 0, -9, 0));
+        else leg.add(mesh(new T.BoxGeometry(11, feet === "boots" ? 6 : 4.4, 7.2), mat(col), 1.8, feet === "boots" ? -12 : -13, 0));
+        if (feet === "trainers") leg.add(mesh(new T.BoxGeometry(11.2, 1.2, 7.4), mat(0xff3030), 1.8, -11.6, 0));
+      }
+    }
+    return g;
+  }
   function personMesh(color, hat, eyes) {
     const g = new T.Group(), body = new T.Group();
     g.add(body);
@@ -375,12 +418,12 @@ var R3D = (function () {
     return g;
   }
   const ZCOL = { e: 0x3a6a8a, t: 0x3f6b3a, r: 0xa0d070, w: 0x6fa35a, c: 0x7a5a3a, f: 0x4a3a5a, x: 0x8aa04a, s: 0xd8d0c0, d: 0x7a8a3a, y: 0x5a6a2a };
-  function zombieMesh(type, bk) {
+  function zombieMesh(type, bk, glow) {
     const r = ZR[type] || 15;
     const bossCol = { leshen: 0x3a5a2a, drowned: 0x3a6a8a, golem: 0xb08a3a }[bk] || 0x3a5a2a;
     const col = type === "b" ? bossCol : ZCOL[type] || 0x6fa35a;
     const g = new T.Group(), k = r / 15;
-    const skin = mat(col);
+    const skin = glow ? mat(col, 0x3a9a10) : mat(col);
     const eye = type === "b" ? (bk === "golem" ? 0xff8a20 : 0xff2020) : type === "e" || type === "s" ? 0xbfe8ff : type === "f" ? 0xff3030 : 0xffec40;
     const arms = [];
     if (type === "f") { // a flying thing: a body, a head and two big leathery wings
@@ -533,6 +576,8 @@ var R3D = (function () {
     scene.background.copy(sky); scene.fog.color.copy(sky);
     scene.fog.near = lerp(1500, 120, n); scene.fog.far = lerp(4200, 1300, n);
     if (S.g.fog && n > 0) { sky.lerp(new T.Color(0x2a2636), n); scene.background.copy(sky); scene.fog.color.copy(sky); scene.fog.near = 20; scene.fog.far = lerp(1300, 480, n); }
+    if (S.g.waste) { const wc = new T.Color(0x9a9a5a).lerp(new T.Color(0x14160a), n); scene.background.copy(wc); scene.fog.color.copy(wc); scene.fog.far = Math.min(scene.fog.far, lerp(2600, 1100, n)); }
+    if (level.userData.gm) { const want = S.g.waste ? 0xb09060 : 0xffffff; if (level.userData.gmc !== want) { level.userData.gm.color.setHex(want); level.userData.gmc = want; } }
     L.hemi.intensity = lerp(1.7, 0.16, n); L.sun.intensity = lerp(2.2, 0.12, n);
     L.sun.color.setHex(n > 0.5 ? 0x8090ff : 0xfff2d8);
     const lk = level.userData.lake, c0 = st.cam;
@@ -591,10 +636,12 @@ var R3D = (function () {
       at(e.obj, m.x, m.y + 12, (m.z || 0) + 0.6);
     }
     // crates
-    for (const [id, x, y, rar, grave] of S.cr) {
+    for (const [id, x, y, rar, grave, ck] of S.cr) {
       const e = pooled(`crate:${id}`, () => {
         const g = new T.Group();
-        if (grave) { g.add(mesh(new T.BoxGeometry(8, 30, 24), mat(0x888888), 0, 15, 0)); const top = mesh(new T.CylinderGeometry(12, 12, 8, 12, 1, false, 0, Math.PI), mat(0x888888), 0, 30, 0); top.rotation.set(0, Math.PI / 2, Math.PI / 2); g.add(top); }
+        if (ck === 1) { g.add(mesh(new T.BoxGeometry(30, 20, 30), mat(0x3a4a3a), 0, 10, 0)); g.add(mesh(new T.BoxGeometry(31, 4, 31), mat(RAR[rar], RAR[rar]), 0, 18, 0)); g.add(mesh(new T.SphereGeometry(8, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x4a5a32), 0, 20, 0)); }
+        else if (ck === 2) { g.add(mesh(new T.BoxGeometry(26, 18, 20), mat(0x8a6a3a), 0, 9, 0)); for (let i = 0; i < 3; i++) g.add(mesh(new T.CylinderGeometry(3.5, 3.5, 7, 10), mat(0xc8c8c0), -8 + i * 8, 21.5, 0)); }
+        else if (grave) { g.add(mesh(new T.BoxGeometry(8, 30, 24), mat(0x888888), 0, 15, 0)); const top = mesh(new T.CylinderGeometry(12, 12, 8, 12, 1, false, 0, Math.PI), mat(0x888888), 0, 30, 0); top.rotation.set(0, Math.PI / 2, Math.PI / 2); g.add(top); }
         else { g.add(mesh(new T.BoxGeometry(30, 22, 24), mat(0x6b4a2a), 0, 11, 0)); g.add(mesh(new T.BoxGeometry(31, 5, 25), mat(RAR[rar], RAR[rar]), 0, 11, 0)); }
         g.add(mesh(new T.CylinderGeometry(22, 22, 1, 20), basic(RAR[rar], 0.3), 0, 0.5, 0));
         return g;
@@ -638,13 +685,35 @@ var R3D = (function () {
       e.a = angLerp(e.a ?? want, want, Math.min(1, dt * 8));
       at(e.obj, e.x, e.y, mv > 8 ? Math.abs(Math.sin(t * 10)) * 2 : 0); e.obj.rotation.y = -e.a;
       e.obj.userData.legs.forEach((l, i) => { l.rotation.z = mv > 8 ? Math.sin(t * 10 + i * Math.PI) * 0.6 : 0; });
-      if (n2.id === "chef") { const l = pooled("limo:chef", () => vehicleMesh("limo")); at(l.obj, n2.x + 90, n2.y + 20, 0); l.obj.rotation.y = -0.2; }
+      if (n2.guest && n2.ride) { const rk = n2.ride === "jeep" ? "buggy" : n2.ride; const l = pooled(`ride:${n2.id}`, () => vehicleMesh(rk)); at(l.obj, n2.x + 90, n2.y + 20, 0); l.obj.rotation.y = -0.2; }
+    }
+    // radioactive hot spots and the mushroom cloud
+    for (const [hx, hy, hr, lk] of S.g.hot || []) {
+      if (lk) continue;
+      const e = pooled(`hot:${hx}:${hy}`, () => { const g = new T.Group(); const d = mesh(new T.CircleGeometry(1, 32), new T.MeshBasicMaterial({ color: 0x96ff3c, transparent: true, opacity: 0.28, depthWrite: false })); d.rotation.x = -Math.PI / 2; g.add(d); g.userData.d = d; for (let i = 0; i < 6; i++) { const m = mesh(new T.SphereGeometry(2.5, 6, 5), basic(0xc0ff80, 0.8)); g.add(m); } return g; });
+      at(e.obj, hx, hy, 1.2); e.obj.userData.d.scale.set(hr, hr, 1); e.obj.userData.d.material.opacity = 0.2 + Math.sin(t * 2 + hx) * 0.08;
+      e.obj.children.forEach((c, i) => { if (!i) return; const q = (t * 0.3 + i / 6) % 1, a = i * 1.7 + hx; c.position.set(Math.cos(a) * hr * 0.6, q * 80, Math.sin(a) * hr * 0.6); c.material.opacity = 0.8 * (1 - q); });
+    }
+    if (st.nukeFx && t - st.nukeFx.t < 30) {
+      const k = (t - st.nukeFx.t) / 30, nf = st.nukeFx;
+      const e = pooled("mushroom", () => { const g = new T.Group(), fire = new T.MeshLambertMaterial({ color: 0xffb060, emissive: 0x804020, transparent: true, depthWrite: false }); g.userData.m = fire;
+        const stem = mesh(new T.CylinderGeometry(45, 90, 1, 16), fire); g.add(stem); g.userData.stem = stem;
+        const cap = mesh(new T.SphereGeometry(1, 20, 14), fire); cap.scale.set(1, 0.6, 1); g.add(cap); g.userData.cap = cap;
+        const ring = mesh(new T.TorusGeometry(1, 0.12, 8, 32), fire); ring.rotation.x = Math.PI / 2; g.add(ring); g.userData.ring = ring; return g; });
+      const grow = Math.min(1, k * 4), h = 200 + grow * 1300, cr = 150 + grow * 450;
+      at(e.obj, nf.x ?? MAP.W / 2, nf.y ?? MAP.H / 2, 0);
+      e.obj.userData.stem.scale.set(0.6 + grow, h, 0.6 + grow); e.obj.userData.stem.position.y = h / 2;
+      e.obj.userData.cap.scale.set(cr, cr * 0.55, cr); e.obj.userData.cap.position.y = h + cr * 0.2;
+      e.obj.userData.ring.scale.setScalar(cr * 0.9); e.obj.userData.ring.position.y = h * 0.6;
+      e.obj.userData.m.color.setHex(k < 0.12 ? 0xfff0c0 : k < 0.35 ? 0xff9040 : 0x8a7a6a); e.obj.userData.m.emissive.setHex(k < 0.35 ? 0x804020 : 0x201a14);
+      const near = Math.hypot(st.cam.x - (nf.x ?? 0), st.cam.y - (nf.y ?? 0)); // fade it out when you're standing in it
+      e.obj.userData.m.opacity = Math.min(0.9, (1 - k) * 2) * Math.min(1, Math.max(0.08, (near - 200) / 900));
     }
     // the dead
     const bk = S.g.bk;
     for (const zz of S.z) {
-      const [id, type, zx, zy, , burn, zh, charging, frozen] = zz;
-      const e = pooled(`z:${id}:${type}:${type === "b" ? bk : ""}`, () => zombieMesh(type, bk));
+      const [id, type, zx, zy, , burn, zh, charging, frozen, glow] = zz;
+      const e = pooled(`z:${id}:${type}:${type === "b" ? bk : ""}:${glow ? 1 : 0}`, () => zombieMesh(type, bk, glow));
       const px = e.x, py = e.y;
       smoothTo(e, zx, zy, zh || 0, dt);
       const mv = Math.hypot(e.x - (px ?? e.x), e.y - (py ?? e.y));
@@ -736,9 +805,9 @@ var R3D = (function () {
     let si = 0;
     const spotUse = [];
     for (const p of S.p) {
-      if (p.d || p.air === 1) continue;
+      if (p.d || p.air === 1 || p.air === 3) continue;
       const mine = p.id === me;
-      const e = pooled(`p:${p.id}:${p.c}:${p.h}:${p.ey}`, () => personMesh(p.c, p.h, p.ey));
+      const e = pooled(`p:${p.id}:${p.c}:${p.h}:${p.ey}:${(p.gr || []).join(",")}`, () => gearMesh(personMesh(p.c, p.h, p.ey), p.gr));
       if (mine) { e.x = st.pred.x; e.y = st.pred.y; e.z = st.pred.z; e.init = true; }
       else smoothTo(e, p.x, p.y, p.z || 0, dt);
       const yaw = mine ? st.aimYaw : p.a, pitch = mine ? st.aimPitch : (p.pt || 0);

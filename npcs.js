@@ -11,6 +11,10 @@ export const QUESTS = {
   ald_labour:   { npc: "aldous", title: "Tithe of Labour", desc: "Repair the Hearth once, from the shop.", stat: "repairs", goal: 1 },
   vex_research: { npc: "vex", title: "Market Research", desc: "Open 2 Mystery Cases.", stat: "cases", goal: 2 },
   chef_raw:     { npc: "chef", title: "Kitchen Nightmare", desc: "Harvest 4 crops before Gordon leaves at nightfall.", stat: "crops", goal: 4 },
+  bear_live:    { npc: "bear", title: "Live Off the Land", desc: "Eat 3 things you grew yourself (turnips or Hearth stew) before Bear leaves.", stat: "ateGrown", goal: 3 },
+  rock_smack:   { npc: "boulder", title: "The Smackdown", desc: "Kill 25 of the dead before The Boulder leaves.", stat: "kills", goal: 25 },
+  dav_planet:   { npc: "david", title: "Planet Slop", desc: "Kill 4 different kinds of the dead for Sir David's documentary.", stat: "ztypes", goal: 4 },
+  war_buy:      { npc: "warren", title: "Buy and Hold", desc: "Buy 20 shares on the Slop Valley Stock Exchange [M].", stat: "sharesBought", goal: 20 },
 };
 
 export const CLUES = {
@@ -330,7 +334,11 @@ export const NPCS = {
   },
   // A celebrity passing through for one day only. Any resemblance to a real shouty TV chef is entirely affectionate.
   chef: {
-    name: "Gordon Rampage", role: "Celebrity chef. Filming a show.", color: "#f0d0b0", hat: "chef", guest: true,
+    name: "Gordon Rampage", role: "Celebrity chef. Filming a show.", color: "#f0d0b0", hat: "chef", guest: true, ride: "limo",
+    arrive: "A famous chef has rolled into the valley in a pink limo. He's only here until nightfall [E].",
+    feed: "Gordon Rampage is filming in the valley today. Nobody invited him.",
+    leave: "Gordon Rampage's limo roars off into the night. \"You've all been SHUT DOWN!\"",
+    quips: ["IT'S RAW!", "DONKEY!", "SHUT IT DOWN!", "WHERE'S THE LAMB SAUCE?"],
     nodes: {
       start: {
         text: (c) => c.p.flags.raw ? "\"YOU AGAIN. Look at me. LOOK AT ME. Are you going to be sensible this time, you walking turnip?\""
@@ -385,12 +393,156 @@ export const NPCS = {
   },
 };
 
+// The other celebrities who might turn up instead. All affectionate parodies; nobody here is real.
+Object.assign(NPCS, {
+  bear: {
+    name: "Bear Gritts", role: "Survival expert. Will drink anything.", color: "#a08a5a", hat: "flatcap", guest: true, ride: "jeep",
+    arrive: "A survival expert has parachuted into the valley. He's here until nightfall, eating things he shouldn't [E].",
+    feed: "Bear Gritts has landed in the valley. He's already eaten a beetle.",
+    leave: "Bear Gritts abseils out of the valley from a helicopter nobody saw arrive.",
+    quips: ["IMPROVISE!", "HYDRATE!", "PROTEIN!", "ADAPT!"],
+    nodes: {
+      start: {
+        text: (c) => c.q.bear_live && c.q.bear_live.done ? "\"You've got the instincts of a survivor. And the smell of one.\" He crunches something that is still moving."
+          : "A man in a muddy fleece is chewing on a root. \"Out here, the valley is trying to kill you. The dead, the thirst, the hunger. The trick is to stay calm, stay positive, and drink your own wee.\"",
+        opts: [
+          { label: "Drink my own... what?", to: "pee" },
+          { label: "Teach me to live off the land.", to: "quest", if: (c) => !c.q.bear_live },
+          { label: "I've been eating what I grow.", to: "questdone", if: (c) => ready(c, "bear_live") },
+          { label: "What's the worst thing you've ever eaten?", to: "worst" },
+          { label: "Bye, Bear.", to: null },
+        ],
+      },
+      pee: {
+        text: () => "\"Out here, every drop counts. When nature calls, you answer it... into a bottle. Then later, when you're desperate, you drink it. It's not nice, but it'll keep you alive.\"",
+        opts: [{ label: "Fill a bottle (uses your bladder)", to: "start", do: (c) => c.g.bottlePee(c.p) }, { label: "Absolutely not.", to: "start" }],
+      },
+      quest: {
+        text: () => "\"Shop food is for tourists. Grow it, pull it out of the ground and eat it. Three times before I leave. Turnips count. Stew counts. Cook two turnips in the Hearth and you've got a hot meal.\"",
+        opts: [{ label: "I'll do it.", to: "start", do: (c) => c.api.accept(c.p, "bear_live") }, { label: "Maybe later.", to: "start" }],
+      },
+      questdone: {
+        text: () => "\"You're a natural. Here. These have walked me across three deserts and one very angry swamp.\"",
+        opts: [{ label: "Thanks, Bear.", to: "start", do: (c) => { turnIn(c, "bear_live"); c.g.gear(c.p, "boots", 2); c.g.card(c.p, "bear"); c.aff.bear = (c.aff.bear || 0) + 2; c.api.deed("soil", 8); return "Epic Combat Boots and a Bear Gritts card"; } }],
+      },
+      worst: {
+        text: () => "He thinks for a long time. \"A zombie's ear. Raw. Morwen dared me. ...Actually, it wasn't bad. Bit chewy. Tasted of regret and a little bit of chicken.\"",
+        opts: [{ label: "Back.", to: "start", do: (c) => { c.aff.bear = (c.aff.bear || 0) + 1; } }],
+      },
+    },
+  },
+  boulder: {
+    name: "The Boulder", role: "Wrestler. Actor. Eyebrow.", color: "#9a6a4a", hat: "none", guest: true, ride: "limo",
+    arrive: "A very famous wrestler has arrived to film a zombie movie. He's here until nightfall [E].",
+    feed: "The Boulder is in the valley, filming 'Jungle Slop 3'. One of his eyebrows is raised.",
+    leave: "The Boulder's limo leaves. Somewhere, an eyebrow lowers.",
+    quips: ["KNOW YOUR ROLE!", "SMELL THAT?", "IT DOESN'T MATTER!", "*raises eyebrow*"],
+    nodes: {
+      start: {
+        text: (c) => c.p.flags.boulderLost ? "\"Back for more? The Boulder respects that. The Boulder does not respect your technique.\""
+          : "A man the size of a wardrobe raises one eyebrow at you. \"Can you SMELL... what The Boulder... is cooking? It's turnips. Craft services is turnips. This valley is weird.\"",
+        opts: [
+          { label: "Arm wrestle me.", to: "wrestle" },
+          { label: "Need any help with the movie?", to: "quest", if: (c) => !c.q.rock_smack },
+          { label: "Twenty-five of the dead, down.", to: "questdone", if: (c) => ready(c, "rock_smack") },
+          { label: "What's the movie about?", to: "movie" },
+          { label: "See you, Boulder.", to: null },
+        ],
+      },
+      wrestle: {
+        text: () => "He slams an elbow on a hay bale. The hay bale gives up. \"Best of one. Loser gets thrown into the next field.\"",
+        opts: [{ label: "Grip his enormous hand.", to: "start", do: (c) => { const r = c.g.wrestle(c.p); if (/throws/.test(r)) c.p.flags.boulderLost = true; return r; } }, { label: "On second thoughts...", to: "start" }],
+      },
+      quest: {
+        text: () => "\"The script says I fight twenty-five zombies. The Boulder's insurance says I fight none. You fight them, and I'll be in the trailer, being inspirational.\"",
+        opts: [{ label: "Deal.", to: "start", do: (c) => c.api.accept(c.p, "rock_smack") }, { label: "Maybe later.", to: "start" }],
+      },
+      questdone: {
+        text: () => "\"You just did all your own stunts. The Boulder is... moved. Take this. Wardrobe department won't miss it.\"",
+        opts: [{ label: "Thanks!", to: "start", do: (c) => { turnIn(c, "rock_smack"); c.g.gear(c.p, "plate", 2); c.g.card(c.p, "boulder"); c.aff.boulder = (c.aff.boulder || 0) + 2; c.api.deed("blood", 8); return "An Epic Plate Carrier and a Boulder card"; } }],
+      },
+      movie: {
+        text: () => "\"It's about a man who is very strong and has to save a valley from zombies using only his strength and his eyebrow. It's based on a true story. Mine.\"",
+        opts: [{ label: "Back.", to: "start" }],
+      },
+    },
+  },
+  david: {
+    name: "Sir David Attenbarrow", role: "Naturalist. National treasure.", color: "#c8b890", hat: "cowboy", guest: true, ride: "jeep",
+    arrive: "A beloved naturalist is filming the valley's wildlife (the dead). He's here until nightfall [E].",
+    feed: "Sir David Attenbarrow is whispering at a shambler from behind a bush.",
+    leave: "Sir David packs up his cameras. \"And so, as the sun sets on Slop Valley... the dead stir once more.\"",
+    quips: ["*whispering*", "Remarkable.", "Extraordinary.", "And here... the shambler."],
+    nodes: {
+      start: {
+        text: () => "An elderly man crouches in the grass, whispering. \"Here, in the valley... we find the farmer. Bewildered. Underfed. And yet, somehow... still standing. Remarkable.\"",
+        opts: [
+          { label: "Could you narrate my life?", to: "narrate" },
+          { label: "What are you filming?", to: "quest", if: (c) => !c.q.dav_planet },
+          { label: "I've found four kinds of the dead.", to: "questdone", if: (c) => ready(c, "dav_planet") },
+          { label: "Are the dead... natural?", to: "nature" },
+          { label: "Goodbye, Sir David.", to: null },
+        ],
+      },
+      narrate: {
+        text: () => "\"The farmer stands in the mud, clutching a weapon it barely understands. It is frightened. It is hungry. But look closer... it is magnificent.\"",
+        opts: [{ label: "*Weep quietly*", to: "start", do: (c) => c.g.calm(c.p) }],
+      },
+      quest: {
+        text: () => "\"Planet Slop. A documentary about the valley's most... extraordinary creatures. I need footage of four different kinds of the dead. Ideally, while you are killing them.\"",
+        opts: [{ label: "I'll get your footage.", to: "start", do: (c) => c.api.accept(c.p, "dav_planet") }, { label: "Maybe later.", to: "start" }],
+      },
+      questdone: {
+        text: () => "\"Extraordinary footage. The boomer sequence alone... Here. These cards came free with my last series. And this, for the radiation. One never knows.\"",
+        opts: [{ label: "Thank you, Sir David.", to: "start", do: (c) => { turnIn(c, "dav_planet"); c.g.pack(c.p); c.g.card(c.p, "david"); c.g.gear(c.p, "gasmask", 2); c.aff.david = (c.aff.david || 0) + 2; c.api.deed("word", 8); return "A card pack, a Sir David card and an Epic Gas Mask"; } }],
+      },
+      nature: {
+        text: () => "\"Nothing that comes up out of a well is natural, my dear. But it is... fascinating. They are drawn to the Hearth, as moths are drawn to a flame. Or as I am drawn to a good badger.\"",
+        opts: [{ label: "Back.", to: "start" }],
+      },
+    },
+  },
+  warren: {
+    name: "Warren Muffett", role: "The world's richest investor. Drinks slop cola.", color: "#4a5a7a", hat: "tophat", guest: true, ride: "limo",
+    arrive: "The world's richest investor is touring the valley's businesses. He's here until nightfall [E].",
+    feed: "Warren Muffett is in the valley, looking for undervalued turnips.",
+    leave: "Warren Muffett's limo leaves. He has bought the road it drove out on.",
+    quips: ["Buy the dip!", "Be greedy...", "Compound interest!", "*sips cola*"],
+    nodes: {
+      start: {
+        text: () => "An old man in a cheap suit is sipping a Slop Cola and reading the share prices. \"Rule one: never lose money. Rule two: never forget rule one. Rule three: this cola is excellent value.\"",
+        opts: [
+          { label: "Any stock tips?", to: "tip" },
+          { label: "Teach me to invest.", to: "quest", if: (c) => !c.q.war_buy },
+          { label: "I bought my twenty shares.", to: "questdone", if: (c) => ready(c, "war_buy") },
+          { label: "Spare a fiver?", to: "fiver", if: (c) => !c.p.flags.fiver },
+          { label: "Bye, Warren.", to: null },
+        ],
+      },
+      tip: { text: (c) => c.g.tip(c.p), opts: [{ label: "Thanks!", to: "start" }] },
+      quest: {
+        text: () => "\"Open the market (M) and buy twenty shares in anything you understand. If you don't understand anything, buy the farmers. People always need turnips.\"",
+        opts: [{ label: "I'm on it.", to: "start", do: (c) => c.api.accept(c.p, "war_buy") }, { label: "Maybe later.", to: "start" }],
+      },
+      questdone: {
+        text: () => "\"Look at you. A shareholder. Here's a little something to compound.\"",
+        opts: [{ label: "Thanks, Warren.", to: "start", do: (c) => { turnIn(c, "war_buy"); c.api.gold(c.p, 250); c.g.card(c.p, "warren"); c.aff.warren = (c.aff.warren || 0) + 2; c.api.deed("coin", 10); return "+250g and a Warren Muffett card"; } }],
+      },
+      fiver: { text: () => "He sighs deeply, the sigh of a man who once bought a railway.", opts: [{ label: "Back.", to: "start", do: (c) => { c.p.flags.fiver = true; return c.g.fiver(c.p); } }] },
+    },
+  },
+});
+
 export function npcLines(f, aff) {
   const lines = [];
   if (f.siblings >= 2) lines.push("Brother Aldous and Morwen shared a pot of bad bread and worse soup. It was the first time in eleven years. It will not be the last.");
   if (aff.pell >= 3) lines.push("Old Pell got his wake early, and then lived another nine years out of spite.");
   if (aff.haddock >= 3) lines.push("Sergeant Haddock rebuilt the town watch. It has four members now, all of them wearing your old hats.");
   if (aff.vex >= 3) lines.push("Vex named his next shop after you. It sells mostly slop.");
+  if (aff.bear >= 2) lines.push("Bear Gritts' new series opens with you, drinking from a bottle you'd rather not talk about.");
+  if (aff.boulder >= 2) lines.push("'Jungle Slop 3' made a billion gold. You're credited as 'Farmer Who Did All The Stunts'.");
+  if (aff.david >= 2) lines.push("'Planet Slop' won every award going. The boomer sequence made grown men cry.");
+  if (aff.warren >= 2) lines.push("Warren Muffett bought the valley's farmers' co-op. He kept the turnip prices low. Mostly.");
   if (aff.chef >= 3) lines.push("Gordon Rampage's show 'Nightmare Valley' won an award. You're in the trailer. So is the well.");
   else if (aff.chef < 0) lines.push("Gordon Rampage's show aired. The only clip anyone shares is of him shouting you into a hedge.");
   if (f.exposed) lines.push("Mayor Grubb spent a month in the stocks and was re-elected anyway. Politics.");
