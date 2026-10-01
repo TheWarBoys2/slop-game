@@ -83,8 +83,11 @@ $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("go").cl
 
 // ---------------------------------------------------------------- network
 let WHEEL = [], COSM = {}, FREE_HATS = [], myCos = [];
-let ws, MAP = null, SHOP = null, ENH_COST = [], ENH_CHANCE = [], PIECES = {}, VEH = {}, LEGENDS = {};
-let ITEMS = {}, GEAR = {}, CARDS = {}, LOCS = {}, STOCKS = {}, CANDS = {}, INV = null;
+let ws, MAP = null, SHOP = null, SHOPS = {}, DOME_R = 1000, shopSid = "general", ENH_COST = [], ENH_CHANCE = [], PIECES = {}, VEH = {}, LEGENDS = {};
+let CHUNK_WALLS = [], chunkVer = 0; // the wild past the hedge, sent a chunk at a time as people explore
+const openWorld = () => !S || S.g.mode !== "royale";
+const BWc = () => (openWorld() ? Infinity : MAP.W), BHc = () => (openWorld() ? Infinity : MAP.H);
+let ITEMS = {}, GEAR = {}, CARDS = {}, LOCS = {}, STOCKS = {}, CANDS = {}, INV = null, CROPS = {}, CROP_KEYS = [], SEED_PACK = 3;
 let S = null; // latest snapshot
 let me = 0, joined = false;
 const disp = new Map(); // smoothed positions by key
@@ -92,8 +95,9 @@ function connect() {
   ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
-    if (m.t === "hello") { WHEEL = m.wheel || []; COSM = m.cosmetics || {}; FREE_HATS = m.freeHats || []; SHOP = m.shop; ENH_COST = m.enhCost; ENH_CHANCE = m.enhChance; PIECES = m.pieces || {}; VEH = m.vehicles || {}; LEGENDS = m.legends || {}; ITEMS = m.items || {}; GEAR = m.gear || {}; CARDS = m.cards || {}; LOCS = m.locs || {}; STOCKS = m.stocks || {}; CANDS = m.cands || {}; renderBuildBar(); if (joined) send({ t: "join", ...choice }); return; }
-    if (m.t === "map") { const fresh = !MAP || MAP.seed !== m.map.seed; MAP = m.map; if (fresh) { buildDecor(); disp.clear(); } return; }
+    if (m.t === "hello") { WHEEL = m.wheel || []; COSM = m.cosmetics || {}; FREE_HATS = m.freeHats || []; SHOP = m.shop; SHOPS = m.shops || {}; DOME_R = m.domeR || 1000; ENH_COST = m.enhCost; ENH_CHANCE = m.enhChance; PIECES = m.pieces || {}; VEH = m.vehicles || {}; LEGENDS = m.legends || {}; ITEMS = m.items || {}; CROPS = m.crops || {}; CROP_KEYS = Object.keys(CROPS); SEED_PACK = m.seedPack || 3; GEAR = m.gear || {}; CARDS = m.cards || {}; LOCS = m.locs || {}; STOCKS = m.stocks || {}; CANDS = m.cands || {}; renderBuildBar(); if (joined) send({ t: "join", ...choice }); return; }
+    if (m.t === "map") { const fresh = !MAP || MAP.seed !== m.map.seed; if (fresh) CHUNK_WALLS = []; MAP = m.map; MAP.walls = MAP.walls.concat(CHUNK_WALLS); MAP.cv = chunkVer; if (fresh) { buildDecor(); disp.clear(); } return; }
+    if (m.t === "ck") { if (m.reset) CHUNK_WALLS = []; CHUNK_WALLS.push(...m.walls); chunkVer++; if (MAP && MAP.seed === m.seed) { MAP.walls = MAP.walls.filter((w) => !w.ck).concat(CHUNK_WALLS); MAP.cv = chunkVer; } return; }
     if (m.t === "s") onSnap(m);
   };
   ws.onclose = () => { setTimeout(connect, 1500); };
@@ -118,7 +122,7 @@ function onSnap(m) {
   for (const e of m.pe) handlePersonal(e);
   if (m.g.ph === "over" && prevPhase !== "over") showOver();
   if (m.g.ph !== "over") $("over").classList.add("hidden");
-  if (m.g.ph === "night" && shopOpen) toggleShop(false);
+  if (m.g.ph === "night" && shopOpen && (SHOPS[shopSid] || {}).hours === "day") toggleShop(false);
   renderStory();
   const mr = m.p.find((p) => p.id === me);
   if (mr && mr.rl > 0) { const end = T() + mr.rl; if (!rel.end || Math.abs(end - rel.end) > 0.15) rel.end = end; rel.total = mr.rt; rel.tried = !!mr.rtr; } else rel.end = 0;
@@ -207,6 +211,8 @@ function handlePersonal(e) {
   else if (e.k === "inv") { INV = e; if (invOpen) renderInv(); if (cardsOpen && !cgState) renderCards(); if (mktOpen) renderMarket(); }
   else if (e.k === "mkh") { mkHist = e.hist; if (mktOpen) renderMarket(); }
   else if (e.k === "cg") { if (e.close) { cgState = null; if (cardsOpen) toggleCards(false); } else { const fresh = !cgState || cgState.v.turn !== e.v.turn || e.v.over; cgState = e; if (fresh) cgStaged = []; toggleCards(true); renderCards(); } }
+  else if (e.k === "stall") { toggleStall(true); }
+  else if (e.k === "shop") { toggleShop(true, e.sid); }
   else if (e.k === "pack") { pushLim(toasts, { text: `New card${e.cards.length > 1 ? "s" : ""}: ${e.cards.map((c) => CARDS[c] ? CARDS[c].name : c).join(", ")}  [Y]`, color: "#ffd34d", t }, 4); sfx("perfect"); }
   else if (e.k === "wheel") { wheelAnim = { t0: t, from: wheelAngle, seg: e.seg }; sfx("banner"); toggleCasino(true); }
   else if (e.k === "casino") { casinoState = e; if (e.game || (e.spins && wantCasino)) { wantCasino = false; toggleCasino(true); } renderCasino(); }
@@ -254,11 +260,11 @@ addEventListener("keydown", (e) => {
   if (k === "enter") { openChat(); e.preventDefault(); return; }
   if (cardsOpen && k === "escape") { if (cgState && !cgState.v.over) return; toggleCards(false); if (cgState) send({ t: "cg", a: "quit" }); return; }
   if (cardsOpen && cgState) return; // mid-match: the table has your full attention
-  if (k === "b") { toggleSkills(false); toggleBuild(false); toggleShop(); return; }
+  if (k === "b") { if (shopOpen) toggleShop(false); else pushLim(toasts, { text: "Shops are places now: Vex's store and Haddock's armoury are just south of the Hearth, the casino's on your map. Walk up and press E.", color: "#ffd34d", t: T() }, 4); return; }
   if (k === "i") { toggleInv(); return; }
   if (k === "m") { toggleMarket(); return; }
   if (k === "y") { if (!cgState) toggleCards(); return; }
-  if (k === "escape" && (invOpen || mktOpen)) { toggleInv(false); toggleMarket(false); return; }
+  if (k === "escape" && (invOpen || mktOpen || stallOpen)) { toggleInv(false); toggleMarket(false); toggleStall(false); return; }
   if (k === "f" && S && (S.g.ph === "lobby" || S.g.ph === "over")) { send({ t: "ready" }); return; }
   if (k === "c" && !pred.swim && !flying()) { toggleBuild(); return; }
   if (building && /^[1-4]$/.test(k)) { buildKind = Object.keys(PIECES)[Number(k) - 1] || buildKind; renderBuildBar(); return; }
@@ -267,7 +273,8 @@ addEventListener("keydown", (e) => {
   if (k === "escape" && dlgOpen) { send({ t: "dlg", i: -1 }); return; }
   if (k === "k") { toggleSkills(); return; }
   if (k === "j") { toggleJournal(); return; }
-  if (k === "g") { toggleCasino(); return; }
+  if ((k === "g" || k === "x") && !e.repeat && !menusOpen() && !dlgOpen) { openRadial(k); return; }
+  if (radial && /^[1-8]$/.test(k)) { pickRadial(Number(k) - 1); return; }
   if (k === "v") { toggleWardrobe(); return; }
   if (k === "o") { toggleOptions(); return; }
   if (k === "escape" && optsOpen) { toggleOptions(false); return; }
@@ -277,7 +284,6 @@ addEventListener("keydown", (e) => {
   if (k === "alt" || k === "insert") e.preventDefault();
   if (e.repeat) return;
   keys.add(k);
-  if (k === "x") send({ t: "go" });
   if (k === "h") send({ t: "item", a: "quick" });
   if (k === "r") { const mine = S?.p.find((p) => p.id === me); if (mine && mine.rl && !mine.rtr) localReloadTry = T(); send({ t: "reload" }); }
   if (k === "e") send({ t: "use" });
@@ -292,14 +298,22 @@ addEventListener("keydown", (e) => {
   if (k === "z") send({ t: "elem" });
   if (k === "l") openClean();
 });
-addEventListener("keyup", (e) => { const k = e.key.toLowerCase(); keys.delete(k); if (k === "alt") e.preventDefault(); if (k === "tab") showScores = false; });
-addEventListener("blur", () => { keys.clear(); mouseDown = false; adsDown = false; showScores = false; });
+addEventListener("keyup", (e) => { const k = e.key.toLowerCase(); keys.delete(k); if (radial && radial.key === k) pickRadial(radial.sel); if (k === "alt") e.preventDefault(); if (k === "tab") showScores = false; });
+addEventListener("blur", () => { radial = null; keys.clear(); mouseDown = false; adsDown = false; showScores = false; });
 cv.addEventListener("mousemove", (e) => {
+  if (radial) { // steer the wheel instead of the camera
+    if (document.pointerLockElement === cv) { radial.ax += e.movementX; radial.ay += e.movementY; const d = Math.hypot(radial.ax, radial.ay); if (d > 120) { radial.ax *= 120 / d; radial.ay *= 120 / d; } }
+    else { radial.ax = e.clientX - innerWidth / 2; radial.ay = e.clientY - innerHeight / 2; }
+    const items = RADIAL[radial.key], d = Math.hypot(radial.ax, radial.ay);
+    radial.sel = d < 28 ? -1 : Math.round(((Math.atan2(radial.ay, radial.ax) + Math.PI / 2 + Math.PI * 4) % (Math.PI * 2)) / (Math.PI * 2 / items.length)) % items.length;
+    return;
+  }
   if (document.pointerLockElement === cv) { const sens = 0.0024 * OPTS.sens * (adsZoom > 1.05 ? 0.55 : 1); yaw += e.movementX * sens; pitch = Math.max(-1.45, Math.min(1.45, pitch - e.movementY * sens * (OPTS.invert ? -1 : 1))); return; }
   mouseX = e.clientX; mouseY = e.clientY;
 });
-const menusOpen = () => cleanOpen || hackOpen || optsOpen || chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || journalOpen || invOpen || mktOpen || cardsOpen || (S && S.g.ph === "over");
+const menusOpen = () => cleanOpen || hackOpen || optsOpen || chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || journalOpen || invOpen || mktOpen || cardsOpen || stallOpen || (S && S.g.ph === "over");
 cv.addEventListener("mousedown", (e) => {
+  if (radial) { if (e.button === 0) pickRadial(radial.sel); else radial = null; return; }
   if (use3d && document.pointerLockElement !== cv) { if (e.button === 0 && !menusOpen()) cv.requestPointerLock?.(); return; }
   if (building) { if (e.button === 0) { const g = ghostCell(); send({ t: "build", kind: buildKind, x: g.x, y: g.y }); } else toggleBuild(false); return; }
   if (e.button === 0) mouseDown = true;
@@ -311,6 +325,42 @@ cv.addEventListener("contextmenu", (e) => e.preventDefault());
 $("readyBtn").onclick = (e) => { e.target.blur(); send({ t: "ready" }); };
 $("overReady").onclick = (e) => { e.target.blur(); send({ t: "ready" }); };
 for (const b of document.querySelectorAll(".modeBtns button")) b.onclick = (e) => { e.target.blur(); send({ t: "mode", m: b.dataset.m }); };
+// ---------------------------------------------------------------- radial menus
+// Hold G for the screens, X for the actions; flick the mouse at one and let go (or press its number).
+// The old letter keys still work for anyone who learnt them.
+const RADIAL = {
+  g: [["🎒", "Bag", "I", () => toggleInv()], ["⭐", "Skills", "K", () => toggleSkills()], ["📓", "Journal", "J", () => toggleJournal()], ["🃏", "Cards", "Y", () => { if (!cgState) toggleCards(); }],
+      ["📈", "Stock market", "M", () => toggleMarket()], ["👒", "Wardrobe", "V", () => toggleWardrobe()], ["⚙️", "Options", "O", () => toggleOptions()]],
+  x: [["🍞", "Eat or drink", "H", () => send({ t: "item", a: "quick" })], ["💣", "Grenade", "3", () => send({ t: "throw", k: "gren" })], ["🔥", "Molotov", "4", () => send({ t: "throw", k: "molo" })],
+      ["🧽", "Clean your gun", "L", () => openClean()], ["🔨", "Build", "C", () => { if (!pred.swim && !flying()) toggleBuild(); }], ["🌀", "Switch shout", "Z", () => send({ t: "elem" })], ["🚽", "Relieve yourself", "", () => send({ t: "go" })]],
+};
+let radial = null;
+function openRadial(key) { radial = { key, sel: -1, ax: 0, ay: 0, t0: T() }; keys.clear(); mouseDown = false; }
+function pickRadial(i) {
+  const r = radial; radial = null;
+  if (r && i < 0 && r.key === "x" && T() - r.t0 < 0.25) return send({ t: "go" }); // a quick tap of X still means "I need to go"
+  if (!r || i < 0) return;
+  const it = RADIAL[r.key][i]; if (it) it[3]();
+}
+function drawRadial() {
+  if (!radial) return;
+  const items = RADIAL[radial.key], cx = VW / 2, cy = VH / 2, R = 120, n = items.length;
+  ctx.save();
+  ctx.fillStyle = "#0008"; ctx.beginPath(); ctx.arc(cx, cy, R + 52, 0, 7); ctx.fill();
+  items.forEach(([icon, name, key], i) => {
+    const a = i / n * Math.PI * 2 - Math.PI / 2, x = cx + Math.cos(a) * R, y = cy + Math.sin(a) * R, on = i === radial.sel;
+    ctx.fillStyle = on ? "#ffd34d" : "#2a3423"; ctx.beginPath(); ctx.arc(x, y, on ? 40 : 34, 0, 7); ctx.fill();
+    ctx.strokeStyle = on ? "#fff" : "#ffffff40"; ctx.lineWidth = 2; ctx.stroke();
+    text(icon, x, y - 6, on ? 24 : 20, "#fff", "center", false);
+    text(name, x, y + 20, 11, on ? "#1a1a1a" : "#e8e8d0", "center", false);
+    text(String(i + 1), x - 26, y - 24, 11, "#ffd34d");
+  });
+  const sel = items[radial.sel];
+  text(radial.key === "g" ? "SCREENS" : "ACTIONS", cx, cy - 10, 14, "#ffd34d");
+  text(sel ? (sel[2] ? `${sel[1]} · also ${sel[2]}` : sel[1]) : "flick to pick, let go", cx, cy + 10, 11, "#ddd");
+  ctx.strokeStyle = "#ffd34d"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + radial.ax * 0.6, cy + radial.ay * 0.6); ctx.stroke();
+  ctx.restore();
+}
 // ---------------------------------------------------------------- lobby
 let lobbySig = "";
 function renderLobby(m, hostId) {
@@ -431,21 +481,40 @@ function ghostCell() {
 
 function openChat() { chatting = true; keys.clear(); mouseDown = false; $("chatbox").classList.remove("hidden"); $("chatin").value = ""; $("chatin").focus(); }
 function closeChat() { chatting = false; $("chatbox").classList.add("hidden"); $("chatin").blur(); cv.focus(); }
-function toggleShop(force) {
+// every counter in town opens this panel: E at Vex's store, Haddock's armoury, the casino or the Hearth itself
+function toggleShop(force, sid) {
   shopOpen = force === undefined ? !shopOpen : force;
-  if (shopOpen && S && S.g.ph === "night") { shopOpen = false; pushLim(toasts, { text: "The shop is shut at night.", color: "#f88", t: T() }, 4); }
+  if (sid) { if (sid !== shopSid) shopTab = null; shopSid = sid; }
   $("shop").classList.toggle("hidden", !shopOpen);
-  if (shopOpen) { if (casinoOpen) toggleCasino(false); if (wardOpen) toggleWardrobe(false); keys.clear(); mouseDown = false; renderShop(); }
+  if (shopOpen) { if (casinoOpen) toggleCasino(false); if (wardOpen) toggleWardrobe(false); toggleStall(false); keys.clear(); mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); renderShop(true); }
 }
-let shopTab = "arms", shopList = [];
-const SHOP_TABS = [["arms", "Weapons"], ["gear", "Gear"], ["food", "Food & medicine"], ["farm", "Farm & fun"]];
-function renderShop() {
+let shopTab = null, shopList = [];
+const SHOP_TABS = [["arms", "Weapons"], ["gear", "Gear"], ["food", "Food & medicine"], ["farm", "Farm & fun"], ["dome", "The Dome"]];
+const SHOP_BLURB = {
+  general: "\"Everything a body needs. Mostly tins.\" Open by day.",
+  armoury: "\"Sign here. No, there. Don't point that at me.\" Open by day.",
+  casino: "\"The house always wins, sweetheart. But it's a lovely house.\" Open all hours.",
+  hearth: "Feed it, fix it, and finish the dome before the bombs come.",
+};
+function shopWallC(sid) { return sid === "hearth" ? MAP && MAP.hearth : MAP && MAP.walls.find((w) => w.kind === "shop" && w.sid === sid); }
+let shopSig = "";
+function renderShop(force) {
   if (!SHOP) return;
   const mine = S?.p.find((p) => p.id === me);
-  $("shopgold").textContent = mine ? `You have ${mine.g}g and ${mine.sd} seeds${INV ? ` · bag ${INV.bag.length}/${INV.size}` : ""}` : "";
-  $("shopitems").innerHTML = `<div class="tabs">${SHOP_TABS.map(([k, l]) => `<button class="tab${k === shopTab ? " on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div>`;
-  for (const b of $("shopitems").querySelectorAll(".tab")) b.onclick = (e) => { e.stopPropagation(); shopTab = b.dataset.tab; renderShop(); };
-  shopList = Object.keys(SHOP).filter((id) => (SHOP[id].cat || "arms") === shopTab);
+  const sig = JSON.stringify([shopSid, shopTab, mine && mine.g, mine && mine.we, mine && mine.hoe, mine && mine.wn, S && S.g.dome, casinoState.spins, INV && INV.bag.length]);
+  if (sig === shopSig && !force) return; // only redraw when something changed, so clicks don't land on a vanished button
+  shopSig = sig;
+  const tabs = SHOP_TABS.filter(([k]) => Object.values(SHOP).some((it) => it.shop === shopSid && (it.cat || "arms") === k));
+  if (!tabs.some(([k]) => k === shopTab)) shopTab = tabs[0] ? tabs[0][0] : null;
+  $("shopname").textContent = (SHOPS[shopSid] || {}).name || "Shop";
+  let top = `<div class="tag">${SHOP_BLURB[shopSid] || ""}</div>`;
+  if (shopSid === "hearth" && S && S.g.dome) { const [have, cost] = S.g.dome, k = Math.min(1, have / cost); top += `<div class="dome"><b>Hearth Dome: ${have}/${cost}g</b>${k >= 1 ? " &middot; UP. It will stop one nuke, then drop to half." : S.g.n < 5 ? ` &middot; the radio says the bombs come after day 5` : " &middot; the bombs can fall any night now"}<div class="bar"><i style="width:${(k * 100).toFixed(1)}%"></i></div></div>`; }
+  if (shopSid === "casino" && mine) top += `<div class="item tables"><span>🎰 Go to the tables${casinoState.spins ? ` (${casinoState.spins} spin${casinoState.spins > 1 ? "s" : ""} to use)` : ""}: the wheel, blackjack, poker</span><span>›</span></div>`;
+  $("shopgold").textContent = mine ? `You have ${mine.g}g${INV ? ` · bag ${INV.bag.length}/${INV.size}` : ""}` : "";
+  $("shopitems").innerHTML = top + (tabs.length > 1 ? `<div class="tabs">${tabs.map(([k, l]) => `<button class="tab${k === shopTab ? " on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div>` : "");
+  for (const b of $("shopitems").querySelectorAll(".tab")) b.onclick = (e) => { e.stopPropagation(); shopTab = b.dataset.tab; renderShop(true); };
+  const tb = $("shopitems").querySelector(".tables"); if (tb) tb.onclick = () => { toggleShop(false); wantCasino = false; toggleCasino(true); };
+  shopList = Object.keys(SHOP).filter((id) => SHOP[id].shop === shopSid && (SHOP[id].cat || "arms") === shopTab);
   shopList.map((id) => [id, SHOP[id]]).forEach(([id, it], i) => {
     const disc = 1 - 0.1 * ((mine && mine.sk.haggler) || 0);
     let label = it.name, cost = Math.round(it.cost * disc) + "g";
@@ -663,7 +732,9 @@ function renderJournal() {
     lg = `<h3>Reputation</h3><div class="tag">${S.g.legend ? `At the Reckoning they named you <b style="color:${LEGENDS[S.g.legend].color}">${esc(LEGENDS[S.g.legend].title)}</b>. ` : ""}Right now the valley sees you as <b style="color:${L ? L.color : "#aaa"}">${L ? esc(L.title) : "nobody in particular"}</b>. It keeps watching.</div>` +
       Object.entries(LEGENDS).map(([k2, v]) => `<div class="lg"><small style="color:${v.color}">${esc(v.title)}</small><div class="bar"><div style="width:${Math.round(100 * S.g.deeds[k2] / max)}%;background:${v.color}"></div></div></div>`).join("");
   }
-  $("journalBody").innerHTML = `<h3>Quests</h3>${qs}<h3>Evidence (${S.g.clues.length}/5)</h3>${cl}${lg}`;
+  let war = "";
+  if (S.g.dome) { const [h, k] = S.g.dome, left = 5 - S.g.n; war = `<h3>The war</h3><div class="jq${h >= k ? " done" : ""}"><b>Raise the Hearth Dome</b> <span>${h}/${k}g</span><small>${h >= k ? "It's up. Stand inside it (near the Hearth) when the siren goes. Each bomb drains it by half, so keep it topped up." : left > 0 ? `The wireless says the bombs come after day 5 (${left} day${left === 1 ? "" : "s"} from now). No Dome, no Hearth. Pay in at the Hearth [E].` : "The bombs can fall any night now. Pay in at the Hearth [E]. If the siren goes before it's full, get to the bunker or the bottom of the lake."}</small></div>`; }
+  $("journalBody").innerHTML = `${war}<h3>Quests</h3>${qs}<h3>Evidence (${S.g.clues.length}/5)</h3>${cl}${lg}`;
 }
 setInterval(() => { if (journalOpen) renderJournal(); }, 500);
 
@@ -712,17 +783,25 @@ function flyInput() {
   if (gp.mapping === "standard") return { f: [-dz(gp.axes[1]), dz(gp.axes[0]), dz(gp.axes[2]), (gp.buttons[7]?.value || 0) - (gp.buttons[6]?.value || 0)], fire: b(5), alt: b(4), exit: b(3) };
   return { f: [ax("pitch"), ax("roll"), ax("yaw"), ax("thr")], fire: b(0), alt: b(1), exit: b(2) };
 }
-setInterval(() => { if (shopOpen) renderShop(); }, 250);
+setInterval(() => {
+  if (!shopOpen) return;
+  const w = shopWallC(shopSid);
+  if (w && Math.max(Math.abs(pred.x - (w.x + w.w / 2)) - w.w / 2, Math.abs(pred.y - (w.y + w.h / 2)) - w.h / 2) > 150) return toggleShop(false); // walked off
+  if (S && S.g.ph === "night" && (SHOPS[shopSid] || {}).hours === "day") { toggleShop(false); return pushLim(toasts, { text: "Closing time. Out you go.", color: "#f88", t: T() }, 4); }
+  renderShop();
+}, 250);
 
 // ---------------------------------------------------------------- prediction (own player)
 // the same physics as the server (move.js), run locally so movement feels instant; the server's answer pulls us back gently
 const pred = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, gr: true, pk: 0, tt: 0, init: false, srv: null, dashCd: 0 };
 let boxCache = { key: "", boxes: [] };
-function worldBoxes() {
-  const key = (MAP ? MAP.seed + ":" + MAP.walls.length + ":" + (MAP.ver || 0) : "") + ":" + (S ? S.b.map((b) => b[0]).join(",") : "");
+function worldBoxes() { // everything solid within reach of you (the wild has a lot of trees)
+  const cx = Math.floor(pred.x / 400), cy = Math.floor(pred.y / 400);
+  const key = (MAP ? MAP.seed + ":" + MAP.walls.length + ":" + (MAP.ver || 0) + ":" + (MAP.cv || 0) : "") + ":" + (S ? S.b.map((b) => b[0]).join(",") : "") + ":" + cx + "," + cy;
   if (key !== boxCache.key) {
     const solid = S ? S.b.filter((b) => PIECES[b[1]] && PIECES[b[1]].solid).map((b) => ({ x: b[2], y: b[3], w: 40, h: 40, z0: 0, z1: PIECES[b[1]].z1 || 10, kind: "built" })) : [];
-    boxCache = { key, boxes: [...MAP.walls, ...solid] };
+    const x0 = cx * 400 - 1200, x1 = cx * 400 + 1600, y0 = cy * 400 - 1200, y1 = cy * 400 + 1600;
+    boxCache = { key, boxes: [...MAP.walls.filter((w) => w.x < x1 && w.x + w.w > x0 && w.y < y1 && w.y + w.h > y0), ...solid] };
   }
   return boxCache.boxes;
 }
@@ -736,7 +815,7 @@ function localDodge() {
   pred.vx = dx * spd; pred.vy = dy * spd; if (!pred.gr && pred.vz < 0) pred.vz = 0;
   pred.dashCd = t + (mine.cl === "rogue" ? 0.8 : 1.3);
 }
-function collide(e, r) { MV.pushOut(e, r, worldBoxes(), MAP.W, MAP.H); }
+function collide(e, r) { MV.pushOut(e, r, worldBoxes(), BWc(), BHc()); }
 function stepPred(dt) {
   const mine = S?.p.find((p) => p.id === me);
   if (!mine || !MAP) return;
@@ -746,7 +825,7 @@ function stepPred(dt) {
   let left = Math.min(dt, 0.1);
   while (left > 1e-4) {
     const h = Math.min(left, 1 / 60); left -= h;
-    MV.step(pred, { keys: keyMask(), yaw: use3d ? yaw : aimAngle(), rel: use3d }, h, { sp: mine.sp, boxes: worldBoxes(), W: MAP.W, H: MAP.H, frozen: !!mine.go || dlgOpen || !!mine.fz || !!mine.cg || mine.air === 3 });
+    MV.step(pred, { keys: keyMask(), yaw: use3d ? yaw : aimAngle(), rel: use3d }, h, { sp: mine.sp, boxes: worldBoxes(), W: BWc(), H: BHc(), frozen: !!mine.go || dlgOpen || !!mine.fz || !!mine.cg || mine.air === 3 });
   }
   // gently pull toward the server's opinion (projected forward a little, since it's slightly out of date)
   const s = pred.srv;
@@ -950,34 +1029,45 @@ function drawNpcHat(hat, x, y) {
 function drawMinimap(mine, t) {
   if (!S || S.g.ph === "lobby" && !S.g.zone) return;
   const mw = 190, mh = mw * MAP.H / MAP.W, mx = 12, my = 12, k = mw / MAP.W;
+  // out in the wild the map follows you; in town it shows the whole town
+  const inTown = pred.x > 0 && pred.y > 0 && pred.x < MAP.W && pred.y < MAP.H, ox = openWorld() && !inTown ? pred.x - MAP.W / 2 : 0, oy = openWorld() && !inTown ? pred.y - MAP.H / 2 : 0;
   ctx.fillStyle = "#000b"; ctx.fillRect(mx - 3, my - 3, mw + 6, mh + 6);
-  ctx.fillStyle = "#3f6030"; ctx.fillRect(mx, my, mw, mh);
-  ctx.fillStyle = "#0006"; for (const w of MAP.walls) if (w.z1 > 0 && w.kind !== "hwall" && w.kind !== "furn") ctx.fillRect(mx + w.x * k, my + w.y * k, Math.max(1, w.w * k), Math.max(1, w.h * k));
-  for (const w of MAP.walls) if (w.kind === "lake") { ctx.fillStyle = "#2a6a8e"; ctx.fillRect(mx + w.x * k, my + w.y * k, w.w * k, w.h * k); }
-  for (const [hx, hy, hr, lk] of S.g.hot || []) if (!lk) { ctx.fillStyle = "rgba(150,255,60,0.35)"; ctx.beginPath(); ctx.arc(mx + hx * k, my + hy * k, Math.max(2, hr * k), 0, 7); ctx.fill(); }
-  for (const w of MAP.walls) if (w.kind === "bunker") { ctx.fillStyle = S.g.nuke && Math.floor(t * 4) % 2 ? "#ff4030" : "#ffd34d"; ctx.fillRect(mx + w.x * k - 1, my + w.y * k - 1, w.w * k + 2, w.h * k + 2); }
-  if (S.g.mode !== "royale") { const h = MAP.hearth; ctx.fillStyle = "#ff8a2a"; ctx.fillRect(mx + h.x * k, my + h.y * k, h.w * k, h.h * k); }
+  ctx.fillStyle = "#3a5a2c"; ctx.fillRect(mx, my, mw, mh);
+  ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
+  if (ox || oy) { ctx.fillStyle = "#3f6030"; ctx.fillRect(mx + (0 - ox) * k, my + (0 - oy) * k, MAP.W * k, MAP.H * k); ctx.strokeStyle = "#ffe9a066"; ctx.lineWidth = 1; ctx.strokeRect(mx + (0 - ox) * k, my + (0 - oy) * k, MAP.W * k, MAP.H * k); }
+  else { ctx.fillStyle = "#3f6030"; ctx.fillRect(mx, my, mw, mh); }
+  ctx.fillStyle = "#0006"; for (const w of MAP.walls) if (w.z1 > 0 && w.kind !== "hwall" && w.kind !== "furn" && w.x + w.w > ox && w.x < ox + MAP.W && w.y + w.h > oy && w.y < oy + MAP.H) ctx.fillRect(mx + (w.x - ox) * k, my + (w.y - oy) * k, Math.max(1, w.w * k), Math.max(1, w.h * k));
+  for (const w of MAP.walls) if (w.kind === "lake") { ctx.fillStyle = "#2a6a8e"; ctx.fillRect(mx + (w.x - ox) * k, my + (w.y - oy) * k, w.w * k, w.h * k); }
+  for (const [hx, hy, hr, lk] of S.g.hot || []) if (!lk) { ctx.fillStyle = "rgba(150,255,60,0.35)"; ctx.beginPath(); ctx.arc(mx + (hx - ox) * k, my + (hy - oy) * k, Math.max(2, hr * k), 0, 7); ctx.fill(); }
+  for (const w of MAP.walls) if (w.kind === "bunker") { ctx.fillStyle = S.g.nuke && Math.floor(t * 4) % 2 ? "#ff4030" : "#ffd34d"; ctx.fillRect(mx + (w.x - ox) * k - 1, my + (w.y - oy) * k - 1, w.w * k + 2, w.h * k + 2); }
+  if (S.g.mode !== "royale") {
+    const h = MAP.hearth; ctx.fillStyle = "#ff8a2a"; ctx.fillRect(mx + (h.x - ox) * k, my + (h.y - oy) * k, h.w * k, h.h * k);
+    if (S.g.dome && S.g.dome[0] >= S.g.dome[1]) { ctx.strokeStyle = "#9fe0ffaa"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(mx + (h.x + h.w / 2 - ox) * k, my + (h.y + h.h / 2 - oy) * k, DOME_R * k, 0, 7); ctx.stroke(); }
+    for (const w of MAP.walls) if (w.kind === "shop") text(w.sid === "casino" ? "🎰" : w.sid === "armoury" ? "🔫" : "🛒", mx + (w.x + w.w / 2 - ox) * k, my + (w.y + w.h / 2 - oy) * k, 11, "#fff", "center", false);
+    const st = MAP.walls.find((w) => w.kind === "stall"); if (st) text("🥕", mx + (st.x + st.w / 2 - ox) * k, my + (st.y + st.h / 2 - oy) * k, 10, "#fff", "center", false);
+  }
   ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
   if (S.g.zone) {
     const [cx, cy, r, tcx, tcy, tr] = S.g.zone;
-    ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.arc(mx + cx * k, my + cy * k, Math.max(0.5, r * k), 0, 7, true); ctx.fillStyle = "#7828a080"; ctx.fill("evenodd");
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(mx + tcx * k, my + tcy * k, Math.max(0.5, tr * k), 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.arc(mx + (cx - ox) * k, my + (cy - oy) * k, Math.max(0.5, r * k), 0, 7, true); ctx.fillStyle = "#7828a080"; ctx.fill("evenodd");
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(mx + (tcx - ox) * k, my + (tcy - oy) * k, Math.max(0.5, tr * k), 0, 7); ctx.stroke(); ctx.setLineDash([]);
   }
-  if (S.g.drop && S.g.drop[4] < 1) { const [x0, y0, x1, y1, dk] = S.g.drop; ctx.strokeStyle = "#ffd34d"; ctx.beginPath(); ctx.moveTo(mx + x0 * k, my + y0 * k); ctx.lineTo(mx + x1 * k, my + y1 * k); ctx.stroke(); ctx.fillStyle = "#ffd34d"; ctx.beginPath(); ctx.arc(mx + (x0 + (x1 - x0) * dk) * k, my + (y0 + (y1 - y0) * dk) * k, 3, 0, 7); ctx.fill(); }
+  if (S.g.drop && S.g.drop[4] < 1) { const [x0, y0, x1, y1, dk] = S.g.drop; ctx.strokeStyle = "#ffd34d"; ctx.beginPath(); ctx.moveTo(mx + (x0 - ox) * k, my + (y0 - oy) * k); ctx.lineTo(mx + (x1 - ox) * k, my + (y1 - oy) * k); ctx.stroke(); ctx.fillStyle = "#ffd34d"; ctx.beginPath(); ctx.arc(mx + ((x0 + (x1 - x0) * dk) - ox) * k, my + ((y0 + (y1 - y0) * dk) - oy) * k, 3, 0, 7); ctx.fill(); }
   ctx.restore();
-  if (MAP.npcs && S.g.mode !== "royale") for (const n of MAP.npcs) { ctx.fillStyle = n.guest ? "#ff8fc8" : "#e0c0ff"; ctx.fillRect(mx + n.x * k - 1.5, my + n.y * k - 1.5, 3, 3); }
-  if (MAP.pitch) { ctx.strokeStyle = "#ffffffaa"; ctx.lineWidth = 1; ctx.strokeRect(mx + MAP.pitch.x * k, my + MAP.pitch.y * k, MAP.pitch.w * k, MAP.pitch.h * k); }
-  if (S.ball) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(mx + S.ball[0] * k, my + S.ball[1] * k, 2, 0, 7); ctx.fill(); }
-  for (const [, cx2, cy2] of S.ca || []) { ctx.fillStyle = "#7dffb0"; ctx.fillRect(mx + cx2 * k - 2, my + cy2 * k - 2, 4, 4); }
-  if (S.g.dis && S.g.dis.k === "tornado") text("🌪", mx + S.g.dis.x * k, my + S.g.dis.y * k, 12, "#ccc");
-  for (const v of S.vh) { ctx.fillStyle = AIR[v[1]] ? "#ffd34d" : "#9fe0ff"; ctx.fillRect(mx + v[2] * k - 2, my + v[3] * k - 2, 4, 4); }
+  if (MAP.npcs && S.g.mode !== "royale") for (const n of MAP.npcs) { ctx.fillStyle = n.guest ? "#ff8fc8" : "#e0c0ff"; ctx.fillRect(mx + (n.x - ox) * k - 1.5, my + (n.y - oy) * k - 1.5, 3, 3); }
+  if (MAP.pitch) { ctx.strokeStyle = "#ffffffaa"; ctx.lineWidth = 1; ctx.strokeRect(mx + (MAP.pitch.x - ox) * k, my + (MAP.pitch.y - oy) * k, MAP.pitch.w * k, MAP.pitch.h * k); }
+  if (S.ball) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(mx + (S.ball[0] - ox) * k, my + (S.ball[1] - oy) * k, 2, 0, 7); ctx.fill(); }
+  for (const [, cx2, cy2] of S.ca || []) { ctx.fillStyle = "#7dffb0"; ctx.fillRect(mx + (cx2 - ox) * k - 2, my + (cy2 - oy) * k - 2, 4, 4); }
+  if (S.g.dis && S.g.dis.k === "tornado") text("🌪", mx + (S.g.dis.x - ox) * k, my + (S.g.dis.y - oy) * k, 12, "#ccc");
+  for (const v of S.vh) { ctx.fillStyle = AIR[v[1]] ? "#ffd34d" : "#9fe0ff"; ctx.fillRect(mx + (v[2] - ox) * k - 2, my + (v[3] - oy) * k - 2, 4, 4); }
   for (const p of S.p) {
     if (p.d || p.air === 1 || p.air === 3) continue;
     if (S.g.mode === "royale" && p.id !== me) continue; // no wallhacks in the Royale
     const x = p.id === me ? pred.x : p.x, y = p.id === me ? pred.y : p.y;
-    ctx.fillStyle = p.id === me ? "#fff" : p.c; ctx.beginPath(); ctx.arc(mx + x * k, my + y * k, p.id === me ? 3.5 : 2.5, 0, 7); ctx.fill();
+    ctx.fillStyle = p.id === me ? "#fff" : p.c; ctx.beginPath(); ctx.arc(mx + (x - ox) * k, my + (y - oy) * k, p.id === me ? 3.5 : 2.5, 0, 7); ctx.fill();
   }
-  if (S.g.boss) { const bz = S.z.find((z) => z[0] === S.g.boss); if (bz) { ctx.fillStyle = "#f33"; ctx.beginPath(); ctx.arc(mx + bz[2] * k, my + bz[3] * k, 4, 0, 7); ctx.fill(); } }
+  if (S.g.boss) { const bz = S.z.find((z) => z[0] === S.g.boss); if (bz) { ctx.fillStyle = "#f33"; ctx.beginPath(); ctx.arc(mx + (bz[2] - ox) * k, my + (bz[3] - oy) * k, 4, 0, 7); ctx.fill(); } }
+  ctx.restore();
 }
 function drawEyes(style, x, y, t, id) {
   ctx.fillStyle = "#111";
@@ -1117,11 +1207,11 @@ function render3d(mine, t, dt) {
   for (let i = fx.length - 1; i >= 0; i--) if ((t - fx[i].t0) / fx[i].dur >= 1) fx.splice(i, 1);
   const sl = slashT.get(me), moving = Math.hypot(pred.vx, pred.vy) > 30 && pred.gr;
   const vm = ownView && mine && !mine.d ? { type: mine.w, rar: mine.wr, show: true, kick: Math.max(0, 1 - (t - lastShotT) / 0.12), bob: moving ? t * 11 : 0, ads: adsK, swing: sl ? Math.min(1, (t - sl) / 0.25) : 1 } : null;
-  R3D.frame({ S, MAP, t, dt, me, pred, aimYaw, aimPitch, fp: ownView, cam, fx, messes, hearthHitT, ghost, vm, slashT, nukeFx });
+  R3D.frame({ S, MAP, t, dt, me, pred, aimYaw, aimPitch, fp: ownView, cam, fx, messes, hearthHitT, ghost, vm, slashT, nukeFx, cropKeys: CROP_KEYS, domeR: DOME_R });
   overlay3d(mine, t, dt);
   if (t - hurtFlash < 0.3) { const g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VH * 0.8); g.addColorStop(0, "#f000"); g.addColorStop(1, `rgba(200,0,0,${0.5 * (1 - (t - hurtFlash) / 0.3)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
   if (t - fogT < 1.2) { ctx.fillStyle = `rgba(120,40,160,${0.25 * (1 - (t - fogT) / 1.2)})`; ctx.fillRect(0, 0, VW, VH); }
-  drawHud(mine, t);
+  drawHud(mine, t); drawRadial();
   drawMinimap(mine, t);
   drawCrosshair(mine, t);
   if (mine && document.pointerLockElement !== cv && !menusOpen()) { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 170, VH / 2 + 40, 340, 34, 8); ctx.fill(); text("Click to look around  ·  T switches view", VW / 2, VH / 2 + 57, 15, "#ffd34d"); }
@@ -1163,13 +1253,14 @@ function overlay3d(mine, t, dt) {
     if (mine && (!mine.nt.includes(n.id) || mine.qr.includes(n.id))) { const q = mine.qr.includes(n.id); text(q ? "?" : "!", s.x, s.y - 20 + Math.sin(t * 4) * 3, 24, q ? "#7dffb0" : "#ffd34d"); }
     if (n.quips && Math.sin(t * 1.3 + n.x) > 0.6) text(n.quips[Math.floor(t / 4.8 + n.x) % n.quips.length], s.x, s.y - 40, 14, "#ff5050");
   }
+  if (MAP.keepers) for (const n of MAP.keepers) { if (n.hours === "day" && S.g.ph === "night") continue; const s = P(n.x, n.y, 72); if (s && s.d < 900) { text(n.name, s.x, s.y, 12, "#ffd34d"); text(n.role, s.x, s.y + 13, 10, "#d8c8a0"); } }
   for (const [, type, zx, zy, hp, , zh] of S.z) {
     if (hp >= 100 || type === "b") continue;
     const r = ZR[type] || 15, s = P(zx, zy, (zh || 0) + r * 3.9);
     if (s && s.d < 900) bar(s.x - 16, s.y, 32, 4, hp / 100, "#e44");
   }
   const hw = MAP.hearth, hs = P(hw.x + hw.w / 2, hw.y + hw.h / 2, 190);
-  if (hs && S.g.mode !== "royale") { text("THE HEARTH", hs.x, hs.y - 12, 14, "#ffe9a0"); bar(hs.x - 60, hs.y, 120, 8, S.g.hh / S.g.hm, S.g.hh / S.g.hm > 0.3 ? "#e8703a" : "#ff3030"); }
+  if (hs && S.g.mode !== "royale") { text("THE HEARTH", hs.x, hs.y - 12, 14, "#ffe9a0"); bar(hs.x - 60, hs.y, 120, 8, S.g.hh / S.g.hm, S.g.hh / S.g.hm > 0.3 ? "#e8703a" : "#ff3030"); if (S.g.dome) { bar(hs.x - 60, hs.y + 10, 120, 5, S.g.dome[0] / S.g.dome[1], "#7cc8ff"); if (hs.d < 900) text(S.g.dome[0] >= S.g.dome[1] ? "DOME UP" : `DOME ${S.g.dome[0]}/${S.g.dome[1]}g`, hs.x, hs.y + 22, 10, "#9fe0ff"); } }
   for (const [, , vx, vy, , vhp] of S.vh) if (vhp < 100) { const s = P(vx, vy, 70); if (s) bar(s.x - 26, s.y, 52, 5, vhp / 100, vhp > 35 ? "#8fd35a" : "#e84a3a"); }
   for (const [, kind, bx, by, hp] of S.b) if (hp < 100 && kind !== "spikes") { const s = P(bx + 20, by + 20, 80); if (s && s.d < 700) bar(s.x - 18, s.y, 36, 4, hp / 100, "#e8a33a"); }
   if (ghost3d && PIECES[buildKind]) { const s = P(ghost3d.x + 20, ghost3d.y + 20, 50); if (s) text(PIECES[buildKind].name, s.x, s.y, 12, "#fff"); }
@@ -1234,7 +1325,17 @@ function render() {
   const worldXf = () => { if (zoom !== 1) { ctx.translate(VW / 2, VH / 2); ctx.scale(zoom, zoom); ctx.translate(-cam.x, -cam.y); } else ctx.translate(ox, oy); };
   worldXf();
 
-  // ground
+  // ground (and the wild past the hedge, as far as you can see)
+  const vx0 = cam.x - VW / 2 / zoom - 40, vy0 = cam.y - VH / 2 / zoom - 40, vx1 = cam.x + VW / 2 / zoom + 40, vy1 = cam.y + VH / 2 / zoom + 40;
+  if (openWorld()) {
+    ctx.fillStyle = "#47703a"; ctx.fillRect(vx0, vy0, vx1 - vx0, vy1 - vy0);
+    for (let gx = Math.floor(vx0 / 160); gx <= vx1 / 160; gx++) for (let gy = Math.floor(vy0 / 160); gy <= vy1 / 160; gy++) { // tufts out in the wild
+      const h = Math.abs(Math.imul(gx, 73856093) ^ Math.imul(gy, 19349663) ^ MAP.seed) % 1000, x = gx * 160 + (h % 140), y = gy * 160 + ((h * 7) % 140);
+      if (x > 0 && y > 0 && x < MAP.W && y < MAP.H) continue;
+      if (h < 700) { ctx.strokeStyle = "#3a6228"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 4, y); ctx.lineTo(x - 2, y - 7); ctx.moveTo(x, y); ctx.lineTo(x + 1, y - 9); ctx.moveTo(x + 4, y); ctx.lineTo(x + 5, y - 6); ctx.stroke(); }
+      else { ctx.fillStyle = ["#e86", "#fd5", "#c8f", "#fff"][h % 4]; ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill(); }
+    }
+  }
   ctx.fillStyle = "#4f7a3a"; ctx.fillRect(0, 0, MAP.W, MAP.H);
   ctx.fillStyle = "#6a5a3a"; // dirt paths
   ctx.fillRect(MAP.W / 2 - 40, 0, 80, MAP.H); ctx.fillRect(0, MAP.H / 2 - 40, MAP.W, 80);
@@ -1243,7 +1344,7 @@ function render() {
     if (d.k === "tuft") { ctx.strokeStyle = "#3d6a2c"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(d.x - 4, d.y); ctx.lineTo(d.x - 2, d.y - 7); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x + 1, d.y - 9); ctx.moveTo(d.x + 4, d.y); ctx.lineTo(d.x + 5, d.y - 6); ctx.stroke(); }
     else { ctx.fillStyle = d.c; ctx.beginPath(); ctx.arc(d.x, d.y, 3, 0, 7); ctx.fill(); }
   }
-  ctx.strokeStyle = "#2a3d20"; ctx.lineWidth = 8; ctx.strokeRect(0, 0, MAP.W, MAP.H);
+  if (!openWorld()) { ctx.strokeStyle = "#2a3d20"; ctx.lineWidth = 8; ctx.strokeRect(0, 0, MAP.W, MAP.H); }
   if (MAP.pitch) { // the football pitch: the only thing in the valley that calms anyone down
     const p = MAP.pitch; ctx.fillStyle = "#5a8a40"; ctx.fillRect(p.x, p.y, p.w, p.h);
     ctx.strokeStyle = "#f0f0f0cc"; ctx.lineWidth = 3; ctx.strokeRect(p.x, p.y, p.w, p.h);
@@ -1254,18 +1355,22 @@ function render() {
 
   // plots
   MAP.plots.forEach((pl, i) => {
-    const st = S.pl[i];
+    const st = S.pl[i] % 4, cr = CROP_KEYS[S.pl[i] >> 2] || "turnip";
     ctx.fillStyle = "#5b3a1e"; ctx.fillRect(pl.x - 26, pl.y - 26, 52, 52);
     ctx.fillStyle = "#6e4826"; for (let r = -18; r <= 18; r += 12) ctx.fillRect(pl.x - 22, pl.y + r - 2, 44, 4);
     if (st === 1) { ctx.fillStyle = "#c9a36a"; ctx.beginPath(); ctx.arc(pl.x, pl.y, 4, 0, 7); ctx.fill(); }
     else if (st === 2) { ctx.strokeStyle = "#7fd34d"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(pl.x, pl.y + 8); ctx.lineTo(pl.x, pl.y - 6); ctx.stroke(); ctx.fillStyle = "#7fd34d"; ctx.beginPath(); ctx.ellipse(pl.x - 6, pl.y - 6, 6, 3, -0.5, 0, 7); ctx.ellipse(pl.x + 6, pl.y - 6, 6, 3, 0.5, 0, 7); ctx.fill(); }
-    else if (st === 3) {
-      const bob = Math.sin(t * 3 + i) * 2;
-      ctx.fillStyle = "#e9e0f0"; ctx.beginPath(); ctx.arc(pl.x, pl.y + 4, 12, 0, 7); ctx.fill();
-      ctx.fillStyle = "#b35fd0"; ctx.beginPath(); ctx.arc(pl.x, pl.y + 1, 12, Math.PI * 1.05, Math.PI * 1.95); ctx.fill();
-      ctx.fillStyle = "#4cbf3a"; ctx.beginPath(); ctx.ellipse(pl.x - 5, pl.y - 12 + bob, 4, 9, -0.4, 0, 7); ctx.ellipse(pl.x + 5, pl.y - 12 + bob, 4, 9, 0.4, 0, 7); ctx.fill();
-    }
+    else if (st === 3) drawCrop2d(cr, pl.x, pl.y, t, i);
   });
+
+  // the shopkeepers (gone home at night)
+  if (MAP.keepers) for (const n of MAP.keepers) {
+    if (n.hours === "day" && S.g.ph === "night") continue;
+    ctx.fillStyle = "#0004"; ctx.beginPath(); ctx.ellipse(n.x, n.y + 14, 16, 6, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = n.color; ctx.beginPath(); ctx.arc(n.x, n.y, 17, 0, 7); ctx.fill(); ctx.strokeStyle = "#0008"; ctx.lineWidth = 2; ctx.stroke();
+    drawEyes("dot", n.x, n.y - 3, t, 0); drawNpcHat(n.hat, n.x, n.y);
+    text(n.name, n.x, n.y - 38, 12, "#ffd34d"); text(n.role, n.x, n.y - 25, 10, "#d8c8a0");
+  }
 
   // messes. Someone has to clean these up. Nobody will.
   for (const m of messes) {
@@ -1313,9 +1418,11 @@ function render() {
   }
   // walls / buildings
   const inside = MAP.walls.find((w) => w.kind === "house" && pred.x > w.x && pred.x < w.x + w.w && pred.y > w.y && pred.y < w.y + w.h && pred.z < w.z0);
-  const walls2d = [...MAP.walls].sort((a, b) => (a.z1 || 0) - (b.z1 || 0)); // low things first, so towers and catwalks sit on top
+  const walls2d = MAP.walls.filter((w) => !(w.x > vx1 + 60 || w.y > vy1 + 60 || w.x + w.w < vx0 - 60 || w.y + w.h < vy0 - 60)).sort((a, b) => (a.z1 || 0) - (b.z1 || 0)); // low things first, so towers and catwalks sit on top
   for (const w of walls2d) {
     if (w.kind === "hearth" || w.kind === "lake" || w.kind === "bank" || w.z1 <= 0) continue;
+    if (w.x > vx1 + 60 || w.y > vy1 + 60 || w.x + w.w < vx0 - 60 || w.y + w.h < vy0 - 60) continue; // off screen
+    if (w.kind === "ruin") { ctx.fillStyle = "#00000040"; ctx.fillRect(w.x + 4, w.y + 6, w.w, w.h); ctx.fillStyle = "#8a8478"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#a29c90"; for (let i = 0; i < Math.max(w.w, w.h) / 20; i++) ctx.fillRect(w.w > w.h ? w.x + i * 20 + 2 : w.x + 2, w.w > w.h ? w.y + 2 : w.y + i * 20 + 2, w.w > w.h ? 16 : w.w - 4, w.w > w.h ? w.h - 4 : 16); continue; }
     if (w.kind === "hwall") { ctx.fillStyle = "#6b4228"; ctx.fillRect(w.x, w.y, w.w, w.h); continue; }
     if (w.kind === "furn") {
       if (w.f === "bed") { ctx.fillStyle = "#5a3a1e"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#e8e0d0"; ctx.fillRect(w.x + 4, w.y + 4, w.w - 8, 18); ctx.fillStyle = ["#a33b2b", "#3b5ea3", "#5d6b3a", "#6b4a8a"][(w.id || 0) % 4]; ctx.fillRect(w.x + 4, w.y + 24, w.w - 8, w.h - 28); }
@@ -1333,6 +1440,34 @@ function render() {
     }
     if (w.kind === "rubble") { ctx.fillStyle = "#00000030"; ctx.fillRect(w.x + 4, w.y + 6, w.w, w.h); ctx.fillStyle = "#6d5a4a"; ctx.fillRect(w.x + 8, w.y + 8, w.w - 16, w.h - 16); ctx.fillStyle = "#8b5a3a"; for (let i = 0; i < 9; i++) ctx.fillRect(w.x + ((i * 37) % 97) / 97 * (w.w - 20), w.y + ((i * 61) % 89) / 89 * (w.h - 16), 20, 14); continue; }
     if (w.kind === "post") { ctx.fillStyle = "#f4f4f4"; ctx.fillRect(w.x, w.y, w.w, w.h); continue; }
+    if (w.kind === "stall") { // a market stall: counter, crates of veg, a striped awning
+      ctx.fillStyle = "#00000040"; ctx.fillRect(w.x + 6, w.y + 8, w.w, w.h);
+      ctx.fillStyle = "#8a5a2a"; ctx.fillRect(w.x, w.y, w.w, w.h);
+      const vc = ["#b35fd0", "#c8a060", "#e83a2a", "#ffd34d", "#ff8a20"];
+      for (let i = 0; i < 5; i++) { ctx.fillStyle = "#6b4520"; ctx.fillRect(w.x + 6 + i * 21, w.y + 8, 18, 14); ctx.fillStyle = vc[i]; for (let j = 0; j < 3; j++) { ctx.beginPath(); ctx.arc(w.x + 11 + i * 21 + j * 4, w.y + 13 + (j % 2) * 4, 3.5, 0, 7); ctx.fill(); } }
+      for (let i = 0; i < 6; i++) { ctx.fillStyle = i % 2 ? "#f4f0e0" : "#3a9a4a"; ctx.fillRect(w.x - 6 + i * (w.w + 12) / 6, w.y - 30, (w.w + 12) / 6, 22); }
+      text(S.g.ph === "night" ? "CLOSED" : "PRODUCE", w.x + w.w / 2, w.y + w.h - 5, 10, S.g.ph === "night" ? "#ff8060" : "#ffe9a0", "center", false);
+      continue;
+    }
+    if (w.kind === "shop") { // a shopfront: counter facing south, awning, sign
+      const night = S.g.ph === "night", shut = night && w.sid !== "casino";
+      ctx.fillStyle = "#00000040"; ctx.fillRect(w.x + 8, w.y + 10, w.w, w.h);
+      if (w.sid === "casino") {
+        ctx.fillStyle = "#2a1030"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#4a1a50"; ctx.fillRect(w.x + 10, w.y + 10, w.w - 20, w.h - 20);
+        for (let i = 0; i < 26; i++) { const k = i / 26, on = ((t * 6 + i) | 0) % 3 === 0; ctx.fillStyle = on ? "#ffd34d" : "#806020"; const per = 2 * (w.w + w.h), d = k * per; const [lx, ly] = d < w.w ? [w.x + d, w.y] : d < w.w + w.h ? [w.x + w.w, w.y + d - w.w] : d < 2 * w.w + w.h ? [w.x + w.w - (d - w.w - w.h), w.y + w.h] : [w.x, w.y + w.h - (d - 2 * w.w - w.h)]; ctx.beginPath(); ctx.arc(lx, ly, 4, 0, 7); ctx.fill(); }
+        ctx.fillStyle = "#ffd34d"; ctx.beginPath(); ctx.arc(w.x + w.w / 2, w.y + w.h / 2, 26, 0, 7); ctx.fill(); ctx.fillStyle = "#c03050"; for (let i = 0; i < 8; i++) { ctx.beginPath(); ctx.moveTo(w.x + w.w / 2, w.y + w.h / 2); ctx.arc(w.x + w.w / 2, w.y + w.h / 2, 24, i * Math.PI / 4 + t, i * Math.PI / 4 + t + 0.4); ctx.fill(); }
+        ctx.fillStyle = "#3a2a10"; ctx.fillRect(w.x + w.w / 2 - 20, w.y + w.h - 6, 40, 10);
+        text("THE GOLDEN SLOP", w.x + w.w / 2, w.y - 8, 15, "#ffd34d");
+        continue;
+      }
+      const arm = w.sid === "armoury";
+      ctx.fillStyle = arm ? "#4a5236" : "#7a5a32"; ctx.fillRect(w.x, w.y, w.w, w.h);
+      if (arm) { ctx.fillStyle = "#8a7a52"; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.ellipse(w.x + 14 + i * 24, w.y + w.h + 6, 12, 6, 0, 0, 7); ctx.fill(); } ctx.fillStyle = "#2a2a2a"; for (let i = 0; i < 4; i++) ctx.fillRect(w.x + 18 + i * 32, w.y + 10, 22, 5); }
+      else { const ic = ["#d0a040", "#e83a2a", "#7ab0e0", "#f4f0e0", "#8a5a2a"]; for (let i = 0; i < 6; i++) { ctx.fillStyle = ic[i % 5]; ctx.fillRect(w.x + 10 + i * 22, w.y + 10, 14, 18); } }
+      for (let i = 0; i < 8; i++) { ctx.fillStyle = i % 2 ? "#f4f0e0" : arm ? "#5a6a3a" : "#d06a2a"; ctx.fillRect(w.x - 6 + i * (w.w + 12) / 8, w.y - 30, (w.w + 12) / 8, 22); }
+      text(shut ? "CLOSED" : arm ? "ARMOURY" : "VEX'S STORE", w.x + w.w / 2, w.y + w.h - 5, 10, shut ? "#ff8060" : "#ffe9a0", "center", false);
+      continue;
+    }
     if (w.kind === "bunker") { // a concrete lump with a hatch and a sign
       ctx.fillStyle = "#00000040"; ctx.fillRect(w.x + 8, w.y + 10, w.w, w.h);
       ctx.fillStyle = "#8a8a82"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#a2a29a"; ctx.fillRect(w.x + 6, w.y + 6, w.w - 12, w.h - 12);
@@ -1355,8 +1490,9 @@ function render() {
       const cx = w.x + w.w / 2, cy = w.y + w.h / 2;
       ctx.fillStyle = "#00000040"; ctx.beginPath(); ctx.ellipse(cx + 8, cy + 10, w.w * 0.7, w.h * 0.45, 0, 0, 7); ctx.fill();
       ctx.fillStyle = "#5a3a1e"; ctx.fillRect(cx - 5, cy - 4, 10, w.h / 2 + 4);
-      ctx.fillStyle = "#2f5e28"; ctx.beginPath(); ctx.arc(cx, cy - 8, w.w * 0.72, 0, 7); ctx.fill();
-      ctx.fillStyle = "#3b7431"; ctx.beginPath(); ctx.arc(cx - 6, cy - 14, w.w * 0.45, 0, 7); ctx.fill();
+      ctx.fillStyle = w.dark ? "#1f4a22" : "#2f5e28"; ctx.beginPath(); ctx.arc(cx, cy - 8, w.w * 0.72, 0, 7); ctx.fill();
+      ctx.fillStyle = w.dark ? "#2a5a2a" : "#3b7431"; ctx.beginPath(); ctx.arc(cx - 6, cy - 14, w.w * 0.45, 0, 7); ctx.fill();
+      if (w.fruit) { ctx.fillStyle = "#e83a2a"; for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(cx + Math.cos(i * 1.3) * w.w * 0.4, cy - 8 + Math.sin(i * 1.3) * w.w * 0.35, 3.5, 0, 7); ctx.fill(); } }
       continue;
     }
     if (w.kind === "fence" || w.w < 40 || w.h < 40) { ctx.fillStyle = "#7a5530"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#94693c"; for (let yy = w.y; yy < w.y + w.h; yy += 20) ctx.fillRect(w.x - 3, yy, w.w + 6, 4); continue; }
@@ -1379,6 +1515,7 @@ function render() {
   ctx.fillStyle = "#ffe07a"; ctx.beginPath(); ctx.ellipse(hw.x + hw.w / 2, hw.y + hw.h / 2 + 6, 13 * fl, 18 * fl, 0, 0, 7); ctx.fill();
   text("THE HEARTH", hw.x + hw.w / 2, hw.y - 28, 14, "#ffe9a0");
   bar(hw.x, hw.y - 16, hw.w, 8, S.g.hh / S.g.hm, S.g.hh / S.g.hm > 0.3 ? "#e8703a" : "#ff3030");
+  if (S.g.dome) { bar(hw.x, hw.y - 7, hw.w, 4, S.g.dome[0] / S.g.dome[1], "#7cc8ff"); if (S.g.dome[0] >= S.g.dome[1]) { ctx.strokeStyle = `rgba(159,224,255,${0.25 + 0.1 * Math.sin(t * 2)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(hw.x + hw.w / 2, hw.y + hw.h / 2, DOME_R, 0, 7); ctx.stroke(); } }
 
   // radioactive hot spots
   for (const [hx, hy, hr, lk] of S.g.hot || []) {
@@ -1630,7 +1767,7 @@ function render() {
   if (S.g.zone && S.g.ph !== "lobby") {
     const [cx, cy, r, tcx, tcy, tr] = S.g.zone;
     ctx.save();
-    ctx.beginPath(); ctx.rect(-2000, -2000, MAP.W + 4000, MAP.H + 4000); ctx.arc(cx, cy, Math.max(1, r), 0, 7, true);
+    ctx.beginPath(); ctx.rect(Math.min(-2000, vx0), Math.min(-2000, vy0), Math.max(MAP.W + 4000, vx1 - Math.min(-2000, vx0) + 10), Math.max(MAP.H + 4000, vy1 - Math.min(-2000, vy0) + 10)); ctx.arc(cx, cy, Math.max(1, r), 0, 7, true);
     ctx.fillStyle = `rgba(120, 40, 160, ${0.28 + Math.sin(t * 1.5) * 0.04})`; ctx.fill("evenodd");
     ctx.restore();
     ctx.strokeStyle = "#c080ff"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(cx, cy, Math.max(1, r), 0, 7); ctx.stroke();
@@ -1656,7 +1793,7 @@ function render() {
   if (t - hurtFlash < 0.3) { const g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VH * 0.8); g.addColorStop(0, "#f000"); g.addColorStop(1, `rgba(200,0,0,${0.5 * (1 - (t - hurtFlash) / 0.3)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
 
   if (t - fogT < 1.2) { ctx.fillStyle = `rgba(120,40,160,${0.25 * (1 - (t - fogT) / 1.2)})`; ctx.fillRect(0, 0, VW, VH); }
-  drawHud(mine, t);
+  drawHud(mine, t); drawRadial();
   drawMinimap(mine, t);
   drawCrosshair(mine, t);
   for (const k of disp.keys()) if (disp.get(k).seen < frameNo - 30) disp.delete(k);
@@ -1828,7 +1965,7 @@ function drawHud(mine, t) {
   if (mine.ar > 0) bar(24, VH - 64, 300 * mine.ar / 60, 5, 1, "#6cf", "#0000");
   text(`${mine.g}g`, 24, VH - 45, 20, "#ffd34d", "left");
   text(`🌱 ${mine.sd}`, 110, VH - 45, 18, "#8f8", "left");
-  if (mine.spn) text(`🎰 ${mine.spn} spin${mine.spn > 1 ? "s" : ""} [G]`, 324, VH - 22, 13, "#ffd34d", "right");
+  if (mine.spn) text(`🎰 ${mine.spn} spin${mine.spn > 1 ? "s" : ""} at the casino`, 324, VH - 22, 13, "#ffd34d", "right");
   text(`[3] 💣 ${mine.gn ?? 0}   [4] 🔥 ${mine.mo ?? 0}${mine.hoe ? `   ${["", "Hoe", "Steel Hoe", "Golden Hoe"][mine.hoe]}` : ""}`, VW - 296, VH - 116, 13, "#ffb070", "left");
   if (mine.st > 0) { ctx.fillStyle = "#ffcc00"; for (let i = 0; i < 5; i++) { ctx.globalAlpha = i < mine.st ? 1 : 0.2; star(190 + i * 22, VH - 45, 9); } ctx.globalAlpha = 1; }
   const sc = mine.sc;
@@ -1858,7 +1995,14 @@ function drawHud(mine, t) {
     let hint = null;
     for (const [, x, y, busy] of S.ca || []) if ((x - pred.x) ** 2 + (y - pred.y) ** 2 < 62 * 62) { hint = [busy ? "Someone's hacking this one" : "E  hack the Slop-Tech cache", "#7dffb0"]; break; }
     if (!hint) for (const [, x, y, rar, grave] of S.cr) if ((x - pred.x) ** 2 + (y - pred.y) ** 2 < 60 * 60) { hint = [`E  ${grave ? "loot grave" : "open crate"}`, RARITY_COL[rar]]; break; }
-    if (!hint) MAP.plots.forEach((pl, i) => { if (!hint && (pl.x - pred.x) ** 2 + (pl.y - pred.y) ** 2 < 48 * 48) { const s = S.pl[i]; hint = s === 0 ? [mine.sd ? "E  plant seed" : "No seeds — buy some [B]", "#8f8"] : s === 3 ? ["E  harvest", "#ffd34d"] : ["growing...", "#aaa"]; } });
+    if (!hint) MAP.plots.forEach((pl, i) => { if (!hint && (pl.x - pred.x) ** 2 + (pl.y - pred.y) ** 2 < 48 * 48) { const s = S.pl[i] % 4, cr = CROPS[CROP_KEYS[S.pl[i] >> 2]] || {}; const sel = INV && INV.sel && INV.bag.some((b) => b.id === "s_" + INV.sel) ? CROPS[INV.sel].name.toLowerCase() : "seed"; hint = s === 0 ? [mine.sd ? `E  plant ${sel}` : "No seeds. Old Giles sells them at the produce stall.", "#8f8"] : s === 3 ? [`E  pick the ${(cr.name || "crop").toLowerCase()}`, "#ffd34d"] : [`${cr.name || ""} growing...`, "#aaa"]; } });
+    if (!hint && MAP.keepers && g.mode !== "royale") { const st = MAP.walls.find((w) => w.kind === "stall"); if (st && (st.x + st.w / 2 - pred.x) ** 2 + (st.y + st.h / 2 - pred.y) ** 2 < 110 * 110) hint = g.ph === "night" ? ["The stall's shut. Back at dawn.", "#aaa"] : ["E  produce stall: sell crops, buy seeds", "#ffd34d"]; }
+    if (!hint && g.mode !== "royale" && MAP.walls && !(MAP.npcs || []).some((n) => (n.x - pred.x) ** 2 + (n.y - pred.y) ** 2 < 70 * 70)) for (const w of [...MAP.walls.filter((q) => q.kind === "shop"), MAP.hearth]) {
+      if (!w || Math.max(Math.abs(pred.x - (w.x + w.w / 2)) - w.w / 2, Math.abs(pred.y - (w.y + w.h / 2)) - w.h / 2) > 70) continue;
+      const sid = w.kind === "hearth" ? "hearth" : w.sid, sh = SHOPS[sid] || {};
+      hint = sh.hours === "day" && g.ph === "night" ? [`${sh.name} is shut. Back at dawn.`, "#aaa"] : sid === "hearth" ? [`E  the Hearth: repair it${g.dome && g.dome[0] < g.dome[1] ? `, fund the Dome (${g.dome[0]}/${g.dome[1]}g)` : ""}`, "#9fe0ff"] : [`E  ${sh.name}`, "#ffd34d"];
+      break;
+    }
     if (!hint && !mine.vh) for (const [, kind, vx, vy, , , drv, pas, , vz] of S.vh) if ((vx - pred.x) ** 2 + (vy - pred.y) ** 2 < (AIR[kind] ? 76 : 62) ** 2 && Math.abs((vz || 0) - pred.z) < 70 && (!drv || !pas)) { hint = [`E  ${drv ? "ride in" : AIR[kind] ? "fly" : "drive"} the ${VEH_NAME[kind]}`, "#9fe0ff"]; break; }
     if (mine.vh) hint = piloting() ? [pad() ? "Flying with your stick · button 3 gets out" : "W/S pitch · A/D strafe · mouse turns · SPACE up · C down · E out", "#9fe0ff"] : [S.vh.find((v) => v[0] === mine.vh)?.[6] === me ? "WASD drive · E get out" : "E get out", "#9fe0ff"];
     if (!hint && mine.sw && pred.z < -60 && MAP.walls.some((w) => w.kind === "glyph" && (w.x + 15 - pred.x) ** 2 + (w.y + 15 - pred.y) ** 2 < 60 * 60)) hint = ["E  touch the glyph", "#7dd8ff"];
@@ -2147,8 +2291,8 @@ function renderInv() {
     if (!it) { cells.push(`<div class="bslot empty"></div>`); continue; }
     const g = GEAR[it.id], d = ITEMS[it.id];
     const name = g ? g.name : d ? d.name : it.id, icon = g ? GEAR_ICON[g.slot] : d ? d.icon : "?";
-    const tip = g ? `${RAR_NAME[it.r || 0]} ${g.name}: ${gearDesc(g, it.r || 0)}. Click to wear it.` : d ? `${d.name}: ${d.desc || ""}${d.f ? ` Food +${d.f}.` : ""}${d.d ? ` Drink +${d.d}.` : ""}${d.hp ? ` Heals ${d.hp > 500 ? "fully" : d.hp}.` : ""} Click to use.` : "";
-    cells.push(`<div class="bslot" data-i="${i}" title="${escH(tip)} Right-click to drop it."><span class="ic">${icon}</span><span class="nm" style="color:${g ? RAR_COL[it.r || 0] : "#eee"}">${escH(name)}</span>${it.n > 1 ? `<span class="ct">${it.n}</span>` : ""}</div>`);
+    const tip = g ? `${RAR_NAME[it.r || 0]} ${g.name}: ${gearDesc(g, it.r || 0)}. Click to wear it.` : d && d.kind === "seed" ? `${d.name}: ${d.desc} Click to plant these next.` : d ? `${d.name}: ${d.desc || ""}${d.f ? ` Food +${d.f}.` : ""}${d.d ? ` Drink +${d.d}.` : ""}${d.hp ? ` Heals ${d.hp > 500 ? "fully" : d.hp}.` : ""} Click to use.` : "";
+    cells.push(`<div class="bslot${d && d.kind === "seed" && INV.sel === d.crop ? " sel" : ""}" data-i="${i}" title="${escH(tip)} Right-click to drop it."><span class="ic">${icon}</span><span class="nm" style="color:${g ? RAR_COL[it.r || 0] : "#eee"}">${escH(name)}</span>${it.n > 1 ? `<span class="ct">${it.n}</span>` : ""}</div>`);
   }
   $("invBody").innerHTML = `<div class="invL">${meter("🍞 Food", INV.food, "#d8a050")}${meter("💧 Drink", INV.water, "#5ab0ff")}${meter("☢ Radiation", INV.rad, INV.rad > 50 ? "#e33" : "#9fff60")}<h3>Wearing</h3>${slots}</div>` +
     `<div class="invR"><h3>Bag ${INV.bag.length}/${INV.size}</h3><div class="bag">${cells.join("")}</div><div class="fine">Click to eat, drink, use or wear. Right-click to drop (someone else can pick it up). <kbd>H</kbd> eats or drinks whatever you need most. Cook two turnips at the Hearth [E] for stew. Fill bottles at the lake.</div></div>`;
@@ -2159,6 +2303,56 @@ function renderInv() {
   for (const el of $("invBody").querySelectorAll(".gslot.on")) el.onclick = () => send({ t: "item", a: "unequip", slot: el.dataset.slot });
 }
 $("inv").addEventListener("click", (e) => { if (e.target === $("inv")) toggleInv(false); });
+
+// ---------------------------------------------------------------- crops
+function drawCrop2d(cr, x, y, t, i) {
+  const bob = Math.sin(t * 3 + i) * 2, C = CROPS[cr] || {}, leaf = (lx, ly, a, w = 4, h = 9) => { ctx.beginPath(); ctx.ellipse(lx, ly, w, h, a, 0, 7); ctx.fill(); };
+  const ball = (bx, by, r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(bx, by, r, 0, 7); ctx.fill(); };
+  if (cr === "turnip") { ball(x, y + 4, 12, "#e9e0f0"); ctx.fillStyle = "#b35fd0"; ctx.beginPath(); ctx.arc(x, y + 1, 12, Math.PI * 1.05, Math.PI * 1.95); ctx.fill(); ctx.fillStyle = "#4cbf3a"; leaf(x - 5, y - 12 + bob, -0.4); leaf(x + 5, y - 12 + bob, 0.4); }
+  else if (cr === "lettuce") { for (let k = 0; k < 6; k++) { ctx.fillStyle = k % 2 ? "#8fe05a" : "#5aba3a"; leaf(x + Math.cos(k) * 6, y + Math.sin(k) * 5, k, 8, 6); } }
+  else if (cr === "potato") { ctx.fillStyle = "#3f8a2a"; for (let k = 0; k < 5; k++) leaf(x + (k - 2) * 6, y - 6 + bob * 0.5, (k - 2) * 0.3, 4, 10); ball(x - 8, y + 12, 6, "#c8a060"); ball(x + 6, y + 13, 5, "#b89050"); }
+  else if (cr === "tomato" || cr === "strawberry") { ctx.fillStyle = "#3f8a2a"; for (let k = 0; k < 6; k++) leaf(x + Math.cos(k * 1.1) * 9, y + Math.sin(k * 1.1) * 7, k, 6, 4); for (let k = 0; k < 4; k++) ball(x + Math.cos(k * 1.6 + 0.5) * 8, y + Math.sin(k * 1.6 + 0.5) * 6, cr === "tomato" ? 5 : 3.5, C.col); }
+  else if (cr === "corn") { ctx.fillStyle = "#6aaa3a"; ctx.fillRect(x - 2, y - 22, 4, 30); leaf(x - 7, y - 6, -0.6, 3, 11); leaf(x + 7, y - 10, 0.6, 3, 11); ctx.fillStyle = "#ffd34d"; leaf(x + 4, y - 14 + bob * 0.4, 0.3, 4, 8); }
+  else if (cr === "pumpkin") { ball(x, y + 4, 18, "#ff8a20"); ctx.strokeStyle = "#c86010"; ctx.lineWidth = 2; for (const k of [-8, 0, 8]) { ctx.beginPath(); ctx.ellipse(x + k, y + 4, 5, 17, 0, 0, 7); ctx.stroke(); } ctx.fillStyle = "#5a7a2a"; ctx.fillRect(x - 2, y - 18, 4, 8); }
+  else if (cr === "melon") { ctx.fillStyle = `rgba(42,255,154,${0.25 + Math.sin(t * 3 + i) * 0.1})`; ctx.beginPath(); ctx.arc(x, y + 4, 26, 0, 7); ctx.fill(); ball(x, y + 4, 17, "#2a8a4a"); ctx.strokeStyle = "#7dffb0"; ctx.lineWidth = 2; for (const k of [-9, -3, 3, 9]) { ctx.beginPath(); ctx.moveTo(x + k, y - 11); ctx.quadraticCurveTo(x + k * 1.6, y + 4, x + k, y + 19); ctx.stroke(); } }
+  else ball(x, y, 10, C.col || "#8f8");
+}
+
+// ---------------------------------------------------------------- the produce stall (Old Giles)
+let stallOpen = false;
+function toggleStall(force) {
+  stallOpen = force === undefined ? !stallOpen : force;
+  $("stall").classList.toggle("hidden", !stallOpen);
+  if (stallOpen) { toggleShop(false); toggleInv(false); toggleMarket(false); keys.clear(); mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); renderStall(); }
+}
+function myCropPrice(id) {
+  const mine = S?.p.find((p) => p.id === me), i = CROP_KEYS.indexOf(id), base = S && S.g.pp ? S.g.pp[i] : CROPS[id].sell;
+  return Math.max(1, Math.round(base * (mine && mine.cl === "farmer" ? 1.5 : 1) * (1 + 0.15 * ((mine && mine.hoe) || 0))));
+}
+let stallSig = "";
+function renderStall() {
+  if (!stallOpen || !S) return;
+  const mine = S.p.find((p) => p.id === me); if (!mine) return;
+  const st = MAP.walls.find((w) => w.kind === "stall");
+  if (S.g.ph === "night" || !st || (st.x + st.w / 2 - mine.x) ** 2 + (st.y + st.h / 2 - mine.y) ** 2 > 200 * 200) { toggleStall(false); return; }
+  const have = (id) => (INV ? INV.bag.filter((b) => b.id === id).reduce((a, b) => a + (b.n || 1), 0) : 0);
+  const sig = JSON.stringify([S.g.pp, INV && INV.bag, mine.g]); if (sig === stallSig && $("stallBody").innerHTML) return; stallSig = sig;
+  const disc = (mine.cl === "farmer" ? " (farmer's price)" : "");
+  const sell = CROP_KEYS.filter((id) => have(id)).map((id) => { const n = have(id), pr = myCropPrice(id);
+    return `<tr><td><span class="ic">${CROPS[id].icon}</span> <b>${escH(CROPS[id].name)}</b> x${n}</td><td class="px">${pr}g each</td><td class="btns"><button data-sell="${id}" data-n="1">Sell 1</button><button data-sell="${id}" data-n="${n}">Sell ${n} (${pr * n}g)</button></td></tr>`; }).join("");
+  const total = CROP_KEYS.reduce((a, id) => a + have(id) * myCropPrice(id), 0);
+  const tm = (c) => { const s2 = 13 * 3 * c.t; return s2 < 60 ? `${Math.round(s2)}s` : `${(s2 / 60).toFixed(1)} min`; };
+  const buy = CROP_KEYS.map((id) => { const c = CROPS[id], cost = Math.round(c.seed * SEED_PACK * Math.max(0.2, 1 - (S.g.disc || 0)));
+    return `<tr><td><span class="ic">${c.icon}</span> <b>${escH(c.name)}</b><small>${escH(c.desc)}</small></td><td><small>grows in ${tm(c)}${c.regrow ? ", fruits again" : ""}${c.yield ? `, gives ${c.yield}` : ""}</small><small>sells for ~${myCropPrice(id)}g</small></td><td class="btns"><button class="buy" data-buy="${id}"${mine.g < cost ? " disabled" : ""}>${SEED_PACK} seeds · ${cost}g</button></td></tr>`; }).join("");
+  $("stallBody").innerHTML = `<div class="tag">"What've you got for me?" You have ${mine.g}g. Prices follow the Farmers' Co-op share price (FARM)${disc}. Flood the market and it drops.</div>` +
+    `<h3>Sell</h3>${sell ? `<table class="mkt">${sell}</table><button class="cbtn" id="sellAll">Sell everything you grew (${total}g)</button>` : `<div class="tag">You've nothing he wants. He'll buy anything you've grown.</div>`}` +
+    `<h3>Seeds</h3><table class="mkt">${buy}</table><div class="fine">Seeds go in your bag. Click a packet in your bag [I] to choose what you plant next. <kbd>Esc</kbd> to close.</div>`;
+  for (const b of $("stallBody").querySelectorAll("[data-sell]")) b.onclick = () => { send({ t: "stall", a: "sell", id: b.dataset.sell, n: +b.dataset.n }); sfx("perfect"); };
+  for (const b of $("stallBody").querySelectorAll("[data-buy]")) b.onclick = () => { send({ t: "stall", a: "buy", id: b.dataset.buy }); sfx("click"); };
+  if ($("sellAll")) $("sellAll").onclick = () => { send({ t: "stall", a: "sell", id: "*" }); sfx("perfect"); };
+}
+setInterval(renderStall, 400);
+$("stall").addEventListener("click", (e) => { if (e.target === $("stall")) toggleStall(false); });
 
 // ---------------------------------------------------------------- the stock exchange (M)
 let mktOpen = false, mkHist = null, mkLastT = 0;
@@ -2262,7 +2456,7 @@ function renderCards() {
     const coll = (INV && INV.cards) || {}, deck = (INV && INV.deck) || [];
     const ids = Object.keys(CARDS).sort((a, b) => CARDS[a].cost - CARDS[b].cost || CARDS[a].r - CARDS[b].r);
     const owned = ids.filter((id) => coll[id]).length;
-    body.innerHTML = `<h2 style="margin:0;color:#ffd34d">Slop Snap: your collection</h2><div class="tag">${owned}/${ids.length} cards collected. Challenge any townsperson [E] to a game to win theirs. Packs in the shop [B]. Click cards to build your deck of 12 (${deck.length} picked; the rest are filled with your best cards).</div>` +
+    body.innerHTML = `<h2 style="margin:0;color:#ffd34d">Slop Snap: your collection</h2><div class="tag">${owned}/${ids.length} cards collected. Challenge any townsperson [E] to a game to win theirs. Packs at Vex's store. Click cards to build your deck of 12 (${deck.length} picked; the rest are filled with your best cards).</div>` +
       `<div class="coll">${ids.map((id) => { const n = coll[id] || 0, inDeck = deck.filter((d) => d === id).length; return snapCard(id, null, `${n ? "" : "locked"}${inDeck ? " indeck" : ""}`, `data-id="${id}"`).replace("</div>", "") + `<span class="cn">${n ? `x${n}` : "?"}${inDeck ? ` · ${inDeck} in deck` : ""}</span></div>`; }).join("")}</div>` +
       `<div class="fine"><button class="cbtn alt" id="deckClear">Clear deck</button> <kbd>Y</kbd>/<kbd>Esc</kbd> to close.</div>`;
     for (const el of body.querySelectorAll(".sc[data-id]")) el.onclick = () => {

@@ -22,7 +22,7 @@ export function storyEvent(day, api) {
   const V = f.valley;
   if (day === 1) return {
     title: "The Well",
-    text: `Three weeks ago, black slop began bubbling up from the old well in the middle of ${V}. Since then, the dead won't stay buried. ${CAST.mayor} has called a town meeting, and everyone is looking at you.`,
+    text: `Three weeks ago, black slop began bubbling up from the old well in the middle of ${V}. Since then, the dead won't stay buried. ${CAST.mayor} has called a town meeting, and everyone is looking at you. (In the corner, Sergeant Haddock's wireless mutters about a war nobody here asked for.)`,
     choices: [
       { label: "Seal the well with stone", desc: "The Hearth grows stronger.", deed: ["soil", 10], go: () => { f.path = "seal"; api.hearthMax(300); return "You pour stone into the well until it stops gurgling. Somewhere far below, something groans. The Hearth burns brighter."; } },
       { label: "Drink from it", desc: "You get tougher. So do they.", deed: ["blood", 10], go: () => { f.path = "drink"; api.mods.hpBonus += 25; api.mods.zHp *= 1.1; api.heal(); return "It tastes like pennies and regret. You feel... sturdier. Out in the dark, something feels you too."; } },
@@ -48,7 +48,7 @@ export function storyEvent(day, api) {
     };
     return {
       title: "Vex Returns",
-      text: `${CAST.vex} rolls back into ${V} with an empty cart and a full smile. He wants more slop, and he's brought a crate of 'surplus' guns to trade.`,
+      text: `${CAST.vex} rolls back into ${V} with an empty cart and a full smile, and opens his General Store by the Hearth before anyone can stop him. He wants more slop, and he's brought a crate of 'surplus' guns to trade. "Business is booming," he says. "Everyone's buying tins. Something about bombs."`,
       choices: [
         { label: "Trade fairly", desc: "A good gun for everyone.", deed: ["coin", 6], go: () => { f.vex = "trade"; for (const p of api.players()) api.crate(2 + (Math.random() < 0.3 ? 1 : 0), p); return "Vex shakes every hand twice. Fresh crates appear at everyone's feet."; } },
         { label: "Rob him blind", desc: "Rich, wanted, and he'll remember.", deed: ["coin", 12], go: () => { f.vex = "robbed"; api.gold(200); api.stars(3); return "You take the guns, the gold and his hat. Vex swears revenge. Vex is very good at revenge. (+200g each, and you're all wanted)"; } },
@@ -59,7 +59,7 @@ export function storyEvent(day, api) {
     const ps = api.players();
     return {
       title: "The Mayor's Census",
-      text: `${CAST.mayor} wants a Champion of ${V} to lead the defence: someone to put on the posters and blame afterwards. Vote for one of you.`,
+      text: `${CAST.mayor} wants a Champion of ${V} to lead the defence: someone to put on the posters and blame afterwards. Vote for one of you. ${api.dome()[0] >= api.dome()[1] ? "He also unveils the finished Hearth Dome, and takes the credit." : `He adds, quietly, that the Hearth Dome fund stands at ${api.dome()[0]} of ${api.dome()[1]} gold, and the radio is getting worse.`}`,
       choices: [
         ...ps.map((p) => ({ label: api.fullName(p), desc: "Crown them Champion.", go: () => { f.champion = p.id; f.championName = api.fullName(p); p.champion = true; api.heal(); return `${api.fullName(p)} is crowned Champion of ${V}: +50 max HP and +30% damage. Grubb has already ordered the statue.`; } })),
         { label: "Nobody. We're a collective.", desc: "Everyone gets a little stronger.", go: () => { f.champion = 0; api.mods.dmg *= 1.1; return "Grubb sighs and cancels the statue. Everyone fights a little harder for the collective. (+10% damage)"; } },
@@ -114,10 +114,11 @@ export function storyEvent(day, api) {
     const who = { leshen: "THE SLOP LESHEN, the rotten god under the well", drowned: "THE DROWNED MAYOR, risen with his whole council", golem: "VEX'S BRASS GOLEM, steam pouring from its joints" }[boss];
     return {
       title: "The Last Day",
-      text: `The birds have gone quiet. Tonight ${who} is coming for the Hearth. You have one day to prepare. What's the plan?`,
+      text: `The birds have gone quiet. Tonight ${who} is coming for the Hearth. Haddock's wireless plays nothing but a long, flat tone, which he says means the bombs come tonight too. ${api.dome()[0] >= api.dome()[1] ? "At least the Dome is up." : `The Dome stands at ${api.dome()[0]} of ${api.dome()[1]} gold.`} You have one day to prepare. What's the plan?`,
       choices: [
         { label: "Fortify the Hearth", desc: "+400 Hearth health.", deed: ["soil", 8], go: () => { f.prep = "fort"; api.hearthMax(400); api.repair(); return "Everyone hauls stone until sundown. The Hearth has never looked so smug."; } },
         { label: "Arm up", desc: "A Legendary crate for everyone.", deed: ["blood", 5], go: () => { f.prep = "arms"; for (const p of api.players()) api.crate(3, p); return "You empty the town armoury. Legendary crates for everyone."; } },
+        ...(api.dome()[0] < api.dome()[1] ? [{ label: "Finish the Dome", desc: "Everyone empties their pockets into it (up to 250g each).", deed: ["soil", 8], go: () => { f.prep = "dome"; const got = api.fundDome(250); const [h, c] = api.dome(); return h >= c ? `Every coin in ${V} goes into the Dome (${got}g). The pylons sing, and a pale blue bubble closes over the Hearth. Just in time.` : `You raise ${got}g between you. The Dome stands at ${h} of ${c}. It's not enough yet. Find the rest before dark.`; } }] : []),
         { label: "Throw a feast", desc: "Full heal, +1 skill point, +10% damage.", deed: ["soil", 5], go: () => { f.prep = "feast"; api.heal(); api.points(1); api.mods.dmg *= 1.1; return "Turnip stew for everyone. Somebody sings. For one evening, it's a nice place to live."; } },
         ...[legendChoice(api.legend(), api)].filter(Boolean),
       ],
@@ -142,6 +143,7 @@ export function ending(win, f, night) {
   const V = f.valley;
   const lines = [];
   if (!win) {
+    if (f.nuked) { lines.push(`The bomb fell on ${V} on night ${night}. Nobody had finished the Dome. The Hearth went out in a flash brighter than it ever burned.`); lines.push("Somewhere, a general calls it 'a regrettable success'."); return lines; }
     lines.push(`${V} fell on night ${night}. The slop took the Hearth, and then it took everything else.`);
     if (f.path === "sell") lines.push("Vex still sells postcards of the ruins.");
     else if (f.path === "drink") lines.push("On quiet nights the well hums a tune only the drinkers remember.");
@@ -154,6 +156,7 @@ export function ending(win, f, night) {
   else lines.push(f.vex === "robbed" ? (f.revenge === "defied" ? "The golem lies in pieces. You sell the pieces. To Vex. He pays double, out of respect." : "Vex calls it even and opens a shop in the next valley. He still has your picture behind the counter.") : `Vex opens a chain of General Stores across the kingdom with your faces on the sign. You get no royalties.${f.insured ? " The insurance was fake, obviously." : ""}`);
   if (f.champion) lines.push(`${f.championName} is remembered as the Champion of ${V}. The statue's nose falls off within a year.`);
   else if (f.champion === 0) lines.push(`${V} never crowns a champion. The collective gets a very long plaque instead.`);
+  if (f.domeHeld) lines.push("The Dome held when the bombs came. Grubb charges a shilling to see the scorch marks, and calls it the Heritage Centre.");
   if (f.prep === "feast") lines.push("Every year after, the valley holds a turnip feast on the anniversary. Attendance is mandatory.");
   return lines;
 }

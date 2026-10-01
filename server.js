@@ -11,9 +11,10 @@ import { NPCS, QUESTS, CLUES, npcLines } from "./npcs.js";
 import { COSMETICS, FREE_HATS, rollCosmetic, WHEEL, spinWheel, deck, bjValue, pokerScore, handName, compareHands, dealerHolds } from "./casino.js";
 import { LEGENDS, legendOf, legendName, reckoning, legendLines } from "./legend.js";
 import { GIFTS, TASTE, SAYS, RING } from "./romance.js";
-import { ITEMS, GEAR, SLOTS, GEAR_KEYS, BAG_SIZE, gearSum, bagAdd, bagCount, bagTake, itemName } from "./items.js";
+import { ITEMS, GEAR, SLOTS, GEAR_KEYS, BAG_SIZE, gearSum, bagAdd, bagCount, bagTake, itemName, CROPS, CROP_KEYS, SEED_PACK } from "./items.js";
 import { STOCKS, SYMS, FEE, newMarket, shock, marketTick } from "./market.js";
 import { CANDIDATES, ELECT_EVERY, ballot } from "./politics.js";
+import { CS, makeChunk, BIOMES } from "./world.js";
 import { CARDS, LOCS, STARTER, OPPONENTS, DECK_SIZE, newMatch, stage as cgStage, resolveTurn as cgResolve, aiPlays, view as cgView, deckFor, packCard } from "./cards.js";
 
 const MV = new Function(moveJs + "\nreturn MV;")(); // the same movement code the browser predicts with
@@ -38,7 +39,7 @@ const ROYALE_ZONES = [ // [wait, shrink, radius]
 const STORY_ZONE_R = [2300, 1850, 1450, 1180, 980, 820];
 const TEST_DMG = Number(process.env.SLOP_DMG || 1); // testing only
 const TEST_TP = !!process.env.SLOP_TP; // testing only: lets a test script move players about
-const NUKE_CHANCE = process.env.SLOP_NUKE ? 1 : 0.04; // chance, each dawn and dusk from night 3, that somebody presses the button
+const NUKE_CHANCE = process.env.SLOP_NUKE ? 1 : 0.04; // chance, each dawn and dusk from night 5 (after the first, certain strike), that somebody presses the button
 const NUKE_WARN = FAST ? 12 : 45; // seconds to get to the bunker
 const GUESTS = ["chef", "bear", "boulder", "david", "warren"]; // one celebrity visits each story run
 const UNLUCKY = process.env.SLOP_UNLUCKY ? 1 : 0.00004; // 0.004% per level-up or upgrade. As requested.
@@ -66,6 +67,38 @@ const PLOTS = [];
 for (const baseX of [1330, 1890]) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++)
   PLOTS.push({ x: baseX + c * 64 + 28, y: 1200 + r * 64 + 28, stage: 0, prog: 0, rate: 1, owner: 0 });
 const BASE_PLOTS = PLOTS.length;
+// the produce stall, by the right-hand field: Old Giles buys what you grow and sells seeds, daytime only
+const STALL = { x: 1950, y: 1440, w: 110, h: 40, kind: "stall", sid: "produce", z0: 0, z1: 34 };
+// the shops: Vex's general store and Haddock's armoury sit just south of the Hearth (open by day), the casino is out in town (always open)
+const STORE = { x: 1300, y: 1440, w: 150, h: 46, kind: "shop", sid: "general", z0: 0, z1: 64 };
+const ARMOURY = { x: 1625, y: 1545, w: 150, h: 46, kind: "shop", sid: "armoury", z0: 0, z1: 64 };
+const SHOPS = {
+  general: { name: "Vex's General Store", keeper: "Vex", hours: "day", shut: "Vex has shut up shop for the night. Back at dawn." },
+  armoury: { name: "Haddock's Armoury", keeper: "Sergeant Haddock", hours: "day", shut: "The armoury's locked. Haddock is on night watch, not on the till." },
+  casino:  { name: "The Golden Slop", keeper: "Lucky Lou", hours: "always" },
+  hearth:  { name: "The Hearth", hours: "always" },
+};
+let CASINO = null;
+const shopWall = (sid) => sid === "hearth" ? HEARTH : WALLS.find((w) => w.kind === "shop" && w.sid === sid);
+const shopIsOpen = (sid) => game.mode !== "royale" && (SHOPS[sid].hours !== "day" || game.phase !== "night");
+const nearShop = (p, sid) => { const w = shopWall(sid); return !!w && rectHitsCircle(w, p, sid === "hearth" ? 80 : 84); };
+let KEEPERS = [{ id: "giles", sid: "produce", name: "Old Giles", role: "Produce stall. Buys crops, sells seeds.", color: "#8a6a3a", hat: "flatcap", x: STALL.x + STALL.w / 2, y: STALL.y - 22, hours: "day" }];
+const stallOpen = (k) => k.hours !== "day" || game.phase !== "night";
+const nearStall = (p) => rectHitsCircle(STALL, p, 80);
+// what a crop sells for right now: the farmers' co-op share price moves the whole market
+function cropPrice(p, id) {
+  const fair = STOCKS.FARM.p, k = clamp(game.market.px.FARM / fair, 0.6, 1.7);
+  return Math.max(1, Math.round(CROPS[id].sell * k * (p && p.cls === "farmer" ? 1.5 : 1) * (1 + 0.15 * ((p && p.hoe) || 0))));
+}
+const seedPrice = (p, id) => price(p, CROPS[id].seed * SEED_PACK);
+const seedCount = (p) => p.bag.reduce((a, b) => a + (ITEMS[b.id] && ITEMS[b.id].kind === "seed" ? b.n : 0), 0);
+function takeSeed(p) { // the packet you picked in your bag, else the cheapest you have
+  let id = p.seedSel && bagCount(p.bag, "s_" + p.seedSel) ? p.seedSel : null;
+  if (!id) id = CROP_KEYS.filter((c) => bagCount(p.bag, "s_" + c)).sort((a, b) => CROPS[a].seed - CROPS[b].seed)[0];
+  if (!id) return null;
+  bagTake(p.bag, "s_" + id); p.invDirty = true;
+  return id;
+}
 // the hoe: till new plots anywhere on open ground. Each upgrade lets you till more, grows faster and sells for more.
 const HOES = ["", "Hoe", "Steel Hoe", "Golden Hoe"];
 const HOE_COST = [40, 90, 160];
@@ -100,7 +133,7 @@ function generateMap(seed) {
   const rng = mulberry(seed);
   const R = (a, b) => a + rng() * (b - a);
   VALLEY = valleyName(rng);
-  const walls = [HEARTH];
+  const walls = [HEARTH, { ...STALL }, { ...STORE }, { ...ARMOURY }];
   const clear = { x: 1260, y: 1100, w: 880, h: 400 }; // farm + hearth stay open
   const overlaps = (r, pad) => {
     if (r.x < 60 || r.y < 60 || r.x + r.w > W - 60 || r.y + r.h > H - 60) return true;
@@ -141,7 +174,10 @@ function generateMap(seed) {
   }
   // a concrete fallout bunker. Nobody has been inside it for years.
   place(1, () => ({ x: Math.round(R(300, W - 420)), y: Math.round(R(260, H - 360)), w: 120, h: 90, kind: "bunker", z0: 0, z1: 30 }), 70);
-  if (!walls.some((w) => w.kind === "bunker")) walls.push({ x: 1640, y: 1530, w: 120, h: 90, kind: "bunker", z0: 0, z1: 30 });
+  if (!walls.some((w) => w.kind === "bunker")) walls.push({ x: 1900, y: 1600, w: 120, h: 90, kind: "bunker", z0: 0, z1: 30 });
+  // the casino: a big gaudy box with a neon sign, somewhere in town
+  place(1, () => { const x = Math.round(R(200, W - 460)), y = Math.round(R(200, H - 380)); return Math.hypot(x + 130 - 1700, y + 80 - 1300) > 600 ? { x, y, w: 260, h: 160, kind: "shop", sid: "casino", z0: 0, z1: 120 } : { x: 0, y: 0, w: W, h: H }; }, 90);
+  if (!walls.some((w) => w.sid === "casino")) walls.push({ x: 2300, y: 1650, w: 260, h: 160, kind: "shop", sid: "casino", z0: 0, z1: 120 });
   // verticality first, so the big stuff gets room: watchtowers joined by catwalks, each with a staircase
   const stairs = (tx, ty, tw, th, top, dir) => { // a solid staircase climbing towards one face of a box
     const n = Math.ceil(top / 20), d = 30, wd = 44, out = [];
@@ -201,14 +237,45 @@ function generateMap(seed) {
   walls.forEach((w, i) => { w.id = i + 1; const hp = WALL_HP[w.kind]; if (hp) w.hp = w.maxHp = hp; });
   for (const w of walls) if (w.house) { w.hid = w.house.id; delete w.house; }
   wallId = walls.length + 1;
-  WALLS = walls; mapVer++;
+  WALLS = walls; mapVer++; CHUNKS.clear();
+  CASINO = walls.find((w) => w.sid === "casino");
+  KEEPERS = [KEEPERS[0], { id: "lou", sid: "casino", name: "Lucky Lou", role: "The Golden Slop. Cases, the wheel, the tables.", color: "#c03050", hat: "tophat", x: CASINO.x + CASINO.w / 2 + 50, y: CASINO.y + CASINO.h + 22, hours: "always" }];
 }
+// ---------------------------------------------------------------- geometry
+// Story and Endless are played in an endless world: the town, and the wild past its hedge. Royale keeps its fence.
+let gameReady = false; // the map is built before `game` exists
+const OPEN = () => !gameReady || game.mode !== "royale";
+const BW = () => (OPEN() ? Infinity : W), BH = () => (OPEN() ? Infinity : H);
+const TOWN = { x: 0, y: 0, w: W, h: H };
+const inTownXY = (x, y, pad = 0) => x > -pad && y > -pad && x < W + pad && y < H + pad;
+// a coarse grid over the walls, so nothing has to check every tree in the wild
+const GC = 500, GPAD = 160;
+let gridSrc = null, gridLen = -1, gridVer = -1, WGRID = new Map();
+function gridFor() {
+  if (gridSrc === WALLS && gridLen === WALLS.length && gridVer === mapVer) return WGRID;
+  WGRID = new Map(); gridSrc = WALLS; gridLen = WALLS.length; gridVer = mapVer;
+  for (const w of WALLS) {
+    const i0 = Math.floor((w.x - GPAD) / GC), i1 = Math.floor((w.x + w.w + GPAD) / GC), j0 = Math.floor((w.y - GPAD) / GC), j1 = Math.floor((w.y + w.h + GPAD) / GC);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const k = i * 100003 + j; let c = WGRID.get(k); if (!c) WGRID.set(k, (c = [])); c.push(w); }
+  }
+  return WGRID;
+}
+const EMPTY = [];
+function nearXY(x, y) { return gridFor().get(Math.floor(x / GC) * 100003 + Math.floor(y / GC)) || EMPTY; }
+const near = (e) => nearXY(e.x, e.y);
+function wallsAlong(x, y, dx, dy, len) { // every wall in the cells a ray passes through
+  const g = gridFor(), seen = new Set(), out = [];
+  const n = Math.ceil(len / (GC / 2)) + 1;
+  for (let i = 0; i <= n; i++) { const t = Math.min(len, i * GC / 2), c = g.get(Math.floor((x + dx * t) / GC) * 100003 + Math.floor((y + dy * t) / GC)); if (c) for (const w of c) if (!seen.has(w)) { seen.add(w); out.push(w); } }
+  return out;
+}
+const CHUNKS = new Map(); // "cx,cy" -> { kind }
 generateMap((Math.random() * 1e9) | 0);
 let NPC_POS = [];
 function placeNpcs() {
   const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
-  NPC_POS = [{ id: "grubb", x: hc.x - 40, y: HEARTH.y - 40 }, { id: "haddock", x: hc.x + 40, y: HEARTH.y + HEARTH.h + 40 }];
-  for (const id of ["aldous", "vex", "pell", "morwen"]) {
+  NPC_POS = [{ id: "grubb", x: hc.x - 40, y: HEARTH.y - 40 }, { id: "haddock", x: ARMOURY.x + ARMOURY.w / 2, y: ARMOURY.y - 22 }, { id: "vex", x: STORE.x + STORE.w / 2, y: STORE.y - 22 }]; // shopkeepers stand behind their counters
+  for (const id of ["aldous", "pell", "morwen"]) {
     let best = null;
     for (let i = 0; i < 60; i++) {
       const sp = freeSpot(26);
@@ -258,7 +325,7 @@ function npcTick(t, dt) {
 }
 function npcList() { return game.mode !== "story" ? [] : NPC_POS.map((n) => ({ ...n, name: NPCS[n.id].name, role: NPCS[n.id].role, color: NPCS[n.id].color, hat: NPCS[n.id].hat, guest: NPCS[n.id].guest ? 1 : 0, quips: NPCS[n.id].quips || null, ride: NPCS[n.id].ride || null })); }
 const WELL = { x: 1775, y: 1145 };
-function mapMsg() { return { t: "map", map: { W, H, ver: mapVer, walls: WALLS.filter((w) => w.kind !== "built"), hearth: HEARTH, well: WELL, pitch: PITCH, plots: PLOTS.map((p) => ({ x: p.x, y: p.y })), seed: MAP_SEED, valley: VALLEY, npcs: npcList() } }; }
+function mapMsg() { return { t: "map", map: { W, H, ver: mapVer, walls: WALLS.filter((w) => w.kind !== "built" && !w.ck), hearth: HEARTH, well: WELL, pitch: PITCH, plots: PLOTS.map((p) => ({ x: p.x, y: p.y })), seed: MAP_SEED, valley: VALLEY, npcs: npcList(), keepers: game.mode === "royale" ? [] : KEEPERS } }; }
 
 // ---------------------------------------------------------------- data
 const WEAPONS = {
@@ -333,7 +400,6 @@ const ZTYPES = {
 const zCode = (z) => ZTYPES[z.type].code || z.type[0];
 
 const SHOP = {
-  seeds:   { name: "Seeds x3", cost: 15 },
   medkit:  { name: "Medkit (goes in your bag)", cost: 40 },
   kevlar:  { name: "Armour plates (soak 60 damage)", cost: 60 },
   smg:     { name: "SMG", cost: 80 },
@@ -354,6 +420,11 @@ const SHOP = {
 for (const [id, it] of Object.entries(SHOP)) it.cat = ["seeds", "hoe", "repair", "enhance", "case", "gcase"].includes(id) ? "farm" : ["medkit", "antidote"].includes(id) ? "food" : "arms";
 for (const id of ["bread", "beans", "ration", "pie", "water", "cola", "grog", "bandage", "iodine", "radaway", "flowers", "trinket", "pack"]) SHOP[id] = { name: ITEMS[id].name, cost: ITEMS[id].cost, cat: id === "pack" ? "farm" : "food", desc: ITEMS[id].desc };
 for (const id of GEAR_KEYS) SHOP[id] = { name: GEAR[id].name, cost: GEAR[id].cost, cat: "gear", desc: GEAR[id].desc || "" };
+SHOP.repair.cat = "dome";
+SHOP.dome50 = { name: "Put 50g towards the Hearth Dome", cost: 50, cat: "dome" };
+SHOP.dome250 = { name: "Put 250g towards the Hearth Dome", cost: 250, cat: "dome" };
+// which counter sells what
+for (const [id, it] of Object.entries(SHOP)) it.shop = ["repair", "dome50", "dome250"].includes(id) ? "hearth" : ["case", "gcase"].includes(id) ? "casino" : it.cat === "arms" || it.cat === "gear" || id === "enhance" ? "armoury" : "general";
 
 const VEHICLES = {
   tractor: { name: "Tractor",    r: 28, max: 260, acc: 240, turn: 2.2, hp: 700, ram: 1.6 },
@@ -369,8 +440,7 @@ const PIECES = {
 };
 const GRID = 40;
 
-// ---------------------------------------------------------------- geometry
-function collide(e, r) { return !!MV.pushOut(e, r, WALLS, W, H); } // at the entity's own height (ground level if it has none)
+function collide(e, r) { return !!MV.pushOut(e, r, near(e), BW(), BH()); } // at the entity's own height (ground level if it has none)
 // 3D slab test against a box; returns the distance along the (unit) ray or Infinity
 function rayBox3(o, d, b) {
   let tmin = 0, tmax = Infinity;
@@ -399,7 +469,7 @@ function rayCyl(o, d, c, r, z0, z1) {
   return best;
 }
 const zHeight = (z) => z.r * 3.7;
-function freeGround(p) { return MV.floorAt(p.x, p.y, 20, 0, WALLS).h === 0 && !WALLS.some((w) => w.kind === "pad" && MV.touches(w, p.x, p.y, 40)); }
+function freeGround(p) { return MV.floorAt(p.x, p.y, 20, 0, near(p)).h === 0 && !near(p).some((w) => w.kind === "pad" && MV.touches(w, p.x, p.y, 40)); }
 function rayRect(x, y, dx, dy, w) {
   let tmin = 0, tmax = Infinity;
   for (const [o, d, lo, hi] of [[x, dx, w.x, w.x + w.w], [y, dy, w.y, w.y + w.h]]) {
@@ -446,6 +516,7 @@ const freshMods = () => ({ hearthRegen: 0, zHp: 1, zCount: 1, dmg: 1, shoutCd: 1
 const freshDeeds = () => ({ blood: 0, soil: 0, coin: 0, word: 0 });
 const game = { mode: "story", countdown: 0, skip: new Set(), deeds: freshDeeds(), legend: null, prev: null, pendingVote: null, zone: null, drop: null, aff: {}, clues: new Set(), phase: "lobby", night: 0, ends: 0, hearth: 1000, hearthMax: 1000, result: null, spawnLeft: 0, spawnNext: 0, bossId: 0, bossKind: "leshen", stats: null, flags: { valley: VALLEY }, mods: freshMods(), vote: null, story: null, ending: null,
   market: newMarket(), mayor: null, elec: null, nuke: null, waste: false, hot: [], posadAt: 0, tip: null, cameo: "chef" };
+gameReady = true;
 
 function newWeapon(type, rarity = 0, enh = 0) {
   return { type, rarity, enh, ammo: WEAPONS[type].mag, reloadUntil: 0, reloadStart: 0, nextShot: 0, bloom: 0, hot: false, tried: false };
@@ -492,7 +563,7 @@ function resetLoadout(p, fresh) {
   p.weapons = [newWeapon("pistol")];
   if (fresh && CLASSES[p.cls].start) p.weapons.push(newWeapon(CLASSES[p.cls].start));
   p.active = p.weapons.length - 1;
-  if (fresh) { p.gold = (FAST ? 2000 : 50) + (BACKGROUNDS[p.bg].gold || 0); p.seeds = p.cls === "farmer" ? 6 : 3; }
+  if (fresh) { p.gold = (FAST ? 2000 : 50) + (BACKGROUNDS[p.bg].gold || 0); bagAdd(p.bag, "s_turnip", p.cls === "farmer" ? 6 : 3); if (p.cls === "farmer") bagAdd(p.bag, "s_potato", 3); p.invDirty = true; }
   p.gren = Math.max(p.gren || 0, fresh ? 2 : 1); p.molo = Math.max(p.molo || 0, fresh ? 1 : 0); p.bile = 0; p.throwAt = 0;
   Object.assign(p, hearthSpawn(), { z: 0, vx: 0, vy: 0, vz: 0, gr: true });
 }
@@ -656,7 +727,7 @@ function needs(p, dt, t) {
   p.bw = Math.min(100, p.bw + dt * k * 100 / 340 * (p.inf && p.inf.sym === "runs" ? 8 : 1));
   for (const [k, name] of [["bl", "bladder"], ["bw", "bowels"]]) {
     const v = p[k];
-    if (v >= 80 && !p["warn" + k]) { p["warn" + k] = true; toast(p, `Your ${name} is at ${Math.round(v)}%. Press X to go.`, "#ffc030"); }
+    if (v >= 80 && !p["warn" + k]) { p["warn" + k] = true; toast(p, `Your ${name} is at ${Math.round(v)}%. Tap X to go.`, "#ffc030"); }
     if (v >= 100) accident(p, k === "bl" ? "pee" : "poo");
   }
 }
@@ -836,13 +907,13 @@ function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
   { const once = new Set(); for (const w of [...WALLS]) if (w.hp && w.kind !== "built") { const d = boxDist(w, x, y, z), key = w.hid && w.kind === "hwall" ? w.hid : w.id; if (d < r && !once.has(key)) { once.add(key); damageWall(w, dmg * 1.4 * (1 - d / r * 0.5)); } } }
   for (const v of vehicles) if ((v.x - x) ** 2 + (v.y - y) ** 2 < (r + VEHICLES[v.kind].r) ** 2 && Math.abs((v.z || 0) + 20 - z) < r + 30) hurtVehicle(v, dmg * 0.5, owner);
 }
-const insideWall = (x, y, z) => WALLS.some((w) => w.kind !== "lake" && x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h && z < w.z1 - 2 && z > (w.z0 || 0) - 2);
+const insideWall = (x, y, z) => nearXY(x, y).some((w) => w.kind !== "lake" && x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h && z < w.z1 - 2 && z > (w.z0 || 0) - 2);
 function throwIt(p, kind) {
   const t = now();
   if (p.dead || p.air || p.veh || t < p.throwAt || t < p.going || p.dlg) return;
   if (!["day", "night", "royale", "lobby"].includes(game.phase)) return;
   const have = kind === "molo" ? p.molo : p.gren;
-  if (have <= 0) return toast(p, kind === "molo" ? "No molotovs left. The shop sells them [B]." : "No grenades left. The shop sells them [B].", "#f88");
+  if (have <= 0) return toast(p, kind === "molo" ? "No molotovs left. Haddock's armoury sells them." : "No grenades left. Haddock's armoury sells them.", "#f88");
   if (kind === "molo") p.molo--; else p.gren--;
   p.throwAt = t + 0.7;
   const pt = (p.pt == null ? 0.35 : p.pt) + 0.18, sp = 640;
@@ -865,7 +936,7 @@ function projTick(t, dt) {
       for (let i = 0; i < steps && !boom; i++) {
         pr.x += pr.vx * dt / steps; pr.y += pr.vy * dt / steps; pr.z += pr.vz * dt / steps;
         if (pr.flat) pr.z = Math.max(pr.z, 30); // top-down players fire level rockets
-        if (pr.z <= MV.floorAt(pr.x, pr.y, 2, pr.z, WALLS).h || insideWall(pr.x, pr.y, pr.z) || pr.x < 0 || pr.y < 0 || pr.x > W || pr.y > H) boom = true;
+        if (pr.z <= MV.floorAt(pr.x, pr.y, 2, pr.z, near(pr)).h || insideWall(pr.x, pr.y, pr.z) || (!OPEN() && (pr.x < 0 || pr.y < 0 || pr.x > W || pr.y > H))) boom = true;
         for (const zb of zombies) if (!boom && zb.hp > 0 && (zb.x - pr.x) ** 2 + (zb.y - pr.y) ** 2 < (zb.r + 6) ** 2 && (pr.flat || (pr.z > zb.z - 6 && pr.z < zb.z + zHeight(zb) + 6))) boom = true;
         for (const q of players.values()) if (!boom && q.id !== pr.owner && !q.dead && !q.air && (q.x - pr.x) ** 2 + (q.y - pr.y) ** 2 < 22 * 22 && (pr.flat || (pr.z > q.z - 6 && pr.z < q.z + MV.HGT + 6))) boom = true;
         for (const v of vehicles) if (!boom && (v.x - pr.x) ** 2 + (v.y - pr.y) ** 2 < VEHICLES[v.kind].r ** 2 && pr.z > (v.z || 0) - 4 && pr.z < (v.z || 0) + 44 && !(owner && owner.veh === v.id)) boom = true;
@@ -875,11 +946,11 @@ function projTick(t, dt) {
     }
     // grenades and molotovs: arcs that bounce off things
     pr.vz -= MV.GRAV * 0.75 * dt;
-    const nx = clamp(pr.x + pr.vx * dt, 4, W - 4), ny = clamp(pr.y + pr.vy * dt, 4, H - 4), nz = pr.z + pr.vz * dt;
+    const nx = OPEN() ? pr.x + pr.vx * dt : clamp(pr.x + pr.vx * dt, 4, W - 4), ny = OPEN() ? pr.y + pr.vy * dt : clamp(pr.y + pr.vy * dt, 4, H - 4), nz = pr.z + pr.vz * dt;
     let bumped = false;
     if (insideWall(nx, pr.y, nz)) { pr.vx = -pr.vx * 0.45; bumped = true; } else pr.x = nx;
     if (insideWall(pr.x, ny, nz)) { pr.vy = -pr.vy * 0.45; bumped = true; } else pr.y = ny;
-    const fl = MV.floorAt(pr.x, pr.y, 3, pr.z + 2, WALLS).h;
+    const fl = MV.floorAt(pr.x, pr.y, 3, pr.z + 2, near(pr)).h;
     let landed = false;
     if (nz <= fl) { pr.z = fl; if (pr.vz < -60) landed = true; pr.vz = -pr.vz * 0.4; pr.vx *= 0.65; pr.vy *= 0.65; } else pr.z = nz;
     if (pr.kind === "molo") {
@@ -900,7 +971,7 @@ function ignite(x, y, zHint, ownerId, gen, force) {
   if (x < 0 || y < 0 || x > W || y > H) return;
   const cx = Math.floor(x / FIRE_CELL), cy = Math.floor(y / FIRE_CELL), key = cx + "," + cy, t = now();
   const mx = (cx + 0.5) * FIRE_CELL, my = (cy + 0.5) * FIRE_CELL;
-  const z = MV.floorAt(mx, my, 4, zHint, WALLS).h;
+  const z = MV.floorAt(mx, my, 4, zHint, nearXY(mx, my)).h;
   if (insideWall(mx, my, z + 4)) return;
   if (HEARTH.x < mx && mx < HEARTH.x + HEARTH.w && HEARTH.y < my && my < HEARTH.y + HEARTH.h) return;
   const f = fires.get(key);
@@ -998,7 +1069,7 @@ function shoot(p, w) {
     const dx = Math.cos(a) * Math.cos(pt), dy = Math.sin(a) * Math.cos(pt), dz = Math.sin(pt);
     const o = [mx, my, mz], d = [dx, dy, dz];
     let wallT = def.range;
-    for (const wl of WALLS) if (wl.kind !== "lake") wallT = Math.min(wallT, rayBox3(o, d, wl));
+    { const hl = Math.hypot(dx, dy) || 1; for (const wl of wallsAlong(mx, my, dx / hl, dy / hl, def.range)) if (wl.kind !== "lake") wallT = Math.min(wallT, rayBox3(o, d, wl)); }
     if (dz < -1e-6) { // the ground, or the lake bed if the shot goes into the water
       let tg = mz > 0 ? -mz / dz : 0;
       const lk = LAKE && MV.lakeAt([LAKE], mx + dx * tg, my + dy * tg);
@@ -1163,11 +1234,14 @@ function interact(p) {
   if (p.veh) return exitVehicle(p);
   for (const v of vehicles) if (dist2(v, p) < (VEHICLES[v.kind].r + 34) ** 2 && Math.abs((v.z || 0) - p.z) < 70 && enterVehicle(p, v)) return;
   if (game.mode !== "royale") { const n = NPC_POS.filter((q) => dist2(q, p) < 70 * 70).sort((a, b) => dist2(a, p) - dist2(b, p))[0]; if (n) return openDlg(p, n.id); }
-  if (rectHitsCircle(HEARTH, p, 70) && bagCount(p.bag, "turnip") >= 2) { // cook two turnips into a stew
-    bagTake(p.bag, "turnip", 2); bagAdd(p.bag, "stew"); p.invDirty = true; deed("soil", 2);
+  if (rectHitsCircle(HEARTH, p, 70) && bagCount(p.bag, "turnip") + bagCount(p.bag, "potato") >= 2) { // cook two vegetables into a stew
+    for (let i = 0; i < 2; i++) bagTake(p.bag, bagCount(p.bag, "turnip") >= bagCount(p.bag, "potato") ? "turnip" : "potato");
+    bagAdd(p.bag, "stew"); p.invDirty = true; deed("soil", 2);
     events.push({ k: "burn", x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 });
-    return toast(p, "You cook two turnips in the Hearth. Hearth stew! It's in your bag.", "#ffb070");
+    return toast(p, "You cook your vegetables in the Hearth. Hearth stew! It's in your bag.", "#ffb070");
   }
+  if (game.mode !== "royale" && nearStall(p)) return openStall(p);
+  { const sid = ["general", "armoury", "casino", "hearth"].filter((q) => nearShop(p, q)).sort((a, b) => boxDist(shopWall(a), p.x, p.y, 0) - boxDist(shopWall(b), p.x, p.y, 0))[0]; if (sid) return openShop(p, sid); } // the nearest counter
   if (LAKE && rectHitsCircle(LAKE, p, 40) && p.z < 20) { // fill a bottle at the water's edge
     if (!bagAdd(p.bag, "lakewater")) return toast(p, "Your bag is full.", "#f88");
     p.invDirty = true;
@@ -1177,29 +1251,32 @@ function interact(p) {
   for (const pl of PLOTS) { const d = dist2(pl, p); if (d < bd) { bd = d; plot = pl; } }
   if (!plot) return p.hoe ? till(p) : undefined;
   if (plot.stage === 0) {
-    if (p.seeds <= 0) return toast(p, "No seeds. Buy some in the shop [B].", "#f88");
-    p.seeds--; plot.stage = 1; plot.prog = 0; plot.rate = (p.cls === "farmer" ? 1.85 : 1) * (1 + 0.25 * sk(p, "green")) * (1 + 0.15 * (p.hoe || 0)) * game.mods.grow; plot.owner = p.id;
+    const crop = takeSeed(p);
+    if (!crop) return toast(p, "No seeds. Old Giles sells them at the produce stall.", "#f88");
+    plot.stage = 1; plot.prog = 0; plot.crop = crop; plot.rate = (p.cls === "farmer" ? 1.85 : 1) * (1 + 0.25 * sk(p, "green")) * (1 + 0.15 * (p.hoe || 0)) * game.mods.grow; plot.owner = p.id;
     addXp(p, 2);
   } else if (plot.stage === 3) {
-    plot.stage = 0; p.st.crops++; deed("soil", 5);
-    if (bagAdd(p.bag, "turnip")) p.invDirty = true; else toast(p, "Your bag is full, so the turnip goes in the bin.", "#bbb");
-    shock(game.market, "FARM", 0.01);
-    addGold(p, Math.round((p.cls === "farmer" ? 40 : 25) * (1 + 0.2 * (p.hoe || 0))), "Harvest");
-    addXp(p, 12);
-    if (Math.random() < 0.25) { p.seeds++; toast(p, "Found a seed in the soil", "#8f8"); }
+    const C = CROPS[plot.crop || "turnip"], n = C.yield || 1;
+    plot.stage = C.regrow ? 2 : 0; plot.prog = 0; p.st.crops++; deed("soil", 5);
+    let lost = 0; for (let i = 0; i < n; i++) if (!bagAdd(p.bag, plot.crop || "turnip")) lost++;
+    p.invDirty = true;
+    toast(p, lost ? `Your bag is full, so ${lost === n ? "the" : "a"} ${C.name.toLowerCase()} goes in the bin.` : `Picked ${n > 1 ? n + " " : "a "}${C.name.toLowerCase()}${n > 1 ? "s" : ""}. Sell ${n > 1 ? "them" : "it"} to Old Giles at the stall for about ${cropPrice(p, plot.crop || "turnip") * n}g, or eat ${n > 1 ? "them" : "it"}.`, lost ? "#bbb" : "#8f8");
+    shock(game.market, "FARM", 0.004 * Math.sqrt(C.sell / 25));
+    addXp(p, Math.round(6 + 6 * C.t));
+    if (Math.random() < 0.2) { const id = plot.crop || "turnip"; bagAdd(p.bag, "s_" + id); toast(p, `Found a ${C.name.toLowerCase()} seed in the soil`, "#8f8"); }
   } else toast(p, "Still growing...", "#bbb");
 }
 function till(p) {
   if (game.mode === "royale") return toast(p, "No time for farming. Somebody's shooting at you.", "#bbb");
   if (!p.gr || p.z > 4) return toast(p, "You can only till the ground.", "#bbb");
   const mineN = PLOTS.filter((pl) => pl.tilled === p.id).length, limit = hoeLimit(p.hoe);
-  if (mineN >= limit) return toast(p, `Your ${HOES[p.hoe]} can't manage more than ${limit} plots. Upgrade it in the shop [B].`, "#f88");
+  if (mineN >= limit) return toast(p, `Your ${HOES[p.hoe]} can't manage more than ${limit} plots. Upgrade it at Vex's store.`, "#f88");
   const want = p.hoe >= 3 && mineN + 2 <= limit ? 2 : 1;
   const fx = Math.cos(p.a), fy = Math.sin(p.a), made = [];
   for (let i = 0; i < want; i++) {
     const side = want === 2 ? (i ? 32 : -32) : 0;
     const x = Math.round(p.x + fx * 44 - fy * side), y = Math.round(p.y + fy * 44 + fx * side), c = { x, y };
-    const why = x < 60 || y < 60 || x > W - 60 || y > H - 60 ? "Too close to the edge of the valley."
+    const why = !OPEN() && (x < 60 || y < 60 || x > W - 60 || y > H - 60) ? "Too close to the edge of the valley."
       : WALLS.some((w) => rectHitsCircle(w, c, 34)) ? "Something's in the way."
       : PLOTS.some((pl) => dist2(pl, c) < 58 * 58) || made.some((pl) => dist2(pl, c) < 58 * 58) ? "Too close to another plot."
       : builds.some((b) => rectHitsCircle(b, c, 30)) ? "Not on top of your barricades."
@@ -1219,10 +1296,12 @@ function giveWeapon(p, w) {
   p.weapons[1] = w; p.active = 1;
 }
 function buy(p, item) {
-  if (game.mode === "royale" && game.phase !== "lobby") return toast(p, "No shops in the Royale. Loot it or lose it.", "#f88");
-  if (game.phase !== "day" && game.phase !== "lobby") return toast(p, "The shop is shut at night.", "#f88");
+  if (game.mode === "royale") return toast(p, "No shops in the Royale. Loot it or lose it.", "#f88");
   if (p.dead) return;
   const it = SHOP[item]; if (!it) return;
+  if (!nearShop(p, it.shop)) return toast(p, `You'll have to go to ${SHOPS[it.shop].name} for that.`, "#f88");
+  if (!shopIsOpen(it.shop)) return toast(p, SHOPS[it.shop].shut || "Shut.", "#f88");
+  if (item.startsWith("dome")) return fundDome(p, it.cost);
   if (item === "enhance") return enhance(p);
   if (item === "hoe" && p.hoe >= 3) return toast(p, "Your Golden Hoe is as good as hoes get.", "#bbb");
   const cost = price(p, item === "hoe" ? HOE_COST[p.hoe] : it.cost);
@@ -1236,8 +1315,7 @@ function buy(p, item) {
     p.invDirty = true;
     return toast(p, `Bought ${it.name}. It's in your bag [I].`, "#8f8");
   }
-  if (item === "seeds") p.seeds += 3;
-  else if (item === "kevlar") p.armor = 60;
+  if (item === "kevlar") p.armor = 60;
   else if (item === "hoe") { p.hoe++; toast(p, `${p.hoe === 1 ? "Bought" : "Upgraded to"} a ${HOES[p.hoe]}. Press E on open ground to till a plot (${hoeLimit(p.hoe)} max${p.hoe === 3 ? ", two at a time" : ""}).`, "#8f8"); }
   else if (item === "grenade") p.gren = Math.min(9, p.gren + 2);
   else if (item === "molotov") p.molo = Math.min(9, p.molo + 2);
@@ -1393,6 +1471,7 @@ function casinoCrate(p, rarity, type) { giveWeapon(p, newWeapon(type || pick(LOO
 function doSpin(p) {
   shock(game.market, "VEX", 0.005);
   if (p.spinning || p.spins <= 0 || p.casino) return;
+  if (!nearShop(p, "casino")) return toast(p, "The wheel's at the Golden Slop.", "#f88");
   p.spins--; p.spinning = true; p.spunTotal++;
   const i = process.env.SLOP_WHEEL ? WHEEL.findIndex((w) => w.id === process.env.SLOP_WHEEL) : spinWheel(), seg = WHEEL[i]; // SLOP_WHEEL: testing only
   p.pe.push({ k: "wheel", seg: i });
@@ -1465,6 +1544,8 @@ function equip(p, slot, id) {
 // ---------------------------------------------------------------- story
 const storyApi = {
   players: () => [...players.values()],
+  dome: () => (game.dome ? [game.dome.have, game.dome.cost] : [0, 1]),
+  fundDome: (each) => { let got = 0; for (const p of players.values()) { const g = Math.min(each, p.gold); p.gold -= g; got += g; } if (game.dome) game.dome.have = Math.min(game.dome.cost, game.dome.have + got); return got; },
   get mods() { return game.mods; },
   get flags() { return game.flags; },
   fullName,
@@ -1519,6 +1600,8 @@ function resolveVote() {
 
 // ---------------------------------------------------------------- npcs & dialogue
 const npcApi = {
+  dome: () => (game.dome ? [game.dome.have, game.dome.cost] : [0, 1]),
+  night: () => game.night,
   progress: (p, id) => p.st[QUESTS[id].stat] - p.q[id].base,
   accept: (p, id) => { p.q[id] = { base: p.st[QUESTS[id].stat], done: false, told: false }; toast(p, `New quest: ${QUESTS[id].title}. ${QUESTS[id].desc} [J]`, "#e0c0ff"); },
   gold: (p, n) => { if (n > 0) addGold(p, n); else p.gold = Math.max(0, p.gold + n); },
@@ -1596,9 +1679,9 @@ function romanceNode(p, npc, node) {
 function giveGift(p, npc, id) {
   const g = GIFTS[id], taste = TASTE[npc] || {};
   if (g.cost && p.gold < g.cost) { p.dlgSay = `You can't afford that. It's ${g.cost}g.`; return; }
-  if (g.seeds && p.seeds < g.seeds) { p.dlgSay = "You're out of seeds."; return; }
+  if (g.seeds && seedCount(p) < g.seeds) { p.dlgSay = "You're out of seeds."; return; }
   if (g.cost) p.gold -= g.cost;
-  if (g.seeds) p.seeds -= g.seeds;
+  if (g.seeds) takeSeed(p);
   p.gifted.add(npc);
   const kind = taste.love === id ? "love" : taste.like === id ? "like" : taste.hate === id ? "hate" : "meh";
   addLove(p, npc, { love: 25, like: 12, meh: 5, hate: -15 }[kind]);
@@ -1687,9 +1770,50 @@ function openPack(p, n = 4) {
   if (CARDS[best].r >= 4) feed(`${fullName(p)} pulled ${CARDS[best].name} from a Slop Snap pack!`, "#ff4b4b");
 }
 
+// ---------------------------------------------------------------- the produce stall
+function openShop(p, sid) {
+  if (game.mode === "royale") return toast(p, "Boarded up for the Royale.", "#bbb");
+  if (!shopIsOpen(sid)) return toast(p, SHOPS[sid].shut, "#bbb");
+  p.pe.push({ k: "shop", sid });
+}
+function openStall(p) {
+  const k = KEEPERS.find((q) => q.sid === "produce");
+  if (!stallOpen(k)) return toast(p, `The stall's shut. ${k.name} has gone home for the night. Back at dawn.`, "#bbb");
+  p.pe.push({ k: "stall", sid: "produce" });
+}
+function stallAct(p, m) {
+  if (game.mode === "royale" || p.dead || !nearStall(p)) return;
+  const k = KEEPERS.find((q) => q.sid === "produce");
+  if (!stallOpen(k)) return toast(p, "The stall's shut for the night.", "#bbb");
+  if (m.a === "buy") {
+    const id = String(m.id); if (!CROPS[id]) return;
+    const cost = seedPrice(p, id);
+    if (p.gold < cost) return toast(p, `That's ${cost}g. You've got ${p.gold}g.`, "#f88");
+    if (!bagAdd(p.bag, "s_" + id, SEED_PACK)) return toast(p, "Your bag is full.", "#f88");
+    p.gold -= cost; p.seedSel = id; p.invDirty = true;
+    return toast(p, `${SEED_PACK} ${CROPS[id].name.toLowerCase()} seeds. "Mind the crows."`, "#8f8");
+  }
+  if (m.a === "sell") {
+    const ids = m.id === "*" ? CROP_KEYS : [String(m.id)];
+    let got = 0, n = 0;
+    for (const id of ids) {
+      if (!CROPS[id]) continue;
+      const have = bagCount(p.bag, id), take = m.id === "*" ? have : Math.min(have, Math.max(1, m.n | 0));
+      if (!take) continue;
+      const each = cropPrice(p, id);
+      bagTake(p.bag, id, take); got += each * take; n += take;
+      shock(game.market, "FARM", -0.0015 * take * Math.sqrt(CROPS[id].sell / 25)); // flood the market and prices drop
+    }
+    if (!n) return toast(p, "You've nothing he wants. He buys anything you've grown.", "#bbb");
+    p.invDirty = true; p.st.sold = (p.st.sold || 0) + n;
+    addGold(p, got, "Sold produce"); addXp(p, Math.min(40, n * 2)); deed("soil", Math.min(5, n));
+    return toast(p, `Sold ${n} for ${got}g. ${pick(["\"Lovely.\"", "\"I've seen worse.\"", "\"Fresh as you like.\"", "\"Don't tell Vex what I paid.\""])}`, "#ffd34d");
+  }
+}
+
 // ---------------------------------------------------------------- the bag
 function invMsg(p) {
-  return { k: "inv", bag: p.bag, gear: p.gear, food: Math.round(p.food), water: Math.round(p.water), rad: Math.round(p.rad), shares: p.shares, basis: p.basis, cards: p.cards, deck: p.deck, size: BAG_SIZE };
+  return { k: "inv", sel: p.seedSel || "", bag: p.bag, gear: p.gear, food: Math.round(p.food), water: Math.round(p.water), rad: Math.round(p.rad), shares: p.shares, basis: p.basis, cards: p.cards, deck: p.deck, size: BAG_SIZE };
 }
 function useItem(p, i) {
   const it = p.bag[i]; if (!it || p.dead || p.air) return;
@@ -1697,6 +1821,7 @@ function useItem(p, i) {
   const d = ITEMS[it.id]; if (!d) return;
   if (d.kind === "gift") return toast(p, "That's a gift. Talk to someone [E] and give it to them.", "#ff8fc8");
   if (d.kind === "pack") { bagTake(p.bag, it.id); return openPack(p); }
+  if (d.kind === "seed") { p.seedSel = d.crop; p.invDirty = true; return toast(p, `You'll plant ${CROPS[d.crop].name.toLowerCase()} next. Press E at an empty plot.`, "#8f8"); }
   if (d.cure && !p.inf) return toast(p, "You're not infected.", "#bbb");
   if (d.kind === "med" && d.hp && p.hp >= maxHp(p)) return toast(p, "You're already at full health.", "#bbb");
   if (d.rad && p.rad <= 0) return toast(p, "You're not irradiated.", "#bbb");
@@ -1736,11 +1861,11 @@ function itemAct(p, m) {
   }
   if (m.a === "quick") { // H: eat or drink whatever you need most
     const want = p.water <= p.food ? "drink" : "food";
-    const order = want === "drink" ? ["water", "lakewater", "cola", "grog", "pee", "turnip"] : ["turnip", "bread", "beans", "pie", "ration", "stew"];
+    const order = want === "drink" ? ["water", "lakewater", "cola", "strawberry", "tomato", "lettuce", "melon", "grog", "pee"] : ["lettuce", "tomato", "turnip", "bread", "corn", "potato", "beans", "pie", "ration", "stew"];
     for (const id of order) { const i = p.bag.findIndex((b) => b.id === id); if (i >= 0) return useItem(p, i); }
     const any = p.bag.findIndex((b) => ITEMS[b.id] && (ITEMS[b.id].kind === "food" || ITEMS[b.id].kind === "drink"));
     if (any >= 0) return useItem(p, any);
-    return toast(p, "You've got nothing to eat or drink. The shop sells both [B].", "#f88");
+    return toast(p, "You've got nothing to eat or drink. Vex's store sells both.", "#f88");
   }
 }
 
@@ -1758,37 +1883,87 @@ function leaveBunker(p) {
   collide(p, 16);
   toast(p, game.waste ? "You climb out into a ruined, glowing valley." : "You climb back out into the daylight.", "#c8d0a0");
 }
+// ---------------------------------------------------------------- the Hearth Dome
+// Haddock's wireless: every dawn the news from beyond the hills gets a little worse
+const RADIO = [
+  "📻 Haddock's wireless: \"...troops massing on both sides of the border. The government urges calm...\" Grubb wants the old Hearth Dome rebuilt, just in case. Pay into it at the Hearth [E].",
+  "📻 \"...a second 'test' lit up the sky over the mountains last night. Officials insist it was a weather balloon...\"",
+  "📻 \"...all embassies closed. Civil defence asks every town with a Hearth to raise its Dome...\"",
+  "📻 \"...launch is considered imminent. Seek shelter. Do not look at the...\" Static. Haddock turns it off and doesn't say anything for a while.",
+  "📻 Nothing but the long tone. Haddock says that means tonight. Is the Dome up?",
+];
+function radioNews() {
+  if (game.mode === "royale" || !game.dome || game.dome.struck) return;
+  const d = game.dome, line = RADIO[Math.min(game.night, RADIO.length - 1)];
+  setTimeout(() => {
+    feed(line, "#9fe0ff");
+    if (d.have < d.cost) feed(`The Hearth Dome: ${d.have}/${d.cost}g. ${Math.max(0, FIRST_NUKE - game.night)} day${FIRST_NUKE - game.night === 1 ? "" : "s"} until the bombs can fall.`, "#9fe0ff");
+  }, 6000);
+}
+// The war is coming. Everyone chips in at the Hearth; once it's paid for, the dome stops a nuke flattening the town.
+const DOME_COST = 1000, DOME_PER = 350, DOME_R = 1000, FIRST_NUKE = 5; // nothing falls before night 5
+const domeK = () => (game.dome ? clamp(game.dome.have / game.dome.cost, 0, 1) : 0);
+const inDome = (e) => Math.hypot(e.x - (HEARTH.x + HEARTH.w / 2), e.y - (HEARTH.y + HEARTH.h / 2)) < DOME_R;
+const DOME_STAGES = ["", "The first pylon hums into life beside the Hearth.", "Two pylons up. The air round the Hearth tastes of pennies.", "Three pylons. Grubb says it's \"nearly a dome\". It's a triangle.", ""];
+function fundDome(p, amt) {
+  const d = game.dome; if (!d) return;
+  if (d.have >= d.cost) return toast(p, "The Dome is fully charged. Save your gold.", "#bbb");
+  amt = Math.min(amt, d.cost - d.have);
+  if (p.gold < amt) return toast(p, `That's ${amt}g. You've got ${p.gold}g.`, "#f88");
+  const before = Math.floor(domeK() * 4);
+  p.gold -= amt; d.have += amt; p.st.dome = (p.st.dome || 0) + amt; deed("soil", amt / 40);
+  shock(game.market, "BNKR", -0.02);
+  const after = Math.floor(domeK() * 4);
+  toast(p, `+${amt}g to the Dome (${d.have}/${d.cost}g)`, "#9fe0ff");
+  if (d.have >= d.cost) {
+    events.push({ k: "banner", text: "THE HEARTH DOME IS UP", sub: "Stand inside it when the siren goes and the town survives a nuke. Each hit drains it by half." });
+    events.push({ k: "dome", up: 1 }); feed(`${fullName(p)} paid the last of the Hearth Dome. It hums.`, "#9fe0ff");
+  } else if (after > before) { feed(DOME_STAGES[after], "#9fe0ff"); events.push({ k: "dome", stage: after }); }
+  else feed(`${fullName(p)} put ${amt}g towards the Hearth Dome`, "#9fe0ff");
+}
 function nukeWarn(why) {
   if (game.nuke || game.mode === "royale" || !players.size) return;
   const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
   let gz = freeSpot(40);
   for (let i = 0; i < 40; i++) { const c = freeSpot(40); if (Math.hypot(c.x - hc.x, c.y - hc.y) > 900) { gz = c; break; } }
-  game.nuke = { at: now() + NUKE_WARN, x: gz.x, y: gz.y };
+  game.nuke = { at: now() + NUKE_WARN, x: gz.x, y: gz.y }; if (game.dome) game.dome.struck = true;
   events.push({ k: "banner", text: "☢ NUCLEAR LAUNCH DETECTED ☢", sub: `${why} Get to the bunker [E] or dive deep into the lake. ${NUKE_WARN} seconds.` });
   events.push({ k: "siren" });
-  feed("☢ Missile inbound. Find the bunker (the concrete block on your map) or get deep underwater.", "#9fff60");
+  feed(domeK() >= 1 ? "☢ Missile inbound. The Dome is up: get inside it, near the Hearth. Or the bunker, or deep underwater." : "☢ Missile inbound and the Hearth Dome isn't finished. Pay into it at the Hearth NOW, then get to the bunker or deep underwater.", "#9fff60");
   shock(game.market, "*", -0.15, "Missile warning: markets panic"); shock(game.market, "BNKR", 0.9, "Bunkr & Sons flooded with enquiries");
 }
 function nukeBlast() {
   const N = game.nuke; game.nuke = null; game.waste = true;
-  events.push({ k: "nuke", x: Math.round(N.x), y: Math.round(N.y) });
+  const k = domeK(), held = k >= 1, safe = (e) => held && inDome(e);
+  events.push({ k: "nuke", x: Math.round(N.x), y: Math.round(N.y), dome: held ? 1 : 0 });
   for (const p of players.values()) {
     if (p.dead || p.air === "bunker") continue;
+    if (safe(p)) { toast(p, "The sky goes white. The dome flickers... and holds.", "#9fe0ff"); addRad(p, 15); continue; }
     if (p.swim && p.z < -120) { toast(p, "The world above turns white. Down here, you're fine. Mostly.", "#9fff60"); addRad(p, 30); continue; }
     killPlayer(p, null, "vaporised by a nuclear bomb");
   }
   for (const z of zombies) if (z.type === "boss" || z.type === "elite") z.hp *= 0.5; else z.hp = 0;
   zombies = zombies.filter((z) => z.hp > 0);
-  for (const w of [...WALLS]) if (WOODEN.has(w.kind) && w.kind !== "hwall") damageWall(w, w.kind === "house" ? 500 : 9999);
+  for (const w of [...WALLS]) if (WOODEN.has(w.kind) && w.kind !== "hwall" && !safe({ x: w.x + w.w / 2, y: w.y + w.h / 2 })) damageWall(w, w.kind === "house" ? 500 : 9999);
   for (const v of [...vehicles]) hurtVehicle(v, VEHICLES[v.kind].hp * 0.6, null);
-  for (const pl of PLOTS) { pl.stage = 0; pl.prog = 0; }
+  for (const pl of PLOTS) if (!safe(pl)) { pl.stage = 0; pl.prog = 0; }
   fires.clear();
-  game.hearth = Math.max(1, game.hearth * 0.65);
+  if (held) {
+    game.dome.have = Math.floor(game.dome.cost / 2); game.flags.domeHeld = 1;
+    events.push({ k: "banner", text: "THE DOME HELD", sub: `The Hearth survived. The dome is drained to half: top it up at the Hearth (${game.dome.cost - game.dome.have}g) before the next one.` });
+    feed("The dome took the blast. Everything inside it is still standing.", "#9fe0ff");
+  } else {
+    // a half-built dome soaks some of it; no dome at all and the Hearth goes out
+    game.hearth -= game.hearthMax * (1 - k) * 1.05 + (k > 0 ? 0 : game.hearth);
+    if (game.dome) game.dome.have = 0;
+    if (game.hearth <= 0) { game.flags.nuked = 1; events.push({ k: "banner", text: "THE HEARTH IS GONE", sub: "Nobody finished the dome." }); }
+    else { game.hearth = Math.max(1, game.hearth); events.push({ k: "banner", text: "THE HALF-BUILT DOME BURNT OUT", sub: `It saved the Hearth, barely (${Math.round(game.hearth)} left). Rebuild it before the next one.` }); }
+  }
   game.hot = [{ x: N.x, y: N.y, r: 460, s: 10 }];
-  for (let i = 0; i < 7; i++) { const c = freeSpot(40); game.hot.push({ x: c.x, y: c.y, r: rand(110, 220), s: rand(3, 7) }); }
+  for (let i = 0, n = 0; i < 40 && n < 7; i++) { const c = freeSpot(40); if (safe(c)) continue; n++; game.hot.push({ x: c.x, y: c.y, r: rand(110, 220), s: rand(3, 7) }); }
   if (LAKE) game.hot.push({ x: LAKE.x + LAKE.w / 2, y: LAKE.y + LAKE.h / 2, r: Math.max(LAKE.w, LAKE.h) * 0.75, s: 3, lake: true });
   shock(game.market, "*", -0.45, "NUCLEAR DETONATION. Markets in freefall."); shock(game.market, "BNKR", 1.2, "Bunkr & Sons: 'We did tell you.'");
-  events.push({ k: "banner", text: "THE VALLEY IS A WASTELAND", sub: "Green means radiation. Gas masks, hazmat suits, iodine and Rad-Away are in the shop. Tinned food is safe." });
+  if (game.hearth > 0) setTimeout(() => events.push({ k: "banner", text: "THE VALLEY IS A WASTELAND", sub: "Green means radiation. Gas masks and hazmat suits at the armoury, iodine and Rad-Away at Vex's. Tinned food is safe." }), 5000);
   if (game.mayor === "posad") { for (const q of players.values()) addGold(q, 150, "The saucers have landed"); feed("Comrade Posad was right: the saucers came. They mostly brought gold.", "#ff6060"); }
   mapDirty = true;
 }
@@ -1848,7 +2023,7 @@ function electMayor(id, apathy) {
   const C = CANDIDATES[id];
   let first = true;
   for (const [s, v] of Object.entries(C.stock)) { shock(game.market, s, v, first ? `${C.name} wins the election` : ""); first = false; }
-  if (C.posadist) game.posadAt = game.night + 2;
+  if (C.posadist) game.posadAt = Math.max(game.night + 2, FIRST_NUKE + 1);
   events.push({ k: "banner", text: `MAYOR ${C.name.toUpperCase()}`, sub: `${apathy ? "Nobody voted, so it was drawn from a hat. " : ""}${C.desc}` });
   feed(`${C.name} is the new mayor: "${C.slogan}"`, C.posadist ? "#ff6060" : "#ffd34d");
 }
@@ -2021,14 +2196,14 @@ function flyTick(v, def, driver, t, dt) {
   v.vx += (tvx - v.vx) * ka; v.vy += (tvy - v.vy) * ka;
   v.vz += ((on ? lift * (lift > 0 ? 260 : 230) : -170) - v.vz) * Math.min(1, dt * 2.5); // full down is a hard landing but not a crash; nobody at the controls: it comes down
   v.x += v.vx * dt; v.y += v.vy * dt;
-  const hit = MV.pushOut(v, def.r, WALLS, W, H, v.z, 40);
+  const hit = MV.pushOut(v, def.r, near(v), BW(), BH(), v.z, 40);
   if (hit) {
     const sp = Math.hypot(v.vx, v.vy);
     if (hit !== "edge" && sp > 150) { hurtVehicle(v, sp * 0.18, null); events.push({ k: "land", x: v.x, y: v.y }); if (!vehicles.includes(v)) return; }
     v.vx *= -0.3; v.vy *= -0.3;
   }
   v.z += v.vz * dt;
-  const fl = MV.floorAt(v.x, v.y, def.r * 0.5, v.z + 20, WALLS).h;
+  const fl = MV.floorAt(v.x, v.y, def.r * 0.5, v.z + 20, near(v)).h;
   if (v.z <= fl) {
     if (v.vz < -280) { hurtVehicle(v, (-v.vz - 280) * 0.9, null); events.push({ k: "land", x: v.x, y: v.y }); if (!vehicles.includes(v)) return; }
     v.z = fl; v.vz = Math.max(0, v.vz); const f = Math.pow(0.02, dt); v.vx *= f; v.vy *= f;
@@ -2060,7 +2235,7 @@ function vehicleTick(t, dt) {
     v.a += steer * def.turn * dt * clamp(v.v / 140, -1, 1);
     const ox = v.x, oy = v.y;
     v.x += Math.cos(v.a) * v.v * dt; v.y += Math.sin(v.a) * v.v * dt;
-    if (collide(v, def.r) || MV.pushOut(v, def.r, LAKE_SOLID, W, H, 0, 40)) {
+    if (collide(v, def.r) || MV.pushOut(v, def.r, LAKE_SOLID, BW(), BH(), 0, 40)) {
       const hitSpeed = Math.abs(v.v);
       if (hitSpeed > 90) { hurtVehicle(v, hitSpeed * 0.12, null); events.push({ k: "land", x: v.x, y: v.y }); }
       if (Math.hypot(v.x - ox, v.y - oy) < Math.abs(v.v) * dt * 0.5) v.v *= -0.25;
@@ -2094,7 +2269,7 @@ function placePiece(p, kind, x, y, free) {
   x = Math.round(x / GRID) * GRID; y = Math.round(y / GRID) * GRID;
   const b = { id: nextId++, kind: "built", bk: kind, x, y, w: GRID, h: GRID, z0: 0, z1: def.z1 || 10, hp: def.hp, maxHp: def.hp, owner: p ? p.id : 0, uses: def.uses || 0, nextShot: 0, a: 0 };
   const mid = { x: x + GRID / 2, y: y + GRID / 2 };
-  if (x < 40 || y < 40 || x + GRID > W - 40 || y + GRID > H - 40) return fail("Can't build at the edge of the world.");
+  if (!OPEN() && (x < 40 || y < 40 || x + GRID > W - 40 || y + GRID > H - 40)) return fail("Can't build at the edge of the world.");
   if (p && !free) {
     if (builds.filter((q) => q.owner === p.id).length >= 25) return fail("You've built enough. 25 pieces max.");
     if (dist2(mid, p) > 280 * 280) return fail("Too far away to build there.");
@@ -2202,12 +2377,13 @@ function beginPlay() {
   }
   game.ends = now() + DAY_LEN;
   const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
-  zoneInit(hc.x, hc.y, STORY_ZONE_R[0]);
+  zoneInit(hc.x, hc.y, STORY_ZONE_R[0]); zoneShrinkTo(40000, 0.01); // by day the wild is open; the fog only comes at night
   startDrop(hc);
   setTimeout(openElection, (FAST ? 3 : 8) * 1000); // the valley picks its first mayor on day one
   if (game.mode === "endless") { events.push({ k: "banner", text: `ENDLESS: ${VALLEY.toUpperCase()}`, sub: "No story. No end. Keep the Hearth burning as long as you can. A boss comes every fifth night." }); return; }
   events.push({ k: "banner", text: `WELCOME TO ${VALLEY.toUpperCase()}`, sub: "SPACE to jump. Talk to the townsfolk [E]. Build defences [C]. Night is coming." });
   if (game.cameoDay === 1) cameoArrive();
+  radioNews();
   openVote(1);
 }
 function setupStory() {
@@ -2226,6 +2402,7 @@ function setupStory() {
   game.cameo = GUESTS.includes(process.env.SLOP_GUEST) ? process.env.SLOP_GUEST : pick(GUESTS);
   game.market = newMarket(); game.mayor = null; game.elec = null; game.nuke = null; game.waste = false; game.hot = []; game.posadAt = 0; game.tip = null;
   game.fog = false;
+  game.dome = { have: 0, cost: Math.min(3000, DOME_COST + DOME_PER * (n - 1)), struck: false };
 }
 // a celebrity turns up for one day of the story, then leaves at nightfall
 function cameoArrive() {
@@ -2319,6 +2496,51 @@ function spawnCrates() {
   for (let i = 0; i < 1 + Math.ceil(players.size / 2); i++) crates.push({ id: nextId++, ...freeSpot(), it: { id: pick(game.waste && Math.random() < 0.4 ? ["gasmask", "hazmat"] : GEAR_KEYS), r: Math.min(3, lootRarity(game.night)) } });
   for (let i = 0; i < 2; i++) crates.push({ id: nextId++, ...freeSpot(), it: { id: pick(game.waste ? ["beans", "ration", "radaway", "iodine", "water"] : ["beans", "ration", "water", "cola", "bandage", "pie", "grog"]), n: 1 + (Math.random() < 0.4 ? 1 : 0) } });
 }
+// ---------------------------------------------------------------- the wild, past the hedge
+function ensureChunks() {
+  if (!OPEN() || !(game.phase === "day" || game.phase === "night" || game.phase === "intro")) return;
+  const fresh = [];
+  for (const p of players.values()) {
+    if (p.dead) continue;
+    const pcx = Math.floor(p.x / CS), pcy = Math.floor(p.y / CS);
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+      const cx = pcx + i, cy = pcy + j, key = cx + "," + cy;
+      if (CHUNKS.has(key)) continue;
+      if (cx * CS >= 0 && cy * CS >= 0 && (cx + 1) * CS <= W && (cy + 1) * CS <= H) { CHUNKS.set(key, { kind: "town" }); continue; }
+      const c = makeChunk(MAP_SEED, cx, cy, TOWN);
+      CHUNKS.set(key, { kind: c.kind });
+      for (const w of c.walls) w.id = wallId++;
+      WALLS.push(...c.walls); fresh.push(...c.walls);
+      for (const l of c.loot) { // something worth walking out here for. Better the further you go.
+        const up = (Math.random() < Math.min(0.75, c.far / 7000) ? 1 : 0) + l.good, roll = Math.random();
+        if (roll < 0.5) crates.push({ id: nextId++, x: l.x, y: l.y, w: newWeapon(pick(LOOT_TYPES), Math.min(4, lootRarity(game.night) + up)) });
+        else if (roll < 0.75) crates.push({ id: nextId++, x: l.x, y: l.y, it: { id: pick(GEAR_KEYS), r: Math.min(4, lootRarity(game.night) + up) } });
+        else crates.push({ id: nextId++, x: l.x, y: l.y, it: { id: pick(["beans", "ration", "water", "cola", "bandage", "medkit", "pack", "s_pumpkin", "s_melon", "s_corn", "s_strawberry"]), n: 1 + (Math.random() < 0.5 ? 1 : 0) } });
+      }
+    }
+    // tell people where they've wandered to
+    const own = CHUNKS.get(pcx + "," + pcy), where = inTownXY(p.x, p.y) ? "town" : own && own.kind;
+    if (where && where !== p.where) { if (p.where && where !== "town" && BIOMES[where]) toast(p, `You wander into ${BIOMES[where].name}.`, "#b8e070"); else if (p.where && where === "town") toast(p, `Back in ${VALLEY}.`, "#ffe9a0"); p.where = where; }
+  }
+  if (fresh.length) broadcastRaw(JSON.stringify({ t: "ck", seed: MAP_SEED, walls: fresh }));
+}
+// the dead roam the wild, by day as well as night, and there are more of them the further out you go
+function wildTick(t) {
+  if (!OPEN() || !(game.phase === "day" || game.phase === "night")) return;
+  const live = [...players.values()].filter((p) => !p.dead && !p.air);
+  for (const p of live) {
+    if (inTownXY(p.x, p.y, 250)) continue;
+    const far = Math.hypot(p.x - W / 2, p.y - H / 2), cap = Math.min(12, 2 + Math.floor(far / 1800)) + (game.phase === "night" ? 3 : 0);
+    if (zombies.filter((z) => dist2(z, p) < 1400 * 1400).length >= cap || Math.random() < 0.35) continue;
+    const a = rand(0, Math.PI * 2), d = rand(750, 1000), at = { x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d };
+    if (inTownXY(at.x, at.y, 100) || insideWall(at.x, at.y, 10)) continue;
+    const z = spawnZombie(nightType(Math.max(game.night, 1 + Math.floor(far / 2500)), false), at);
+    if (!z) continue;
+    z.wild = 1; z.aggro = p.id; z.aggroUntil = t + 30; const k = 1 + far / 9000; z.hp *= k; z.maxHp *= k;
+  }
+  // the wild doesn't keep the dead nobody is near
+  zombies = zombies.filter((z) => !z.wild || z.type === "boss" || live.some((p) => dist2(p, z) < 3200 * 3200));
+}
 // ---------------------------------------------------------------- natural disasters
 const DISASTERS = {
   meteor: { name: "METEOR SHOWER", sub: "Look up. Watch for the red circles. Get out of them.", len: 28 },
@@ -2351,7 +2573,7 @@ function disasterTick(t, dt) {
     }
     for (const m of D.meteors) if (t >= m.at) {
       m.done = true;
-      const z = MV.floorAt(m.x, m.y, 4, 2000, WALLS).h;
+      const z = MV.floorAt(m.x, m.y, 4, 2000, near(m)).h;
       explode(m.x, m.y, z + 10, 170, 150, null, "flattened by a meteor", 1);
       for (let i = 0; i < 3; i++) ignite(m.x + rand(-60, 60), m.y + rand(-60, 60), z + 30, 0, 2, true);
       events.push({ k: "meteor", x: Math.round(m.x), y: Math.round(m.y), z: Math.round(z) });
@@ -2400,8 +2622,10 @@ function disasterTick(t, dt) {
 }
 function maybeNuke() {
   if (game.mode === "royale" || game.nuke) return;
+  if (game.night < FIRST_NUKE) return; // five days of peace (of a sort) to get the dome up
+  if (game.dome && !game.dome.struck) return nukeWarn(`The war has reached ${VALLEY}.`); // it was always coming
   if (game.mayor === "posad" && game.posadAt && game.night >= game.posadAt) { game.posadAt = 0; return nukeWarn("Comrade Posad has kept his campaign promise."); }
-  if (game.night >= 3 && Math.random() < NUKE_CHANCE) nukeWarn("Somebody, somewhere, has pressed the button.");
+  if (Math.random() < NUKE_CHANCE) nukeWarn("Somebody, somewhere, has pressed the button.");
 }
 function startNight() {
   if (game.vote) resolveVote();
@@ -2415,7 +2639,7 @@ function startNight() {
   game.spawnLeft = Math.round(Math.min(150, (12 + 9 * game.night) * (0.6 + 0.4 * n) * game.mods.zCount * game.mods.nightCut));
   game.mods.nightCut = 1;
   game.spawnNext = now() + 2;
-  zoneShrinkTo(STORY_ZONE_R[Math.min(game.night, STORY_ZONE_R.length - 1)], 25);
+  zoneShrinkTo(STORY_ZONE_R[Math.min(game.night, STORY_ZONE_R.length - 1)], 45);
   events.push({ k: "feed", text: "The slop fog is closing in. Stay near the Hearth.", color: "#c080ff" });
   // the story's last night only comes once the mystery is solved; until then the waves never stop
   const final = game.mode === "story" && game.night >= LAST_NIGHT && solved();
@@ -2447,7 +2671,8 @@ function startNight() {
   maybeNuke();
 }
 function startDay() {
-  game.phase = "day"; game.ends = now() + DAY_LEN; game.fog = false; game.dino = false;
+  game.phase = "day"; game.ends = now() + DAY_LEN; game.fog = false; game.dino = false; game.duskWarned = false;
+  if (game.zone) zoneShrinkTo(40000, 20); // the fog lifts off the wild
   for (const n of NPC_POS) npcRoute(n, false);
   for (const p of players.values()) {
     p.gifted = new Set();
@@ -2463,13 +2688,14 @@ function startDay() {
   if (M && M.dawn === "share" && players.size > 1) { const all = [...players.values()], pot = all.reduce((a, p) => a + p.gold, 0), each = Math.floor(pot / all.length); for (const p of all) p.gold = each; feed(`Comrade Posad redistributes the wealth: everyone now has ${each}g.`, "#ff6060"); }
   if (game.mode !== "royale" && game.night > 0 && game.night % ELECT_EVERY === 0) setTimeout(openElection, 4000);
   maybeNuke();
+  radioNews();
   for (const p of players.values()) { p.talked.clear(); cure(p, "The sunrise burns the infection out of you."); }
   for (const z of zombies) if (z.type !== "elite") z.burn = true;
   spawnCrates();
   const left = LAST_NIGHT - game.night;
-  const sub = game.mode === "endless" ? `You survived night ${game.night}. ${ENDLESS_BOSS_EVERY - (game.night % ENDLESS_BOSS_EVERY)} until the next boss. Shop open [B].`
-    : solved() ? (left <= 1 ? "The mystery is solved. Tonight is the final night. Shop open [B]." : `The sun burns the dead. ${left} nights left. Shop open [B].`)
-    : left <= 1 ? "The sun burns the dead, but they'll keep coming until the mystery is solved [J]. Shop open [B]." : `The sun burns the dead. Solve the mystery [J] and survive ${left} more nights. Shop open [B].`;
+  const sub = game.mode === "endless" ? `You survived night ${game.night}. ${ENDLESS_BOSS_EVERY - (game.night % ENDLESS_BOSS_EVERY)} until the next boss. The shops are open.`
+    : solved() ? (left <= 1 ? "The mystery is solved. Tonight is the final night. The shops are open." : `The sun burns the dead. ${left} nights left. The shops are open.`)
+    : left <= 1 ? "The sun burns the dead, but they'll keep coming until the mystery is solved [J]. The shops are open." : `The sun burns the dead. Solve the mystery [J] and survive ${left} more nights. The shops are open.`;
   events.push({ k: "banner", text: `DAY ${game.night + 1}`, sub });
   if (game.mode !== "story") return;
   if (game.night + 1 === game.cameoDay) cameoArrive();
@@ -2560,6 +2786,13 @@ function tick() {
   if (tickN % TICK_RATE === 0 && game.phase !== "royale") marketTick(game.market);
   if (game.story && t > game.story.until) game.story = null;
   zoneTick(t);
+  if (tickN % 10 === 0) ensureChunks();
+  if (tickN % 45 === 0) wildTick(t);
+  if (OPEN() && game.phase === "day" && !game.duskWarned && game.ends - t < 25 && game.zone) { // the fog comes for the wild at night
+    game.duskWarned = true;
+    const R = STORY_ZONE_R[Math.min(game.night + 1, STORY_ZONE_R.length - 1)];
+    for (const p of players.values()) if (!p.dead && (p.x - game.zone.cx) ** 2 + (p.y - game.zone.cy) ** 2 > R * R) { toast(p, "Night is coming. The slop fog will swallow the wild. Get back to town!", "#c080ff"); p.pe.push({ k: "dusk" }); }
+  }
   if (game.phase === "royale") {
     const target = 16 + 4 * players.size;
     if (zombies.length < target && Math.random() < dt * 1.5) {
@@ -2605,12 +2838,12 @@ function tick() {
     if (p.air === "fall") {
       let fx = ((p.keys & 8) ? 1 : 0) - ((p.keys & 2) ? 1 : 0), fy = ((p.keys & 4) ? 1 : 0) - ((p.keys & 1) ? 1 : 0);
       if (fx && fy) { fx *= Math.SQRT1_2; fy *= Math.SQRT1_2; }
-      p.x = clamp(p.x + fx * 420 * dt, 30, W - 30); p.y = clamp(p.y + fy * 420 * dt, 30, H - 30);
+      if (OPEN()) { p.x += fx * 420 * dt; p.y += fy * 420 * dt; } else { p.x = clamp(p.x + fx * 420 * dt, 30, W - 30); p.y = clamp(p.y + fy * 420 * dt, 30, H - 30); }
       p.z = Math.max(0, 700 * clamp((p.fallEnd - t) / 2.2, 0, 1));
-      if (t > p.fallEnd) { p.air = null; collide(p, 16); p.z = MV.floorAt(p.x, p.y, 10, 2000, WALLS).h; p.vz = 0; p.vx = p.vy = 0; p.gr = true; events.push({ k: "land", x: p.x, y: p.y }); }
+      if (t > p.fallEnd) { p.air = null; collide(p, 16); p.z = MV.floorAt(p.x, p.y, 10, 2000, near(p)).h; p.vz = 0; p.vx = p.vy = 0; p.gr = true; events.push({ k: "land", x: p.x, y: p.y }); }
       continue;
     }
-    if (outsideZone(p) && (game.phase === "night" || game.phase === "royale" || game.phase === "day")) {
+    if (outsideZone(p) && (game.phase === "night" || game.phase === "royale")) {
       p.hp -= (game.mode === "royale" ? game.zone.dmg : 6) * dt; p.lastHurt = t;
       if (tickN % 15 === 0) p.pe.push({ k: "fog" });
       if (p.hp <= 0) killPlayer(p, null, "lost in the slop fog");
@@ -2625,7 +2858,7 @@ function tick() {
     const veh = vehOf(p);
     if (p.veh && !veh) p.veh = 0;
     if (!veh) {
-      const ev = MV.step(p, { keys: p.keys, yaw: p.a, rel: p.rel }, dt, { sp: speedOf(p), boxes: WALLS, W, H, frozen: t < p.going || !!p.dlg || !!p.cg || t < p.frozen });
+      const ev = MV.step(p, { keys: p.keys, yaw: p.a, rel: p.rel }, dt, { sp: speedOf(p), boxes: near(p), W: BW(), H: BH(), frozen: t < p.going || !!p.dlg || !!p.cg || t < p.frozen });
       if (ev === "pad") events.push({ k: "pad", x: Math.round(p.x), y: Math.round(p.y) });
       breathe(p, t, dt);
       if (p.z > 1400) p.z = 1400;
@@ -2655,7 +2888,7 @@ function tick() {
   // plots
   for (const pl of PLOTS) {
     if (pl.stage === 0 || pl.stage === 3) continue;
-    pl.prog += dt * pl.rate / 13;
+    pl.prog += dt * pl.rate / (13 * (CROPS[pl.crop || "turnip"].t));
     if (pl.prog >= 1) { pl.prog = 0; pl.stage++; }
   }
 
@@ -2671,7 +2904,8 @@ function tick() {
     for (const p of alive) { let d = dist2(p, z); if (p.bile > t || (z.aggro === p.id && t < z.aggroUntil)) d /= 25; if (d < bd) { bd = d; target = p; } }
     if (target) bd = dist2(target, z);
     if (!target && game.mode === "royale") { if (!z.wander || dist2(z, z.wander) < 900 || Math.random() < dt * 0.1) z.wander = freeSpot(20); }
-    const goal = target || (game.mode === "royale" ? z.wander : hc);
+    if (!target && z.wild) { if (!z.wander || dist2(z, z.wander) < 900 || Math.random() < dt * 0.1) z.wander = { x: z.x + rand(-400, 400), y: z.y + rand(-400, 400) }; } // shambling about in the wild
+    const goal = target || (game.mode === "royale" || z.wild ? z.wander : hc);
     let dx = goal.x - z.x, dy = goal.y - z.y;
     const d = Math.hypot(dx, dy) || 1;
     dx /= d; dy /= d;
@@ -2707,15 +2941,15 @@ function tick() {
     z.vx *= Math.pow(0.03, dt); z.vy *= Math.pow(0.03, dt);
     const touchingHearth = game.mode !== "royale" && z.z < HEARTH.z1 && z.x + z.r > HEARTH.x - 4 && z.x - z.r < HEARTH.x + HEARTH.w + 4 && z.y + z.r > HEARTH.y - 4 && z.y - z.r < HEARTH.y + HEARTH.h + 4;
     // the dead climb: walls, roofs, towers. Not trees, not the Hearth, not your barricades (those they chew).
-    const hit = MV.pushOut(z, z.r, WALLS, W, H, z.z, zHeight(z));
-    if (z.type !== "flyer" && (z.z || 0) > -8 && LAKE_SOLID.length) MV.pushOut(z, z.r, LAKE_SOLID, W, H, 0, 10); // the dead don't swim
+    const hit = MV.pushOut(z, z.r, near(z), BW(), BH(), z.z, zHeight(z));
+    if (z.type !== "flyer" && (z.z || 0) > -8 && LAKE_SOLID.length) MV.pushOut(z, z.r, LAKE_SOLID, BW(), BH(), 0, 10); // the dead don't swim
     if ((z.z || 0) < -60 && z.type !== "boss") z.hp -= z.maxHp * 0.04 * dt; // ...but they do drown, slowly
     if ((z.type === "charger" || z.type === "boss" || z.type === "rex") && t < z.charge && hit && hit !== "edge") damageWall(hit, z.type === "charger" ? 90 : 220);
     if (z.type === "charger" && t < z.charge && hit && hit !== "edge") { z.charge = 0; z.stun = t + 1.6; events.push({ k: "boom", x: z.x, y: z.y, z: z.z, r: 40, dust: 1 }); }
     if (z.type === "flyer") {
       // flyers circle high, then dive on whoever they're after
       const hd = target ? Math.hypot(target.x - z.x, target.y - z.y) : Infinity;
-      const floor = MV.floorAt(z.x, z.y, z.r, 2000, WALLS).h;
+      const floor = MV.floorAt(z.x, z.y, z.r, 2000, near(z)).h;
       const want = target ? (hd < 180 ? target.z + 16 : Math.max(floor + 110, target.z + 110)) : touchingHearth || Math.hypot(hc.x - z.x, hc.y - z.y) < 120 ? 50 : floor + 140;
       z.z += clamp(want - z.z, -300 * dt, 220 * dt); z.z = Math.max(z.z, floor);
       z.vz = 0; z.gr = false;
@@ -2726,7 +2960,7 @@ function tick() {
         const moved = Math.hypot(z.x - ox, z.y - oy);
         if (moved < sp * dt * 0.4) z.steer = z.steer ? z.steer : (Math.random() < 0.5 ? 1.2 : -1.2);
       } else if (z.steer && Math.random() < dt * 0.8) z.steer = 0;
-      MV.vertical(z, dt, WALLS, z.r * 0.8, zHeight(z));
+      MV.vertical(z, dt, near(z), z.r * 0.8, zHeight(z));
     }
     if (t > z.atk && builds.length && !(target && Math.sqrt(bd) < z.r + 20 && Math.abs(target.z - z.z) < 60)) {
       const piece = builds.find((b) => PIECES[b.bk].solid && rectHitsCircle(b, z, z.r + 6));
@@ -2797,16 +3031,16 @@ function snapshot() {
   const v = game.vote;
   return {
     t: "s",
-    g: { mode: game.mode, cd: game.countdown ? Math.max(0, +(game.countdown - t).toFixed(1)) : -1, prev: game.prev,
+    g: { pp: CROP_KEYS.map((id) => cropPrice(null, id)), disc: game.mods.discount, mode: game.mode, cd: game.countdown ? Math.max(0, +(game.countdown - t).toFixed(1)) : -1, prev: game.prev,
       intro: game.phase === "intro" ? { at: +(t - game.introT0).toFixed(2), len: INTRO_LEN[game.mode], skip: game.skip.size, cast: game.cast } : null,
       deeds: game.mode === "story" ? Object.fromEntries(Object.keys(LEGENDS).map((k) => [k, Math.round(game.deeds[k])])) : null, legend: game.legend, now: game.mode === "story" ? legendOf(game.deeds) : null,
       alive: [...players.values()].filter((p) => !p.out && !p.dead).length,
-      zone: game.zone ? [r(game.zone.cx), r(game.zone.cy), r(game.zone.r), r(game.zone.tcx), r(game.zone.tcy), r(game.zone.tr), game.zone.t0 > t ? r(game.zone.t0 - t) : -1] : null,
+      zone: game.zone && (!OPEN() || game.phase === "night") ? [r(game.zone.cx), r(game.zone.cy), r(game.zone.r), r(game.zone.tcx), r(game.zone.tcy), r(game.zone.tr), game.zone.t0 > t ? r(game.zone.t0 - t) : -1] : null,
       drop: game.drop && t - game.drop.t0 < game.drop.dur + 3 ? [r(game.drop.x0), r(game.drop.y0), r(game.drop.x1), r(game.drop.y1), +dropPos(t).k.toFixed(3)] : null,
       clues: [...game.clues].map((c) => CLUES[c]),
       ph: game.phase, n: game.night, left: game.ends === Infinity ? -1 : Math.max(0, r(game.ends - t)), hh: r(game.hearth), hm: game.hearthMax, res: game.result, boss: game.bossId, bk: game.bossKind, valley: VALLEY, fog: game.fog ? 1 : 0, solved: solved() ? 1 : 0, dino: game.dino ? 1 : 0,
       mk: SYMS.map((s) => +game.market.px[s].toFixed(2)), news: game.market.news.map((n) => [n.text, n.up ? 1 : 0]),
-      mayor: game.mayor, nuke: game.nuke ? [r(game.nuke.x), r(game.nuke.y), Math.max(0, +(game.nuke.at - t).toFixed(1))] : null, waste: game.waste ? 1 : 0, hot: game.hot.map((h) => [r(h.x), r(h.y), r(h.r), h.lake ? 1 : 0]),
+      mayor: game.mayor, nuke: game.nuke ? [r(game.nuke.x), r(game.nuke.y), Math.max(0, +(game.nuke.at - t).toFixed(1))] : null, dome: game.dome && game.mode !== "royale" ? [game.dome.have, game.dome.cost] : null, waste: game.waste ? 1 : 0, hot: game.hot.map((h) => [r(h.x), r(h.y), r(h.r), h.lake ? 1 : 0]),
       elec: game.elec ? { c: game.elec.cands, v: Object.fromEntries(game.elec.votes), left: Math.max(0, r(game.elec.ends - t)) } : null,
       dis: game.disaster ? { k: game.disaster.kind, w: +game.disaster.water.toFixed(1), x: r(game.disaster.x || 0), y: r(game.disaster.y || 0), m: game.disaster.meteors.map((m) => [r(m.x), r(m.y), +(m.at - t).toFixed(2)]), left: r(game.disaster.until - t) } : null },
     vote: v ? { title: v.ev.title, text: v.ev.text, ch: v.ev.choices.map((c) => [c.label, c.desc]), votes: Object.fromEntries(v.votes), left: Math.max(0, r(v.ends - t)) } : null,
@@ -2815,7 +3049,7 @@ function snapshot() {
       const w = p.weapons[p.active];
       return {
         id: p.id, n: fullName(p), x: r(p.x), y: r(p.y), z: r(p.z), mv: [r(p.vx), r(p.vy), r(p.vz), p.gr ? 1 : 0], pt: p.pt == null ? 0 : +p.pt.toFixed(2), a: +p.a.toFixed(2), hp: r(p.hp), mh: maxHp(p), ar: r(p.armor),
-        c: p.color, h: p.hat, ey: p.eyes, cl: p.cls, bg: p.bg, d: p.dead ? 1 : 0, g: p.gold, sd: p.seeds, st: Math.min(5, Math.floor(p.heat / 40)),
+        c: p.color, h: p.hat, ey: p.eyes, cl: p.cls, bg: p.bg, d: p.dead ? 1 : 0, g: p.gold, sd: seedCount(p), st: Math.min(5, Math.floor(p.heat / 40)),
         w: w.type, wn: wName(w), wr: w.rarity, we: w.enh, am: w.ammo, hot: w.hot ? 1 : 0, sec: p.weapons.length > 1 ? 1 : 0,
         rl: w.reloadUntil ? +(w.reloadUntil - t).toFixed(2) : 0, rt: w.reloadUntil ? +(w.reloadUntil - w.reloadStart).toFixed(2) : 0, rtr: 0,
         rs: w.stage || "", rw: w.waiting ? 1 : 0, rk: reloadKind(w.type), jam: w.jam ? 1 : 0, dirt: Math.round(w.dirt || 0), cln: p.cleaning ? 1 : 0,
@@ -2830,7 +3064,7 @@ function snapshot() {
     ball: PITCH && (BALL.x || BALL.y) ? [r(BALL.x), r(BALL.y), r(BALL.z)] : null,
     pr: projs.map((q) => [q.id, q.kind, r(q.x), r(q.y), r(q.z)]),
     fi: [...fires.values()].map((f) => [f.cx, f.cy, r(f.z)]),
-    pl: PLOTS.map((p) => p.stage),
+    pl: PLOTS.map((q) => q.stage + 4 * Math.max(0, CROP_KEYS.indexOf(q.crop || "turnip"))),
     ca: caches.map((c) => [c.id, r(c.x), r(c.y), c.busy ? 1 : 0]),
     np: NPC_POS.map((n) => [n.id, r(n.x), r(n.y), +(n.a || 0).toFixed(2)]),
     sh: game.shrine ? [...game.shrine.order, game.shrine.step, game.shrine.open ? 1 : 0] : null,
@@ -2897,6 +3131,7 @@ function onMessage(ws, raw) {
     case "mkh": p.pe.push({ k: "mkh", hist: game.market.hist }); break;
     case "elect": if (game.elec && Number.isInteger(m.i) && m.i >= 0 && m.i < game.elec.cands.length) game.elec.votes.set(p.id, m.i); break;
     case "cg": cardAct(p, m); break;
+    case "stall": stallAct(p, m); break;
     case "reload": pressReload(p, p.weapons[p.active]); break;
     case "clean": cleanWeapon(p, m); break;
     case "hack": finishHack(p, m); break;
@@ -2936,8 +3171,9 @@ const server = Bun.serve({
   websocket: {
     open(ws) {
       spectators.add(ws);
-      ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS, items: ITEMS, gear: GEAR, cards: CARDS, locs: LOCS, stocks: STOCKS, cands: CANDIDATES }));
+      ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, shops: SHOPS, domeR: DOME_R, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS, items: ITEMS, crops: CROPS, seedPack: SEED_PACK, gear: GEAR, cards: CARDS, locs: LOCS, stocks: STOCKS, cands: CANDIDATES }));
       ws.send(JSON.stringify(mapMsg()));
+      ws.send(JSON.stringify({ t: "ck", reset: 1, seed: MAP_SEED, walls: WALLS.filter((w) => w.ck) }));
     },
     message: onMessage,
     close(ws) {

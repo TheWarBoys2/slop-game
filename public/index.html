@@ -34,6 +34,11 @@
   #chatin { width: 100%; padding: 8px; font-size: 15px; background: #000c; color: #fff; border: 1px solid #888; border-radius: 4px; }
   #shop .item { display: flex; justify-content: space-between; padding: 9px 12px; margin: 4px 0; background: #2a3423; border-radius: 6px; cursor: pointer; }
   #shop .item:hover { background: #3a4a2c; }
+  #shop .dome { margin: 6px 0 8px; padding: 8px 10px; background: #1c2a36; border-radius: 6px; color: #cfe8ff; font-size: 13px; }
+  #shop .dome .bar { height: 8px; margin-top: 6px; background: #0a1218; border-radius: 4px; overflow: hidden; }
+  #shop .dome .bar i { display: block; height: 100%; background: linear-gradient(90deg, #4da6ff, #9fe0ff); }
+  #shop .tables { background: #4a1a2a; }
+  #shop .tables:hover { background: #6a2438; }
   #shop .item .k { color: #ffd34d; font-weight: bold; margin-right: 10px; }
   table { width: 100%; border-collapse: collapse; margin-top: 10px; }
   th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #333; }
@@ -79,6 +84,10 @@
   .bslot { position: relative; height: 78px; background: #232c1e; border: 2px solid #3a4a2c; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; cursor: pointer; padding: 2px; }
   .bslot:hover { border-color: #ffd34d; } .bslot.empty { opacity: .35; cursor: default; } .bslot.empty:hover { border-color: #3a4a2c; }
   .bslot .ic { font-size: 26px; } .bslot .nm { font-size: 11px; line-height: 1.1; } .bslot .ct { position: absolute; top: 3px; right: 6px; font-weight: bold; color: #ffd34d; }
+  .bslot.sel { border-color: #7fd34d; box-shadow: 0 0 8px #7fd34d88; }
+  #stall .panel { max-width: 760px; background: #1c1a10; border-color: #b08a2a; }
+  #stall .ic { font-size: 20px; } #stall h3 { margin: 10px 0 4px; color: #ffd34d; }
+  .btns button.buy { background: #5a6a2a; }
   #market .panel { max-width: 860px; background: #121814; border-color: #3a8a6a; }
   table.mkt { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 14px; }
   table.mkt td { padding: 5px 6px; border-bottom: 1px solid #ffffff14; vertical-align: middle; }
@@ -213,9 +222,9 @@
     <div class="classes" id="classes"></div>
     <button class="big" id="go">Enter the Valley</button>
     <div class="keys">
-      <kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> look/shoot &nbsp; <kbd>Right-click</kbd> aim down sights &nbsp; <kbd>Space</kbd> jump (hold to bunny hop) &nbsp; <kbd>Shift</kbd> dodge &nbsp; <kbd>T</kbd> first / third person / top-down &nbsp; <kbd>R</kbd> reload (tap again at each stage) &nbsp; <kbd>E</kbd> plant / harvest / loot &nbsp;
-      <kbd>Q</kbd> Thu'um &nbsp; <kbd>Z</kbd> switch element &nbsp; <kbd>L</kbd> strip &amp; clean your gun &nbsp; <kbd>1</kbd><kbd>2</kbd> swap &nbsp; <kbd>3</kbd> grenade &nbsp; <kbd>4</kbd> molotov &nbsp; <kbd>B</kbd> shop (day) &nbsp;
-      <kbd>K</kbd> skills &nbsp; <kbd>J</kbd> journal &nbsp; <kbd>C</kbd> build (dive / descend when swimming or flying) &nbsp; <kbd>G</kbd> casino &nbsp; <kbd>V</kbd> wardrobe &nbsp; <kbd>X</kbd> relieve yourself &nbsp; <kbd>I</kbd> bag &nbsp; <kbd>H</kbd> eat / drink &nbsp; <kbd>M</kbd> stock market &nbsp; <kbd>Y</kbd> Slop Snap cards &nbsp; <kbd>O</kbd> options &nbsp; <kbd>F</kbd> ready &nbsp; <kbd>Tab</kbd> scoreboard &nbsp; <kbd>Enter</kbd> chat<br>
+      <kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> look/shoot &nbsp; <kbd>Right-click</kbd> aim &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>Shift</kbd> dodge &nbsp; <kbd>R</kbd> reload (tap again at each stage) &nbsp; <kbd>E</kbd> use / talk / shop &nbsp; <kbd>Q</kbd> Thu'um &nbsp; <kbd>1</kbd><kbd>2</kbd> swap gun &nbsp; <kbd>T</kbd> camera<br>
+      <b>Hold <kbd>G</kbd></b> for screens (bag, skills, journal, cards, market, wardrobe, options) &nbsp; <b>Hold <kbd>X</kbd></b> for actions (eat, grenade, molotov, clean gun, build, switch shout, relieve yourself: or just tap <kbd>X</kbd>). Flick the mouse at one and let go.<br>
+      Shops are places in town: Vex's store and Haddock's armoury (by day), the Golden Slop casino (all hours), Old Giles's produce stall, and the Hearth itself. Walk up and press <kbd>E</kbd>. <kbd>F</kbd> ready &nbsp; <kbd>Tab</kbd> scores &nbsp; <kbd>Enter</kbd> chat<br>
       Helicopters: <kbd>W</kbd><kbd>S</kbd> nose down / up &nbsp; <kbd>A</kbd><kbd>D</kbd> bank &nbsp; <kbd>Mouse</kbd> turn &nbsp; <kbd>Space</kbd>/<kbd>C</kbd> climb / descend &nbsp; <kbd>Click</kbd> chain gun &nbsp; <kbd>Right-click</kbd> rockets. Flight sticks and gamepads work too (set up in <kbd>O</kbd> options).
     </div>
   </div>
@@ -223,10 +232,10 @@
 
 <div id="shop" class="overlay hidden">
   <div class="panel" style="max-width:460px">
-    <h2 style="margin:0 0 4px;color:#ffd34d">General Store</h2>
+    <h2 style="margin:0 0 4px;color:#ffd34d" id="shopname">General Store</h2>
     <div class="tag" id="shopgold"></div>
     <div id="shopitems"></div>
-    <div class="keys">Click or press the number. <kbd>B</kbd>/<kbd>Esc</kbd> to close.</div>
+    <div class="keys">Click or press the number. <kbd>Esc</kbd> to close, or just walk away.</div>
   </div>
 </div>
 
@@ -277,7 +286,7 @@
         <div id="cSpins" class="tag"></div>
         <button class="cbtn" id="cSpin">SPIN THE WHEEL</button>
         <div id="cGame"></div>
-        <div class="fine">Buy Golden Cases in the shop [B] for more spins. <kbd>G</kbd>/<kbd>Esc</kbd> to close.</div>
+        <div class="fine">Buy Golden Cases at the counter for more spins. <kbd>Esc</kbd> to close.</div>
       </div>
     </div>
   </div>
@@ -332,6 +341,10 @@
 
 <div id="market" class="overlay hidden">
   <div class="panel"><h2 style="margin:0 0 4px;color:#7fd3a0">Slop Valley Stock Exchange</h2><div id="marketBody"></div></div>
+</div>
+
+<div id="stall" class="overlay hidden">
+  <div class="panel"><h2 style="margin:0 0 4px;color:#ffd34d">Old Giles's produce stall</h2><div id="stallBody"></div></div>
 </div>
 
 <div id="cards" class="overlay hidden">
