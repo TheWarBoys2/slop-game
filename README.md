@@ -27,7 +27,7 @@ Only the host installs anything. Everyone else just opens a link in their browse
 
 **How a match goes:** a short first day, then five nights with days in between. Zombies come from the map edges and go for players or straight for the Hearth. If the Hearth's health hits zero you lose. Kill the Leshen on night 5 to win. Winner winner, chicken dinner.
 
-**Controls:** WASD move, mouse look and shoot (click the game to lock the mouse), right-click aim down sights, R reload (press it again at each stage: mag out, mag in, rack), E to use, talk, shop, plant, harvest, loot and get in and out of things, Space jump (hold it to bunny hop), Shift dodge, T switches first person / third person / top-down, Q shout, 1/2 or mouse wheel swap weapons, Tab scoreboard, Enter chat, F ready.
+**Controls:** WASD move, mouse look and shoot (click the game to lock the mouse), right-click aim down sights, R reload (tap R again as the marker crosses the green window for an instant, empowered reload), E to use, talk, shop, plant, harvest, loot and get in and out of things, Space jump (hold it to bunny hop), Shift dodge, T switches first person / third person / top-down, Q shout, 1/2 or mouse wheel swap weapons, Tab scoreboard, Enter chat, F ready.
 
 Everything else lives on two radial menus. **Hold G** for screens: bag, skills, journal, Slop Snap cards, the stock market, wardrobe and options. **Hold X** for actions: eat or drink, grenade, molotov, clean your gun, build, switch the shout's element, relieve yourself (or just tap X). Flick the mouse at one and let go, or press its number. The old letter keys (I, K, J, Y, M, V, O, H, 3, 4, L, C, Z) still work.
 
@@ -35,9 +35,17 @@ Everything else lives on two radial menus. **Hold G** for screens: bag, skills, 
 
 **The war.** The wireless says the bombs come after day 5, and they do. Pay into the Hearth Dome at the Hearth before then: a finished Dome stops a nuke flattening the town (stand inside it, near the Hearth), then drops to half and needs topping up. No Dome, no Hearth.
 
+**The town meeting.** Once a day the valley votes: the story's question on story days, an ordinary town meeting otherwise, and on election days (day 1, then every five days) the mayor's race too. The ballot opens at dawn and is counted at dusk, so there's no rush and you can change your mind. Press N to open it.
+
+**Disasters can be stopped.** When a meteor shower, flood, tornado or earthquake hits, a control station appears near town (⚠ on the map). Press E at it for a minigame: shoot the meteors down on the radar, turn the sluice pipes to drain the flood, time the cloud-seeding rocket into the tornado, or hold the seismic damper steady. Win it and the disaster ends early and pays out.
+
+**Dinosaur Day.** On day 4 of the story (and day 4, then every seventh day, in Endless) nothing but dinosaurs comes out of the well: raptor packs roam all day, and that night is dinosaurs only, fewer of them than a normal night, with one T. rex. They don't turn up any other time.
+
+**Bug reports.** Press F8 (or the 🐞 button) to write one. It's appended to `bug-reports.txt` next to `SlopValley.exe` on the host's PC, along with where you were and what the game was doing, ready to upload.
+
 **The wild.** Past the town there's no edge any more: forests, moors, orchards, ruined hamlets and standing stones go on for as long as you keep walking, with better loot and worse dead the further out you get. The fog only comes in at night.
 
-Helicopters fly with W/S (nose down/up), A/D (bank), the mouse (turn) and Space/C (climb/descend); the gunship fires its chain gun on click and rockets on right-click. A gamepad or flight stick (tested with the layout of a Thrustmaster T.16000M) works too: set its axes in Options. Talk to the townsfolk (E) to give them gifts; each has a favourite and something they can't stand, and enough hearts lead to a date and then a wedding. Townsfolk go home when night falls, and you can walk into any house. There's a lake to swim in, and something at the bottom of it. Stress builds at night; walk onto the football pitch and kick the ball about to calm down. In the lobby the host picks Story, Endless or Royale, and everyone presses F when they are ready; the game starts once all of you are. You get hungry and thirsty, gear (head, body, hands, feet) changes how you fight, and every five nights the valley elects a mayor whose policies last until the next vote. If the siren goes and the Dome isn't up, get to the bunker. There is more to find than this README lets on.
+Helicopters fly with W/S (nose down/up), A/D (bank), the mouse (turn) and Space/C (climb/descend); the gunship fires its chain gun on click and rockets on right-click. A gamepad or flight stick (tested with the layout of a Thrustmaster T.16000M) works too: set its axes in Options. Talk to the townsfolk (E) to give them gifts; each has a favourite and something they can't stand, and enough hearts lead to a date and then a wedding. Townsfolk go home when night falls, and you can walk into any house. There's a lake to swim in, and something at the bottom of it. Stress builds at night; walk onto the football pitch and kick the ball about to calm down. The game opens on a lobby screen: the host picks Story, Endless or Royale, and everyone presses F when they are ready; the game starts once all of you are. Nothing in the lobby earns gold or XP. You get hungry and thirsty (you'll eat and drink from your bag on your own when you run low), gear (head, body, hands, feet) changes how you fight, and every five days the valley elects a mayor whose policies last until the next election. The townsfolk talk out loud (turn it off in Options). If the siren goes and the Dome isn't up, get to the bunker. There is more to find than this README lets on.
 
 ## Hosting on Windows (the host only)
 
@@ -75,4 +83,4 @@ bun tools/bots.js ws://localhost:7777/ws 4   # 4 bots join and play
 
 `server.js` runs the whole game and serves `public/`. The browser client is `public/game.js`. `story.js` is spoilers.
 
-`SLOP_DMG=30` multiplies player damage, for testing the ending quickly.
+`SLOP_DMG=30` multiplies player damage, for testing the ending quickly. `SLOP_DISASTER=meteor|flood|tornado|quake|any` forces a disaster every dawn and dusk, and `SLOP_DINO=1` makes every day from day 2 a Dinosaur Day.

@@ -160,3 +160,22 @@ export function ending(win, f, night) {
   if (f.prep === "feast") lines.push("Every year after, the valley holds a turnip feast on the anniversary. Attendance is mandatory.");
   return lines;
 }
+
+// On days without a story beat (endless, or a story that runs long) the town still meets once a day.
+// Three of these come up, picked by the day so everyone sees the same ballot.
+const MEETING = [
+  { label: "Shore up the Hearth", desc: "+200 Hearth health, fully repaired.", deed: ["soil", 4], go: (api) => { api.hearthMax(200); api.repair(); return "Everyone carries a stone. The Hearth is patched, packed and burning hot."; } },
+  { label: "Pass round the hat", desc: "+60g each.", deed: ["coin", 4], go: (api) => { api.gold(60); return "Grubb's hat comes back heavier than it went out. Nobody asks whose coins they were. (+60g each)"; } },
+  { label: "Open the armoury", desc: "A rare weapon crate for everyone.", deed: ["blood", 4], go: (api) => { for (const p of api.players()) api.crate(1 + (Math.random() < 0.25 ? 1 : 0), p); return "Haddock unlocks the cage with a sigh. Crates at everyone's feet."; } },
+  { label: "Hold a feast", desc: "Everyone healed, fed and watered.", deed: ["word", 4], go: (api) => { api.feast(); return "Turnip stew for everyone. Somebody brought a fiddle. For one evening, nobody mentions the dead."; } },
+  { label: "Call a curfew", desc: "20% fewer of the dead tonight.", deed: ["word", 4], go: (api) => { api.mods.nightCut *= 0.8; return "Shutters down, lamps out, nobody out after dark. The dead find less to come for."; } },
+  { label: "Build turrets", desc: "Two turrets by the Hearth.", deed: ["soil", 4], go: (api) => { api.turrets(2); return "Two rattling turrets go up beside the Hearth. Haddock names them both Doris."; } },
+];
+export function townMeeting(day, api) {
+  const opts = MEETING.map((m, i) => [m, (i * 7919 + day * 104729) % 97]).sort((a, b) => a[1] - b[1]).slice(0, 3).map(([m]) => m);
+  return {
+    title: `Town Meeting, Day ${day}`,
+    text: `${api.flags.valley} gathers round the Hearth again. ${CAST.mayor} bangs a saucepan for order. One thing gets done today: what's it to be?`,
+    choices: opts.map((m) => ({ label: m.label, desc: m.desc, deed: m.deed, go: () => m.go(api) })),
+  };
+}
