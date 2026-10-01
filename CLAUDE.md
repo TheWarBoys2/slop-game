@@ -27,7 +27,7 @@ More than one Claude works on this repo, often at the same time, from different 
    ```
    Test the systems you changed, plus anything the other merged work changed that touches yours.
 4. Only then merge the PR.
-5. After the release is published, update the requests sheet (see "Where work comes from").
+5. After the release is published, move the delivered rows to the sheet's Done tab (see "Where work comes from").
 
 ## PR descriptions
 
@@ -46,13 +46,20 @@ Make it obvious to the other Claude (and to Jay) what moved:
 
 ## Where work comes from
 
-The backlog is Jay's Google Sheet **"Slop Game requests"** (tab "Requests"): https://docs.google.com/spreadsheets/d/10WxUCtSSvFdvOd7SgpiaWfvu2vmLg7BNDJxHA7Q2Ug0/edit
+The backlog is Jay's Google Sheet **"Slop Game requests"**: https://docs.google.com/spreadsheets/d/10WxUCtSSvFdvOd7SgpiaWfvu2vmLg7BNDJxHA7Q2Ug0/edit
 
-Work it highest priority first, skip Done rows, and set Status to "In progress" when you start an item (this is also how the other Claude knows you've claimed it). If a row is already "In progress", someone else has it; don't start it too.
+- The **Requests** tab is the open list. Columns: A Idea, B Effort, C Type, D Priority, E Status, F Claude's take, G Players response to Claude's take. Re-read the header row before writing in case the layout has changed.
+- The **Done** tab holds finished requests, with the same columns.
 
-**When your work ships, you must update the sheet.** Every Claude, every time. Once the PR is merged and the release exists, set each row you delivered to "Done" and put the PR link and the real build tag (e.g. `PR #12, build-10`) in Notes. If you only did part of a row, leave it "In progress" and say in Notes what's left. If you picked up work that wasn't in the sheet, add a row for it marked Done so the sheet stays the full record.
+Work it highest priority first and set Status to "In progress" when you start an item (this is also how the other Claude knows you've claimed it). If a row is already "In progress", someone else has it; don't start it too. Read the Players response column before you start: it's the group answering your take.
 
-If you can't reach Google Sheets (no connector in your session), list the rows to update in your PR description under a **Sheet updates** heading (the row's Idea text, the new Status, and the Notes text) so Jay or the other Claude can copy them across.
+**When your work ships, you must update the sheet.** Every Claude, every time. Once the PR is merged and the release exists:
+1. Set the row's Status to "Done" and add the PR link and the real build tag (e.g. `Shipped in PR #12, build-10`) to the end of its **Claude's take** cell. There is no Notes column.
+2. Move the row to the **Done** tab: append it there, then delete it from Requests. Re-read Requests right before deleting, since the other Claude or a friend may have added or reordered rows; delete by matching the Idea text, never by a remembered row number.
+
+If you only did part of a row, leave it on Requests as "In progress" and say in Claude's take what's left. If you picked up work that wasn't in the sheet, add it straight to the Done tab so the sheet stays the full record.
+
+If you can't reach Google Sheets (no connector in your session), list the rows to move in your PR description under a **Sheet updates** heading (the row's Idea text and the line to add to Claude's take) so Jay or the other Claude can do it.
 
 ## Running it
 
