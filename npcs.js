@@ -1,7 +1,8 @@
 // The people of the valley, and everything they will (and won't) tell you.
 // Each NPC is a little dialogue graph. Nodes: { text(c), opts: [{ label, to, if(c), do(c) }] }.
 // `c` is { p, f (story flags), aff (team affinity per npc), clues (Set), q (player's quests), api }.
-// Clues are shared by the whole team. Four of five lets you confront the person behind the slop.
+// Clues are shared by the whole team. Three of five lets you accuse someone; who did it changes every game (mystery.js).
+import { SUSPECTS, culpritOf } from "./mystery.js";
 
 export const QUESTS = {
   pell_wake:    { npc: "pell", title: "A Proper Wake", desc: "Harvest 3 crops for Pell's wake.", stat: "crops", goal: 3 },
@@ -44,7 +45,6 @@ export const NPCS = {
           { label: "Is there going to be a war?", to: "war", if: (c) => !c.f.exposed },
           { label: "Who was the drowned man?", to: "grandad", if: (c) => c.f.path === "drink" || c.aff.grubb >= 1 },
           { label: "Any chance of a campaign donation?", to: "donate", if: (c) => !c.f.exposed && !c.p.flags.grubbGold },
-          { label: "We know it was you, Grubb.", to: "confront", if: (c) => c.clues.size >= 4 && !c.f.exposed && !c.f.blackmail && !c.f.pardoned },
           { label: "Goodbye.", to: null },
         ],
       },
@@ -146,8 +146,8 @@ export const NPCS = {
         ],
       },
       confess: {
-        text: () => "He leans close. \"I will say only this. It was a man of high office. He confessed twice, and wept both times, and he left a very expensive handkerchief in the booth.\"",
-        opts: [{ label: "Thank you, Brother.", to: "start", do: (c) => c.api.clue("confess") }],
+        text: (c) => c.api.said("confess"),
+        opts: [{ label: (c) => c.api.label("confess"), to: "start", do: (c) => c.api.clue("confess") }],
       },
       quest: {
         text: () => "\"The Hearth takes damage every night, and I am one man with one trowel. Buy stone from the store and repair it. Labour is a kind of prayer. So is stone.\"",
@@ -183,10 +183,10 @@ export const NPCS = {
         ],
       },
       book: {
-        text: (c) => c.aff.morwen >= 1 || q(c, "mor_voice")?.done ? "\"Only one person ever borrowed it. Came down here in the spring in a very nice coat, asking about 'garden pests'. Never gave it back.\" She taps the gold chain drawn in the mud by her fire."
+        text: (c) => c.aff.morwen >= 1 || q(c, "mor_voice")?.done ? c.api.said("book")
           : "\"Why should I tell you? You've not so much as complimented the soup.\"",
         opts: [
-          { label: "Thank you, Morwen.", to: "start", if: (c) => c.aff.morwen >= 1 || q(c, "mor_voice")?.done, do: (c) => c.api.clue("book") },
+          { label: (c) => c.api.label("book"), to: "start", if: (c) => c.aff.morwen >= 1 || q(c, "mor_voice")?.done, do: (c) => c.api.clue("book") },
           { label: "The soup is magnificent.", to: "book", if: (c) => c.aff.morwen < 1 && !q(c, "mor_voice")?.done, do: (c) => { c.aff.morwen += 1; } },
           { label: "Back.", to: "start" },
         ],
@@ -234,10 +234,10 @@ export const NPCS = {
         ],
       },
       ledger: {
-        text: (c) => q(c, "vex_research")?.done || c.aff.vex >= 2 ? "He flips back through the ledger. \"Twelve barrels of best pig slop. Spring. Paid out of the town treasury, signed M. Grubb. I did wonder what the Mayor wanted with that much slop. Didn't ask. Never ask. That's the Vex promise.\""
+        text: (c) => q(c, "vex_research")?.done || c.aff.vex >= 2 ? c.api.said("ledger")
           : "\"Client confidentiality, friend. The Vex promise. Now, a loyal customer, on the other hand...\"",
         opts: [
-          { label: "M. Grubb. Interesting.", to: "start", if: (c) => q(c, "vex_research")?.done || c.aff.vex >= 2, do: (c) => c.api.clue("ledger") },
+          { label: (c) => c.api.label("ledger"), to: "start", if: (c) => q(c, "vex_research")?.done || c.aff.vex >= 2, do: (c) => c.api.clue("ledger") },
           { label: "Back.", to: "start" },
         ],
       },
@@ -274,10 +274,10 @@ export const NPCS = {
         ],
       },
       biz: {
-        text: (c) => q(c, "pell_wake")?.done || c.aff.pell >= 2 ? "\"Terrible, if you must know. Nobody stays in the ground long enough to pay. Only good money I made all year was grave-dust. Sold six sacks to the Mayor in spring. For his roses, he said.\" Pell spits. \"Grubb hasn't got roses.\""
+        text: (c) => q(c, "pell_wake")?.done || c.aff.pell >= 2 ? "\"Terrible, if you must know. Nobody stays in the ground long enough to pay. " + c.api.said("dust").slice(1)
           : "\"Hmph. Mind your business and I'll mind mine.\"",
         opts: [
-          { label: "The Mayor, you say.", to: "start", if: (c) => q(c, "pell_wake")?.done || c.aff.pell >= 2, do: (c) => c.api.clue("dust") },
+          { label: (c) => c.api.label("dust"), to: "start", if: (c) => q(c, "pell_wake")?.done || c.aff.pell >= 2, do: (c) => c.api.clue("dust") },
           { label: "Back.", to: "start" },
         ],
       },
@@ -321,10 +321,10 @@ export const NPCS = {
         opts: [{ label: "Understood, Sergeant.", to: "start" }],
       },
       watch: {
-        text: (c) => q(c, "had_pest")?.done || c.aff.haddock >= 2 ? "His jaw tightens. \"Night it started, we got orders to guard the north wall. From the Mayor himself. First order he's ever given. Nothing came from the north. Everything came from the well.\""
+        text: (c) => q(c, "had_pest")?.done || c.aff.haddock >= 2 ? c.api.said("watch")
           : "\"Classified. Prove yourself on the line and maybe I'll tell you.\"",
         opts: [
-          { label: "Orders from the Mayor.", to: "start", if: (c) => q(c, "had_pest")?.done || c.aff.haddock >= 2, do: (c) => c.api.clue("watch") },
+          { label: (c) => c.api.label("watch"), to: "start", if: (c) => q(c, "had_pest")?.done || c.aff.haddock >= 2, do: (c) => c.api.clue("watch") },
           { label: "Back.", to: "start" },
         ],
       },
@@ -563,9 +563,8 @@ export function npcLines(f, aff) {
   if (aff.warren >= 2) lines.push("Warren Muffett bought the valley's farmers' co-op. He kept the turnip prices low. Mostly.");
   if (aff.chef >= 3) lines.push("Gordon Rampage's show 'Nightmare Valley' won an award. You're in the trailer. So is the well.");
   else if (aff.chef < 0) lines.push("Gordon Rampage's show aired. The only clip anyone shares is of him shouting you into a hedge.");
-  if (f.exposed) lines.push("Mayor Grubb spent a month in the stocks and was re-elected anyway. Politics.");
-  else if (f.blackmail) lines.push("Mayor Grubb is still paying. He always will be.");
-  else if (f.pardoned) lines.push("Mayor Grubb kept his promise and paid for everything. He's a better mayor for it. Slightly.");
-  else if (f.clueCount >= 2) lines.push("Nobody ever found out who poisoned the well. A few people had their suspicions. Mostly about the handkerchief.");
+  const fate = f.exposed ? "exposed" : f.blackmail ? "blackmail" : f.pardoned ? "pardoned" : f.unmasked ? "unmasked" : null;
+  if (fate) lines.push(culpritOf(f).fate[fate]);
+  else if (f.clueCount >= 2) lines.push(`Nobody ever found out who poisoned the well. A few people had their suspicions. Mostly about ${culpritOf(f).short}.`);
   return lines;
 }
