@@ -85,8 +85,27 @@ var R3D = (function () {
   function buildLevel(MAP) {
     if (level) { scene.remove(level); level.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
     level = new T.Group(); wallObjs.clear();
-    const ground = mesh(new T.PlaneGeometry(MAP.W, MAP.H), new T.MeshLambertMaterial({ map: groundTexture(MAP) }), MAP.W / 2, 0, MAP.H / 2);
-    ground.rotation.x = -Math.PI / 2; level.add(ground);
+    const gm = new T.MeshLambertMaterial({ map: groundTexture(MAP) }), lake = MAP.walls.find((w) => w.kind === "lake");
+    // a piece of the ground, with its texture lined up to the whole map
+    const groundPiece = (x, y, w, h) => {
+      if (w <= 0 || h <= 0) return;
+      const geo = new T.PlaneGeometry(w, h), pos = geo.attributes.position, uv = geo.attributes.uv;
+      for (let i = 0; i < pos.count; i++) uv.setXY(i, (x + w / 2 + pos.getX(i)) / MAP.W, 1 - (y + h / 2 - pos.getY(i)) / MAP.H);
+      const m = mesh(geo, gm, x + w / 2, 0, y + h / 2); m.rotation.x = -Math.PI / 2; level.add(m);
+    };
+    level.userData.lake = lake || null;
+    if (lake) { // the ground goes round the lake, not over it
+      groundPiece(0, 0, MAP.W, lake.y); groundPiece(0, lake.y + lake.h, MAP.W, MAP.H - lake.y - lake.h);
+      groundPiece(0, lake.y, lake.x, lake.h); groundPiece(lake.x + lake.w, lake.y, MAP.W - lake.x - lake.w, lake.h);
+      const lcx = lake.x + lake.w / 2, lcy = lake.y + lake.h / 2;
+      const bed = mesh(new T.PlaneGeometry(lake.w, lake.h), mat(0x8a7a52), lcx, lake.z0, lcy); bed.rotation.x = -Math.PI / 2; level.add(bed);
+      for (let i = 0; i < 40; i++) { // weed on the bottom
+        const k = (i * 7919) % 997 / 997, j = (i * 104729) % 991 / 991;
+        const wd = mesh(new T.ConeGeometry(4, 26 + (i % 5) * 10, 4), mat(0x2f6a3a), lake.x + 20 + k * (lake.w - 40), lake.z0 + 14 + (i % 5) * 5, lake.y + 20 + j * (lake.h - 40)); level.add(wd);
+      }
+      const water = mesh(new T.PlaneGeometry(lake.w, lake.h), new T.MeshLambertMaterial({ color: 0x2a7ab0, emissive: 0x0a2a40, transparent: true, opacity: 0.62, side: T.DoubleSide, depthWrite: false }), lcx, -2, lcy);
+      water.rotation.x = -Math.PI / 2; water.renderOrder = 2; level.add(water); level.userData.water = water;
+    } else groundPiece(0, 0, MAP.W, MAP.H);
     // the world's edge: a low dark hedge all round
     for (const [x, y, w, d] of [[MAP.W / 2, -10, MAP.W + 40, 20], [MAP.W / 2, MAP.H + 10, MAP.W + 40, 20], [-10, MAP.H / 2, 20, MAP.H], [MAP.W + 10, MAP.H / 2, 20, MAP.H]]) level.add(at(box(w, d, 60, mat(0x2a3d20)), x, y, 30));
     for (const w of MAP.walls) addWall(w);
@@ -106,13 +125,72 @@ var R3D = (function () {
   function addWall(w) {
     const tgt = new T.Group();
     const cx = w.x + w.w / 2, cy = w.y + w.h / 2, z0 = w.z0 || 0, z1 = w.z1 || 60, hgt = z1 - z0;
-    if (w.kind === "house") {
-      tgt.add(at(box(w.w, w.h, hgt - 8, mat(0x8b5a3a)), cx, cy, (hgt - 8) / 2));
-      tgt.add(at(box(w.w + 12, w.h + 12, 8, mat(ROOFS[w.roof || 0])), cx, cy, hgt - 4));
-      for (const s of [-1, 1]) tgt.add(at(box(w.w + 12, 6, 12, mat(ROOFS[w.roof || 0])), cx, cy + s * (w.h / 2 + 3), hgt + 6)); // parapet
-      tgt.add(at(box(22, 3, 44, mat(0x3a2616)), cx, w.y + w.h + 1, 22)); // door
-      for (const fx of [-0.3, 0.3]) tgt.add(at(box(22, 3, 18, mat(0x9fc8e0, 0x1a2a3a)), cx + fx * w.w, w.y + w.h + 1, hgt * 0.55));
-      tgt.add(at(box(16, 16, 40, mat(0x6d5a4a)), w.x + w.w * 0.75, w.y + w.h * 0.3, hgt + 20)); // chimney
+    if (w.kind === "house") { // just the roof (you can stand on it); the walls are separate pieces
+      const rc = ROOFS[w.roof || 0];
+      tgt.add(at(box(w.w + 12, w.h + 12, hgt, mat(rc)), cx, cy, (z0 + z1) / 2));
+      tgt.add(at(box(w.w + 14, w.h + 14, 3, mat(0x4a3020)), cx, cy, z0 + 1.5)); // eaves
+      for (const s of [-1, 1]) tgt.add(at(box(w.w + 12, 6, 12, mat(rc)), cx, cy + s * (w.h / 2 + 3), z1 + 6)); // parapet
+      for (const s of [-1, 1]) tgt.add(at(box(6, w.h, 12, mat(rc)), cx + s * (w.w / 2 + 3), cy, z1 + 6));
+      tgt.add(at(box(16, 16, 40, mat(0x6d5a4a)), w.x + w.w * 0.75, w.y + w.h * 0.3, z1 + 20)); // chimney
+      tgt.add(at(box(20, 20, 4, mat(0x4a3e34)), w.x + w.w * 0.75, w.y + w.h * 0.3, z1 + 41));
+      const fl = mesh(new T.PlaneGeometry(w.w - 4, w.h - 4), mat(0x9a6e44), cx, 0.5, cy); fl.rotation.x = -Math.PI / 2; fl.userData.keep = true; tgt.add(fl); // floorboards
+      for (let i = 1; i < w.w / 24; i++) { const b = at(box(1.2, w.h - 6, 0.4, mat(0x7a5232)), w.x + i * 24, cy, 0.8); b.userData.keep = true; tgt.add(b); }
+      tgt.add(at(mesh(new T.SphereGeometry(5, 10, 8), mat(0xffe0a0, 0xffb040)), cx, cy, z0 - 8)); // a lamp hanging inside
+      tgt.userData.roof = true;
+    } else if (w.kind === "hwall") {
+      const wc = mat(0x8b5a3a), horiz = w.w >= w.h, len = horiz ? w.w : w.h;
+      tgt.add(at(box(w.w, w.h, hgt, wc), cx, cy, (z0 + z1) / 2));
+      if (z0 > 0) tgt.add(at(box(w.w + 4, w.h + 4, 5, mat(0x5a3a22)), cx, cy, z0 + 2.5)); // door lintel
+      else {
+        for (const k of [0, 1]) tgt.add(at(box(horiz ? 6 : w.w + 2, horiz ? w.h + 2 : 6, hgt, mat(0x6a4024)), horiz ? w.x + k * w.w : cx, horiz ? cy : w.y + k * w.h, hgt / 2)); // timber posts
+        tgt.add(at(box(w.w + 2, w.h + 2, 5, mat(0x6a4024)), cx, cy, 2.5)); // skirting
+        if (len > 70) for (let k = 1, n = Math.floor(len / 90); k <= n; k++) { // windows, glass seen from inside and out
+          const f = k / (n + 1), wx = horiz ? w.x + f * w.w : cx, wy = horiz ? cy : w.y + f * w.h;
+          tgt.add(at(box(horiz ? 26 : w.w + 2, horiz ? w.h + 2 : 26, 22, mat(0x5a3a22)), wx, wy, hgt * 0.55));
+          tgt.add(at(box(horiz ? 22 : w.w + 3, horiz ? w.h + 3 : 22, 18, mat(0x9fc8e0, 0x1a2a3a)), wx, wy, hgt * 0.55));
+        }
+      }
+    } else if (w.kind === "furn") {
+      const g = new T.Group(), horiz = w.w >= w.h, rotY = horiz ? 0 : Math.PI / 2, L2 = horiz ? w.w : w.h, D2 = horiz ? w.h : w.w;
+      if (w.f === "bed") {
+        g.add(mesh(new T.BoxGeometry(L2, 10, D2), mat(0x6a4024), 0, 5, 0));
+        g.add(mesh(new T.BoxGeometry(L2 - 4, 6, D2 - 4), mat(0xf0ead8), 0, 13, 0));
+        g.add(mesh(new T.BoxGeometry(L2 * 0.6, 7, D2 - 2), mat([0xb04040, 0x4060a0, 0x5a8a40, 0x8a5aa0][w.id % 4]), L2 * 0.18, 14, 0)); // blanket
+        g.add(mesh(new T.BoxGeometry(12, 6, D2 - 16), mat(0xffffff), -L2 / 2 + 9, 17, 0)); // pillow
+        g.add(mesh(new T.BoxGeometry(4, 26, D2), mat(0x5a3418), -L2 / 2 + 2, 13, 0)); // headboard
+      } else {
+        g.add(mesh(new T.BoxGeometry(L2, 4, D2), mat(0x8a5a32), 0, z1 - 2, 0));
+        for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.add(mesh(new T.BoxGeometry(3, z1 - 4, 3), mat(0x6a4024), sx * (L2 / 2 - 4), (z1 - 4) / 2, sz * (D2 / 2 - 4)));
+        g.add(mesh(new T.CylinderGeometry(2, 2, 7, 8), mat(0xf4f0e0), 0, z1 + 3.5, 0)); // a candle
+        g.add(mesh(new T.SphereGeometry(1.6, 6, 5), basic(0xffc040, 1), 0, z1 + 8, 0));
+        g.add(mesh(new T.CylinderGeometry(5, 4, 3, 10), mat(0xd8d0c0), L2 / 4, z1 + 1.5, 0)); // a bowl of slop
+      }
+      g.rotation.y = rotY; at(g, cx, cy, 0); tgt.add(g);
+    } else if (w.kind === "lake") {
+      // drawn with the ground
+    } else if (w.kind === "bank") { // the sides of the lake, seen from under the water
+      tgt.add(at(box(w.w, w.h, hgt - 1, mat(0x5a4a32)), cx, cy, (z0 + z1 - 1) / 2));
+    } else if (w.kind === "shrine") {
+      const st = mat(0x6a7a7a), dk = mat(0x4a5858);
+      tgt.add(at(box(w.w + 30, w.h + 30, 10, dk), cx, cy, z0 + 5)); // steps
+      tgt.add(at(box(w.w + 14, w.h + 14, 10, st), cx, cy, z0 + 15));
+      tgt.add(at(box(w.w * 0.7, w.h * 0.6, hgt - 30, mat(0x5a6a6a)), cx, cy, z0 + 20 + (hgt - 30) / 2)); // the sealed door block
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) tgt.add(at(mesh(new T.CylinderGeometry(7, 8, hgt - 10, 10), st), cx + sx * (w.w / 2 - 6), cy + sy * (w.h / 2 - 6), z0 + 10 + (hgt - 10) / 2));
+      tgt.add(at(box(w.w + 10, w.h + 10, 10, dk), cx, cy, z1 - 5)); // lintel slab
+      const seal = mesh(new T.TorusGeometry(18, 3, 8, 24), mat(0x2a8a8a, 0x105050)); seal.rotation.y = Math.PI / 2; at(seal, cx, cy - w.h * 0.3 - 1, z0 + 55); tgt.add(seal);
+      tgt.userData.seal = seal; level.userData.shrine = tgt;
+    } else if (w.kind === "glyph") {
+      tgt.add(at(box(w.w, w.h, hgt - 14, mat(0x5a6868)), cx, cy, z0 + (hgt - 14) / 2));
+      const GC = [0xffc840, 0xbfd8ff, 0xffffff, 0xc070ff][w.g || 0];
+      const gem = mesh(new T.OctahedronGeometry(9, 0), mat(GC, 0x000000)); at(gem, cx, cy, z1 - 4); tgt.add(gem);
+      tgt.userData.gem = gem; tgt.userData.gc = GC; tgt.userData.g = w.g;
+      (level.userData.glyphs = level.userData.glyphs || []).push(tgt);
+    } else if (w.kind === "vent") {
+      const v = mesh(new T.CylinderGeometry(w.w / 2, w.w / 2 + 6, 6, 14), mat(0x3a3a3a), 0, 3, 0); at(v, cx, cy, z0); tgt.add(v);
+      const hole = mesh(new T.CircleGeometry(w.w / 2 - 4, 14), mat(0x101010, 0x0a2a3a)); hole.rotation.x = -Math.PI / 2; at(hole, cx, cy, z0 + 6.2); tgt.add(hole);
+      const bub = [];
+      for (let i = 0; i < 8; i++) { const b = mesh(new T.SphereGeometry(2 + (i % 3), 8, 6), basic(0xd8f4ff, 0.7)); tgt.add(b); bub.push(b); }
+      tgt.userData.vent = { bub, x: cx, y: cy, z0 }; (level.userData.vents = level.userData.vents || []).push(tgt);
     } else if (w.kind === "hearth") {
       const g = new T.Group();
       g.add(mesh(new T.BoxGeometry(w.w, hgt, w.h), mat(0x9a8a70), 0, hgt / 2, 0));
@@ -144,7 +222,7 @@ var R3D = (function () {
       for (const s of [-0.25, 0.25]) tgt.add(at(box(w.w + 1, 3, hgt + 1, mat(0x8a6a32)), cx, cy + s * w.h, hgt / 2));
     } else if (w.kind === "rock") {
       const r = mesh(new T.DodecahedronGeometry(1, 0), mat(0x7d7d80));
-      r.scale.set(w.w * 0.62, hgt * 0.95, w.h * 0.62); at(r, cx, cy, hgt * 0.45); r.rotation.y = (w.x * 7) % 3; tgt.add(r);
+      r.scale.set(w.w * 0.62, hgt * 0.95, w.h * 0.62); at(r, cx, cy, z0 + hgt * 0.45); r.rotation.y = (w.x * 7) % 3; tgt.add(r);
     } else if (w.kind === "tree") {
       tgt.add(at(mesh(new T.CylinderGeometry(6, 9, 120, 8), mat(0x5a3a1e)), cx, cy, 60));
       tgt.add(at(mesh(new T.ConeGeometry(w.w * 0.9, 130, 9), mat(0x2f5e28)), cx, cy, 150));
@@ -188,12 +266,37 @@ var R3D = (function () {
     } else if (type === "staff") {
       const shaft = mesh(new T.CylinderGeometry(1.8, 1.8, len, 6), mat(0x8b5a2b), len / 2, 0, 0); shaft.rotation.z = Math.PI / 2; g.add(shaft);
       g.add(mesh(new T.SphereGeometry(4.5, 10, 8), mat(0xff7a2a, 0xff5a10), len, 0, 0));
-    } else {
-      g.add(mesh(new T.BoxGeometry(len, 5, 4.5), mat(0x333333), len / 2, 0, 0));
-      g.add(mesh(new T.BoxGeometry(5, 9, 3.5), mat(0x2a2a2a), 4, -5, 0));
-      if (rar > 0) g.add(mesh(new T.BoxGeometry(len - 6, 1.4, 4.8), mat(RAR[rar], RAR[rar]), len / 2 + 2, 1.5, 0));
-    }
+    } else gunParts(g, type, len, rar);
     return g;
+  }
+  // a gun from parts: receiver, barrel, grip, magazine, stock and sights, all pointing along +x
+  const GUN = { // receiver length, barrel length, mag, stock, sight, wood furniture
+    pistol: { rc: 11, bl: 8, mag: 0, st: 0, sight: "iron", wood: 0 },
+    smg: { rc: 13, bl: 10, mag: 12, st: 1, sight: "iron", wood: 0 },
+    shotgun: { rc: 10, bl: 22, mag: 0, st: 2, sight: "bead", wood: 1, pump: 1 },
+    rifle: { rc: 12, bl: 20, mag: 6, st: 2, sight: "iron", wood: 1 },
+    sniper: { rc: 13, bl: 30, mag: 6, st: 2, sight: "scope", wood: 0, bipod: 1 },
+    ak: { rc: 13, bl: 17, mag: 11, st: 2, sight: "iron", wood: 1, curve: 1 },
+  };
+  function gunParts(g, type, len, rar) {
+    const d = GUN[type] || GUN.smg, metal = mat(0x2e3034), dark = mat(0x1c1d20), wood = mat(0x7a4a24), furn = d.wood ? wood : dark;
+    const tube = (r, l, m, x, y) => { const c = mesh(new T.CylinderGeometry(r, r, l, 10), m, x, y, 0); c.rotation.z = Math.PI / 2; g.add(c); return c; };
+    g.add(mesh(new T.BoxGeometry(d.rc, 5.5, 4), metal, d.rc / 2, 0.5, 0)); // receiver
+    g.add(mesh(new T.BoxGeometry(d.rc - 2, 1.2, 3.2), dark, d.rc / 2, 3.6, 0)); // top rail
+    tube(1.3, d.bl, metal, d.rc + d.bl / 2, 1.2); // barrel
+    tube(1.9, 2.5, dark, d.rc + d.bl, 1.2); // muzzle
+    const grip = mesh(new T.BoxGeometry(3.5, 8, 3.2), furn, 2, -5, 0); grip.rotation.z = -0.3; g.add(grip);
+    g.add(mesh(new T.BoxGeometry(4, 1, 1), dark, 5, -2.8, 0)); // trigger guard
+    if (type !== "pistol") g.add(mesh(new T.BoxGeometry(Math.min(d.bl * 0.7, 14), 4, 4.6), furn, d.rc + Math.min(d.bl * 0.7, 14) / 2, -0.2, 0)); // handguard
+    if (d.pump) g.add(mesh(new T.CylinderGeometry(2.2, 2.2, 9, 8), wood, d.rc + 8, -2.2, 0).rotateZ(Math.PI / 2));
+    if (d.mag) { const m = mesh(new T.BoxGeometry(3.4, d.mag, 2.8), dark, d.rc - 3, -2 - d.mag / 2, 0); if (d.curve) m.rotation.z = 0.35; g.add(m); }
+    if (d.st === 1) { g.add(mesh(new T.BoxGeometry(9, 1.2, 1.2), metal, -4, 1.5, 0)); g.add(mesh(new T.BoxGeometry(1.4, 5, 3), metal, -8.5, -0.3, 0)); } // wire stock
+    if (d.st === 2) { const s2 = mesh(new T.BoxGeometry(12, 5, 3.4), furn, -6, -1, 0); s2.rotation.z = 0.12; g.add(s2); g.add(mesh(new T.BoxGeometry(1.5, 7, 3.8), dark, -12, -1.6, 0)); }
+    if (d.sight === "iron") { g.add(mesh(new T.BoxGeometry(1, 2.4, 1), dark, d.rc + d.bl - 1, 3.2, 0)); g.add(mesh(new T.BoxGeometry(1.5, 2, 2.6), dark, 2, 4.8, 0)); }
+    if (d.sight === "bead") g.add(mesh(new T.SphereGeometry(0.8, 6, 5), mat(0xd8d8d8), d.rc + d.bl - 1, 2.8, 0));
+    if (d.sight === "scope") { tube(1.8, 14, dark, d.rc / 2 + 1, 6.6); tube(2.4, 2, dark, d.rc / 2 + 8, 6.6); tube(2.2, 2, dark, d.rc / 2 - 6, 6.6); g.add(mesh(new T.BoxGeometry(2, 2.4, 1.4), dark, d.rc / 2 + 1, 4.6, 0)); }
+    if (d.bipod) for (const s2 of [-1, 1]) { const l = mesh(new T.BoxGeometry(0.8, 9, 0.8), metal, d.rc + d.bl - 6, -3.5, s2 * 2); l.rotation.x = s2 * 0.35; g.add(l); }
+    if (rar > 0) { g.add(mesh(new T.BoxGeometry(d.rc - 1, 1.2, 4.3), mat(RAR[rar], RAR[rar]), d.rc / 2, -1.2, 0)); if (rar >= 3) tube(1.6, 1.2, mat(RAR[rar], RAR[rar]), d.rc + d.bl - 4, 1.2); }
   }
   function hatMesh(hat) {
     const g = new T.Group();
@@ -233,8 +336,26 @@ var R3D = (function () {
   function personMesh(color, hat, eyes) {
     const g = new T.Group(), body = new T.Group();
     g.add(body);
-    body.add(mesh(new T.CylinderGeometry(11, 13, 28, 14), mat(color), 0, 16, 0));
+    const c = new T.Color(color), shirt = mat(color), trousers = mat(c.clone().multiplyScalar(0.55).getHex()), boot = mat(0x3a2818), skin = mat(c.clone().lerp(new T.Color(0xf0c8a0), 0.55).getHex());
+    const legs = [];
+    for (const s of [-1, 1]) { // legs swing from the hip
+      const leg = new T.Group(); leg.position.set(0, 15, s * 5.5); body.add(leg); legs.push(leg);
+      leg.add(mesh(new T.CylinderGeometry(4.2, 3.6, 13, 8), trousers, 0, -6.5, 0));
+      leg.add(mesh(new T.BoxGeometry(10, 4, 6.5), boot, 1.8, -13, 0));
+    }
+    body.add(mesh(new T.CylinderGeometry(10.5, 11.5, 17, 14), shirt, 0, 22.5, 0)); // torso
+    body.add(mesh(new T.CylinderGeometry(11.8, 11.8, 3, 14), mat(0x3a2a1a), 0, 15.5, 0)); // belt
+    body.add(mesh(new T.BoxGeometry(1, 2.6, 3.4), mat(0xd8b040), 11.8, 15.5, 0)); // buckle
+    for (const s of [-1, 1]) body.add(mesh(new T.SphereGeometry(5, 10, 8), shirt, 0, 30, s * 10.5)); // shoulders
+    body.add(mesh(new T.CylinderGeometry(4.5, 5, 4, 10), skin, 0, 32, 0)); // neck
+    const off = new T.Group(); off.position.set(0, 30, -11); body.add(off); g.userData.off = off; // the other arm, reaching for the gun
+    const up = mesh(new T.CylinderGeometry(3.4, 3, 12, 8), shirt, 3, -4, 1); up.rotation.set(0.5, 0, 0.9); off.add(up);
+    off.add(mesh(new T.SphereGeometry(3.4, 8, 6), skin, 8.5, -6, 5));
     const head = mesh(new T.SphereGeometry(13, 16, 12), mat(color), 0, 42, 0); body.add(head);
+    body.add(mesh(new T.SphereGeometry(2.4, 8, 6), skin, 12.6, 40, 0)); // nose
+    body.add(mesh(new T.BoxGeometry(1, 1.4, 6), mat(0x3a1a1a), 12.2, 35.5, 0)); // mouth
+    for (const s of [-1, 1]) body.add(mesh(new T.SphereGeometry(3, 8, 6), mat(color), 0, 42, s * 12.6)); // ears
+    g.userData.legs = legs;
     if (eyes === "shades") body.add(mesh(new T.BoxGeometry(3, 5, 20), mat(0x111111), 12, 45, 0));
     else for (const s of [-1, 1]) {
       const big = eyes === "googly" ? 1.5 : 1;
@@ -245,7 +366,8 @@ var R3D = (function () {
     }
     const hatG = hatMesh(hat); hatG.position.y = 53; body.add(hatG); g.userData.hat = hatG;
     const arm = new T.Group(); arm.position.set(4, 32, 9); body.add(arm); g.userData.arm = arm;
-    arm.add(mesh(new T.SphereGeometry(4, 8, 6), mat(color), 4, 0, 0));
+    const sleeve = mesh(new T.CylinderGeometry(3.6, 3.2, 10, 8), shirt, -3, 0, 0); sleeve.rotation.z = Math.PI / 2; arm.add(sleeve);
+    arm.add(mesh(new T.SphereGeometry(3.6, 8, 6), skin, 4, 0, 0));
     g.userData.body = body;
     return g;
   }
@@ -315,6 +437,31 @@ var R3D = (function () {
       g.add(mesh(new T.BoxGeometry(50, 10, 26), mat(0xe88a2a), 0, 16, 0));
       for (const [x, z] of [[-14, -11], [-14, 11], [4, -11], [4, 11]]) g.add(mesh(new T.BoxGeometry(2.5, 22, 2.5), mat(0x333333), x, 30, z));
       g.add(mesh(new T.BoxGeometry(20, 2.5, 25), mat(0x333333), -5, 41, 0));
+    } else if (kind === "heli" || kind === "gunship") {
+      const gun = kind === "gunship", col = mat(gun ? 0x4a5a3a : 0xe8c040), dk = mat(0x2a2a2a);
+      const cab = mesh(new T.SphereGeometry(1, 16, 12), col, 0, 24, 0); cab.scale.set(gun ? 34 : 28, gun ? 20 : 18, gun ? 22 : 18); g.add(cab);
+      const glass = mesh(new T.SphereGeometry(1, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x9fd0e8, 0x102838, { transparent: true, opacity: 0.75 }), 12, 26, 0); glass.scale.set(gun ? 18 : 16, 14, gun ? 18 : 15); glass.rotation.z = -1.1; g.add(glass);
+      const tail = mesh(new T.CylinderGeometry(3, 7, 56, 8), col, -50, 28, 0); tail.rotation.z = Math.PI / 2; g.add(tail);
+      g.add(mesh(new T.BoxGeometry(14, 18, 2), col, -76, 36, 0)); // fin
+      const tr = new T.Group(); tr.position.set(-76, 38, 3); g.add(tr); tr.add(mesh(new T.BoxGeometry(2, 22, 1), dk)); g.userData.tail = tr;
+      for (const s of [-1, 1]) { // skids
+        g.add(mesh(new T.BoxGeometry(56, 2.5, 2.5), dk, 0, 2, s * 15));
+        for (const x of [-12, 12]) g.add(mesh(new T.BoxGeometry(2, 10, 2), dk, x, 7, s * 13));
+      }
+      g.add(mesh(new T.CylinderGeometry(3, 4, 10, 8), dk, 0, 44, 0)); // mast
+      const rotor = new T.Group(); rotor.position.set(0, 49, 0); g.add(rotor); g.userData.rotor = rotor;
+      for (let i = 0; i < (gun ? 4 : 2); i++) { const b = mesh(new T.BoxGeometry(gun ? 92 : 84, 1.2, 6), dk, 0, 0, 0); b.rotation.y = i * Math.PI / (gun ? 4 : 2) * (gun ? 2 : 1); rotor.add(b); }
+      const disc = mesh(new T.CircleGeometry(gun ? 46 : 42, 24), basic(0x333333, 0.18)); disc.rotation.x = -Math.PI / 2; rotor.add(disc);
+      if (gun) {
+        for (const s of [-1, 1]) { // stub wings with rocket pods
+          g.add(mesh(new T.BoxGeometry(12, 2.5, 22), col, -4, 18, s * 26));
+          const pod = mesh(new T.CylinderGeometry(4.5, 4.5, 22, 10), dk, -2, 14, s * 34); pod.rotation.z = Math.PI / 2; g.add(pod);
+          g.add(mesh(new T.ConeGeometry(4.5, 6, 10), mat(0xb03a2a), 12, 14, s * 34).rotateZ(-Math.PI / 2));
+        }
+        const cg = new T.Group(); cg.position.set(26, 10, 0); g.add(cg); // chin gun
+        cg.add(mesh(new T.SphereGeometry(5, 10, 8), dk));
+        for (const z of [-1.5, 1.5]) { const b = mesh(new T.CylinderGeometry(1, 1, 18, 6), dk, 10, 0, z); b.rotation.z = Math.PI / 2; cg.add(b); }
+      } else g.add(mesh(new T.BoxGeometry(18, 6, 44), mat(0x8a7a5a), -6, 8, 0)); // a crop sprayer bar
     } else {
       for (const [x, z] of [[-36, -16], [-36, 16], [34, -16], [34, 16]]) wheel(x, z, 9, 6);
       g.add(mesh(new T.BoxGeometry(104, 18, 30), mat(0xff8fc8), 0, 18, 0));
@@ -385,6 +532,29 @@ var R3D = (function () {
     if (S.g.fog && n > 0) { sky.lerp(new T.Color(0x2a2636), n); scene.background.copy(sky); scene.fog.color.copy(sky); scene.fog.near = 20; scene.fog.far = lerp(1300, 480, n); }
     L.hemi.intensity = lerp(1.7, 0.16, n); L.sun.intensity = lerp(2.2, 0.12, n);
     L.sun.color.setHex(n > 0.5 ? 0x8090ff : 0xfff2d8);
+    const lk = level.userData.lake, c0 = st.cam;
+    if (lk && c0.z < -1 && c0.x > lk.x && c0.x < lk.x + lk.w && c0.y > lk.y && c0.y < lk.y + lk.h) {
+      const deep = Math.min(1, -c0.z / -lk.z0), uw = new T.Color(0x2a7a8a).lerp(new T.Color(0x06202a), deep * 0.7 + n * 0.3);
+      scene.background.copy(uw); scene.fog.color.copy(uw); scene.fog.near = 10; scene.fog.far = lerp(620, 320, deep);
+    }
+    if (level.userData.water) level.userData.water.position.y = -2 + Math.sin(t * 1.3) * 0.6;
+    if (level.userData.glyphs) {
+      const sh = S.sh, lit = (g) => sh && (sh[5] || sh.slice(0, sh[4]).includes(g));
+      for (const gp of level.userData.glyphs) { const on = lit(gp.userData.g); gp.userData.gem.material = mat(gp.userData.gc, on ? gp.userData.gc : 0x000000); gp.userData.gem.rotation.y = t * (on ? 2 : 0.4); }
+      const sr = level.userData.shrine; if (sr) { sr.userData.seal.material = mat(sh && sh[5] ? 0xffd34d : 0x2a8a8a, sh && sh[5] ? 0xc08010 : 0x105050); sr.userData.seal.rotation.x = sh && sh[5] ? t : 0; }
+    }
+    for (const vt of level.userData.vents || []) { const v = vt.userData.vent; v.bub.forEach((b, i) => { const k = ((t * 0.35 + i / v.bub.length) % 1); b.position.set(v.x + Math.sin(t * 3 + i) * 6, v.z0 + 8 + k * -v.z0, v.y + Math.cos(t * 2 + i * 2) * 6); }); }
+    // the roof comes off the house you're in, so the camera can see you
+    if (MAP.walls && (frameNo % 6 === 0 || level.userData.inHouse === undefined)) {
+      const pr = st.pred, h = pr && MAP.walls.find((w) => w.kind === "house" && pr.x > w.x && pr.x < w.x + w.w && pr.y > w.y && pr.y < w.y + w.h && pr.z < w.z0);
+      const hid = h ? h.id : 0;
+      if (hid !== level.userData.inHouse) {
+        const prev = level.userData.inHouse; level.userData.inHouse = hid;
+        const po = prev && wallObjs.get(prev), ho = hid && wallObjs.get(hid);
+        if (po) po.children.forEach((ch) => { ch.visible = true; });
+        if (ho) ho.children.forEach((ch) => { ch.visible = !!ch.userData.keep; });
+      }
+    }
     // the Hearth
     const hw = MAP.hearth, hflash = t - st.hearthHitT < 0.12;
     at(L.hearth, hw.x + hw.w / 2, hw.y + hw.h / 2, 150);
@@ -438,17 +608,33 @@ var R3D = (function () {
       if (kind === "lamp") lamps.push([bx + 20, by + 20]);
     }
     // vehicles (and the celebrity's limo)
-    for (const [id, kind, vx, vy, va] of S.vh) {
-      const e = pooled(`veh:${id}`, () => vehicleMesh(kind));
-      smoothTo(e, vx, vy, 0, dt); e.a = e.a === undefined ? va : angLerp(e.a, va, Math.min(1, dt * 14));
-      at(e.obj, e.x, e.y, 0); e.obj.rotation.y = -e.a;
+    for (const [id, kind, vx, vy, va, , pilot, , spd, vz] of S.vh) {
+      const e = pooled(`veh:${id}`, () => { const o = vehicleMesh(kind); o.rotation.order = "YZX"; return o; });
+      const pa = e.a ?? va;
+      smoothTo(e, vx, vy, vz || 0, dt); e.a = e.a === undefined ? va : angLerp(e.a, va, Math.min(1, dt * 14));
+      at(e.obj, e.x, e.y, e.z);
+      const air = kind === "heli" || kind === "gunship";
+      if (air) { // nose down with speed, lean into turns, rotors spin when someone's at the stick
+        const yawRate = dt > 0 ? Math.atan2(Math.sin(e.a - pa), Math.cos(e.a - pa)) / dt : 0;
+        e.tilt = lerp(e.tilt || 0, -Math.min(0.3, (spd || 0) / 1400), Math.min(1, dt * 4));
+        e.roll = lerp(e.roll || 0, Math.max(-0.4, Math.min(0.4, yawRate * 0.25)), Math.min(1, dt * 4));
+        e.spin = lerp(e.spin || 0, pilot || (vz || 0) > 2 ? 30 : 0, Math.min(1, dt * 0.8));
+        e.obj.userData.rotor.rotation.y += e.spin * dt; e.obj.userData.tail.rotation.z += e.spin * 1.6 * dt;
+        e.obj.rotation.set(e.roll, -e.a, e.tilt);
+      } else e.obj.rotation.set(0, -e.a, 0);
     }
     // townsfolk
     if (MAP.npcs && S.g.mode !== "royale") for (const n2 of MAP.npcs) {
       const e = pooled(`npc:${n2.id}`, () => personMesh(n2.color, n2.hat, "dot"));
-      at(e.obj, n2.x, n2.y, Math.abs(Math.sin(t * 2 + n2.x)) * 1.5);
+      const px = e.x ?? n2.x, py = e.y ?? n2.y;
+      smoothTo(e, n2.x, n2.y, 0, dt, 300);
+      const mv = Math.hypot(e.x - px, e.y - py) / Math.max(dt, 0.001);
       const p = S.p.find((q) => q.id === me);
-      if (p) e.obj.rotation.y = -Math.atan2(p.y - n2.y, p.x - n2.x);
+      const near = p && Math.hypot(p.x - e.x, p.y - e.y) < 140;
+      const want = mv > 8 ? Math.atan2(e.y - py, e.x - px) : near ? Math.atan2(p.y - e.y, p.x - e.x) : n2.a ?? e.a ?? 0;
+      e.a = angLerp(e.a ?? want, want, Math.min(1, dt * 8));
+      at(e.obj, e.x, e.y, mv > 8 ? Math.abs(Math.sin(t * 10)) * 2 : 0); e.obj.rotation.y = -e.a;
+      e.obj.userData.legs.forEach((l, i) => { l.rotation.z = mv > 8 ? Math.sin(t * 10 + i * Math.PI) * 0.6 : 0; });
       if (n2.id === "chef") { const l = pooled("limo:chef", () => vehicleMesh("limo")); at(l.obj, n2.x + 90, n2.y + 20, 0); l.obj.rotation.y = -0.2; }
     }
     // the dead
@@ -553,14 +739,20 @@ var R3D = (function () {
       if (mine) { e.x = st.pred.x; e.y = st.pred.y; e.z = st.pred.z; e.init = true; }
       else smoothTo(e, p.x, p.y, p.z || 0, dt);
       const yaw = mine ? st.aimYaw : p.a, pitch = mine ? st.aimPitch : (p.pt || 0);
+      const sp = Math.hypot(e.x - (e.lx ?? e.x), e.y - (e.ly ?? e.y)) / Math.max(dt, 0.001); e.lx = e.x; e.ly = e.y;
+      e.sp = lerp(e.sp || 0, sp, Math.min(1, dt * 10));
       at(e.obj, e.x, e.y, e.z); e.obj.rotation.y = -yaw;
       e.obj.visible = !(mine && st.fp) && !p.vh;
       const body = e.obj.userData.body;
       body.scale.y = p.go ? 0.72 : 1;
+      body.rotation.z = p.sw ? lerp(body.rotation.z, -1.25, Math.min(1, dt * 6)) : lerp(body.rotation.z, 0, Math.min(1, dt * 8)); // swimming: flat out
+      body.position.y = p.sw ? 22 : 0;
+      const walk = p.sw ? 1 : Math.min(1, e.sp / 120), wt = (e.wt = (e.wt || 0) + dt * (p.sw ? 7 : 4 + e.sp / 30));
+      e.obj.userData.legs.forEach((l, i) => { l.rotation.z = Math.sin(wt + i * Math.PI) * 0.7 * walk; });
       if (e.obj.userData.hat.userData.spin) e.obj.userData.hat.userData.spin.rotation.y = t * 20;
       // weapon in hand
       const wk = p.w + ":" + p.wr;
-      if (e.wk !== wk) { const arm = e.obj.userData.arm; while (arm.children.length > 1) arm.remove(arm.children[1]); const wm = weaponMesh(p.w, p.wr); wm.position.set(2, 0, 0); arm.add(wm); e.wk = wk; }
+      if (e.wk !== wk) { const arm = e.obj.userData.arm; while (arm.children.length > 2) arm.remove(arm.children[2]); const wm = weaponMesh(p.w, p.wr); wm.position.set(2, 0, 0); arm.add(wm); e.wk = wk; }
       const arm = e.obj.userData.arm;
       const sl = st.slashT.get(p.id), sk = sl ? Math.min(1, (t - sl) / 0.25) : 1;
       arm.rotation.z = p.w === "sword" && sk < 1 ? pitch + 1.4 - sk * 2.6 : pitch;

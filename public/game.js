@@ -112,6 +112,7 @@ const T = () => performance.now() / 1000;
 function onSnap(m) {
   const prevPhase = S?.g.ph;
   S = m; me = m.me;
+  if (MAP && MAP.npcs && m.np) for (const [id, x, y, a] of m.np) { const n = MAP.npcs.find((q) => q.id === id); if (n) { n.x = x; n.y = y; n.a = a; } }
   for (const e of m.e) handleEvent(e);
   for (const e of m.pe) handlePersonal(e);
   if (m.g.ph === "over" && prevPhase !== "over") showOver();
@@ -166,6 +167,9 @@ function handleEvent(e) {
   else if (e.k === "glass") { fx.push({ kind: "boom", t0: t, dur: 0.35, x: e.x, y: e.y, z: e.z, r: 50, col: 0xffa030, c2: "255,160,48" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx("glass"); }
   else if (e.k === "throw") { if (Math.hypot((S?.p.find((p) => p.id === e.id)?.x ?? 1e9) - pred.x, (S?.p.find((p) => p.id === e.id)?.y ?? 1e9) - pred.y) < 600) sfx("throw"); }
   else if (e.k === "pad") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("perfect", 0.6); }
+  else if (e.k === "splash") { fx.push({ kind: "boom", t0: t, dur: 0.6, x: e.x, y: e.y, z: -12, r: 40, dust: true, col: 0xbfe8ff, c2: "190,230,255" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("splash"); }
+  else if (e.k === "glyph") { fx.push({ kind: "shout", t0: t, dur: 0.9, x: e.x, y: e.y, z: e.z, a: 0, full: true, col: e.g < 0 ? 0xff4040 : 0x60e0ff, c2: e.g < 0 ? "255,64,64" : "96,224,255" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx(e.g < 0 ? "jam" : "perfect"); }
+  else if (e.k === "wedding") { sfx("goal"); for (let i = 0; i < 18; i++) fx.push({ kind: "text", t0: t + i * 0.05, dur: 2, x: pred.x + (Math.random() - 0.5) * 300, y: pred.y + (Math.random() - 0.5) * 200, z: 60 + Math.random() * 60, text: "♥", color: ["#ff8fc8", "#ff5fa0", "#fff"][i % 3], big: true }); }
   else if (e.k === "collapse") { fx.push({ kind: "boom", t0: t, dur: 0.9, x: e.x, y: e.y, z: 10, r: Math.max(e.w, e.h) * 0.6, dust: true }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) { sfx("boom", 0.6); shake = Math.max(shake, 6); } }
   else if (e.k === "zap") { fx.push({ kind: "zap", t0: t, dur: 0.35, pts: e.pts }); if (Math.hypot(e.pts[0][0] - pred.x, e.pts[0][1] - pred.y) < 900) sfx("zap"); }
   else if (e.k === "meteor") { fx.push({ kind: "boom", t0: t, dur: 0.8, x: e.x, y: e.y, z: e.z, r: 170 }); fx.push({ kind: "boom", t0: t, dur: 1.4, x: e.x, y: e.y, z: e.z, r: 120, dust: true }); const d = Math.hypot(e.x - pred.x, e.y - pred.y); if (d < 1200) { sfx("boom", 1 - d / 1400); shake = Math.max(shake, 16 * (1 - d / 1200)); } }
@@ -191,6 +195,7 @@ function handlePersonal(e) {
   else if (e.k === "click") sfx("click");
   else if (e.k === "jammed") { pushLim(toasts, { text: "JAMMED! Press R to clear it. Press L to strip and clean your gun.", color: "#ff8060", t }, 4); sfx("jam"); }
   else if (e.k === "hack") openHack(e);
+  else if (e.k === "love") { const n = MAP.npcs && MAP.npcs.find((q) => q.id === e.npc); pushLim(toasts, { text: `${n ? n.name : ""}  ${hearts(e.v)}`, color: e.d === "hate" ? "#ff8080" : "#ff8fc8", t }, 4); sfx(e.d === "hate" ? "jam" : "perfect"); }
   else if (e.k === "kick") { pred.vx += e.vx; pred.vy += e.vy; pred.vz = Math.max(pred.vz, 0) + e.vz; if (e.vz > 0) pred.gr = false; }
   else if (e.k === "deaf") { deafT = t; shake = Math.max(shake, 8); }
   else if (e.k === "wasted") { wasted = t; wastedPlace = e.place || 0; }
@@ -241,7 +246,7 @@ addEventListener("keydown", (e) => {
   if (k === "enter") { openChat(); e.preventDefault(); return; }
   if (k === "b") { toggleSkills(false); toggleBuild(false); toggleShop(); return; }
   if (k === "f" && S && (S.g.ph === "lobby" || S.g.ph === "over")) { send({ t: "ready" }); return; }
-  if (k === "c") { toggleBuild(); return; }
+  if (k === "c" && !pred.swim && !flying()) { toggleBuild(); return; }
   if (building && /^[1-4]$/.test(k)) { buildKind = Object.keys(PIECES)[Number(k) - 1] || buildKind; renderBuildBar(); return; }
   if (building && k === "escape") { toggleBuild(false); return; }
   if (dlgOpen && /^[1-9]$/.test(k)) { send({ t: "dlg", i: Number(k) - 1 }); return; }
@@ -534,6 +539,7 @@ function sfx(kind, vol = 1, sub) {
   else if (kind === "goal") { noise(1.6, 0.35, 500); tone("triangle", 523, 1046, 0.7, 0.3); }
   else if (kind === "alarm") [0, 0.3, 0.6, 0.9].forEach((d) => { const o = actx.createOscillator(); o.type = "square"; o.frequency.setValueAtTime(880, t + d); o.frequency.setValueAtTime(660, t + d + 0.15); const gg = actx.createGain(); gg.gain.setValueAtTime(0.15, t + d); gg.gain.setValueAtTime(0.001, t + d + 0.29); o.connect(gg); gg.connect(g); o.start(t + d); o.stop(t + d + 0.3); });
   else if (kind === "rex") { tone("sawtooth", 90, 40, 1.4, 0.5); noise(1.2, 0.4, 100); }
+  else if (kind === "splash") { noise(0.5, 0.5, 400); tone("sine", 300, 80, 0.3, 0.15); }
 }
 
 // the valley's verdict on teamkillers, read out loud where the browser can speak
@@ -551,8 +557,16 @@ const OPTS = { vol: 1, sens: 1, fov: 80, invert: false, shake: true };
 try { Object.assign(OPTS, JSON.parse(localStorage.getItem("slop-opts") || "{}")); } catch {}
 let optsOpen = false;
 function saveOpts() { try { localStorage.setItem("slop-opts", JSON.stringify(OPTS)); } catch {} }
+let padView = 0;
 function toggleOptions(force) {
   optsOpen = force === undefined ? !optsOpen : force;
+  clearInterval(padView);
+  if (optsOpen) padView = setInterval(() => {
+    const gp = pad(), el = $("o-pad"); if (!el) return;
+    el.textContent = gp ? `${gp.id}${gp.mapping === "standard" ? " (standard gamepad: no setup needed)" : ""}` : "No flight stick or gamepad found. Plug it in and press any button on it.";
+    const fi = flyInput();
+    ["pitch", "roll", "yaw", "thr"].forEach((k, i) => { const s2 = $("o-ax-" + k); if (s2) s2.textContent = fi ? fi.f[i].toFixed(2) : "-"; });
+  }, 100);
   $("options").classList.toggle("hidden", !optsOpen);
   if (optsOpen) { keys.clear(); mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); renderOptions(); }
 }
@@ -565,12 +579,26 @@ function renderOptions() {
     row("fov", "Field of view", 60, 110, 1, OPTS.fov, (v) => v + "°") +
     `<div class="opt"><label><input type="checkbox" id="o-invert"${OPTS.invert ? " checked" : ""}> Invert mouse Y</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-shake"${OPTS.shake ? " checked" : ""}> Screen shake</label></div>` +
-    `<div class="opt"><label>View</label><span>${{ fp: "First person", tp: "Third person", top: "Top-down" }[viewMode]} (press T to switch)</span></div>`;
+    `<div class="opt"><label>View</label><span>${{ fp: "First person", tp: "Third person", top: "Top-down" }[viewMode]} (press T to switch)</span></div>` +
+    `<h3 class="opt-h">Flight stick / gamepad (helicopters)</h3><div class="opt-pad" id="o-pad"></div>` +
+    [["pitch", "Pitch (stick forward/back)"], ["roll", "Roll / strafe (stick left/right)"], ["yaw", "Yaw (twist or rudder)"], ["thr", "Collective (throttle: up = climb)"]].map(([k, l]) =>
+      `<div class="opt"><label>${l}</label><button class="cbtn alt bind" data-ax="${k}">Axis ${FLY[k]}</button><label class="inv"><input type="checkbox" data-inv="${k}"${FLY.inv[k] ? " checked" : ""}> invert</label><span id="o-ax-${k}"></span></div>`).join("") +
+    `<div class="opt-note">Click an axis button, then push that control all the way. Trigger fires the chain gun, button 2 fires rockets, button 3 gets out. Set the throttle to the middle to hover. A standard gamepad needs no setup.</div>`;
   for (const id of ["vol", "sens", "fov"]) {
     const el = $("o-" + id), fmt = id === "vol" ? pct : id === "sens" ? (v) => (+v).toFixed(2) + "x" : (v) => v + "°";
     el.oninput = () => { OPTS[id] = +el.value; $("o-" + id + "-v").textContent = fmt(OPTS[id]); saveOpts(); if (id === "vol") sfx("hit"); };
   }
   $("o-invert").onchange = (e) => { OPTS.invert = e.target.checked; saveOpts(); };
+  for (const el of document.querySelectorAll("[data-inv]")) el.onchange = () => { FLY.inv[el.dataset.inv] = el.checked; saveFly(); };
+  for (const el of document.querySelectorAll(".bind")) el.onclick = () => {
+    const gp = pad(); if (!gp) { el.textContent = "No stick found"; return; }
+    const rest = [...gp.axes]; el.textContent = "Push it now...";
+    const t0 = Date.now(), iv = setInterval(() => {
+      const g = pad(); if (!g) return;
+      let best = -1, bd = 0.45; g.axes.forEach((v, i) => { const d = Math.abs(v - (rest[i] || 0)); if (d > bd) { bd = d; best = i; } });
+      if (best >= 0 || Date.now() - t0 > 5000) { clearInterval(iv); if (best >= 0) { FLY[el.dataset.ax] = best; saveFly(); } el.textContent = `Axis ${FLY[el.dataset.ax]}`; }
+    }, 50);
+  };
   $("o-shake").onchange = (e) => { OPTS.shake = e.target.checked; saveOpts(); };
 }
 $("options").addEventListener("click", (e) => { if (e.target === $("options")) toggleOptions(false); });
@@ -578,12 +606,16 @@ $("optBtn").onclick = (e) => { e.target.blur(); toggleOptions(); };
 
 // ---------------------------------------------------------------- dialogue & journal
 let dlgOpen = false;
+const hearts = (v) => { const n = Math.max(0, Math.min(5, Math.floor(v / 20))); return "♥".repeat(n) + "♡".repeat(5 - n); };
+const myLove = (id) => { const mine = S?.p.find((p) => p.id === me); return (mine && mine.lo && mine.lo[id]) || 0; };
+const GLYPH_CH = ["☀", "☾", "★", "◆"];
 function showDlg(e) {
   const box = $("dlg");
   if (e.close) { dlgOpen = false; box.classList.add("hidden"); return; }
   dlgOpen = true;
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  box.innerHTML = `<div class="dl-n">${esc(e.name)} <span>${esc(e.role)}</span></div><div class="dl-t">${esc(e.text)}</div>` +
+  const love = e.love !== undefined ? `<span class="dl-love">${hearts(e.love)}${e.rel ? ` · ${e.rel === "spouse" ? "married" : "dating"}` : ""}</span>` : "";
+  box.innerHTML = `<div class="dl-n">${esc(e.name)} <span>${esc(e.role)}</span>${love}</div><div class="dl-t">${esc(e.text)}</div>` +
     e.opts.map((o, i) => `<div class="dl-o" data-i="${i}"><b>${i + 1}.</b> ${esc(o)}</div>`).join("");
   for (const el of box.querySelectorAll(".dl-o")) el.onclick = () => send({ t: "dlg", i: Number(el.dataset.i) });
   box.classList.remove("hidden");
@@ -619,16 +651,44 @@ function keyMask() {
   // infected: forward is P, back is INSERT, left is ALT. There is no right.
   const jump = keys.has(" ") ? 16 : 0;
   if (mine && mine.inf === "keys") return jump | (keys.has("p") ? 1 : 0) | (keys.has("alt") ? 2 : 0) | (keys.has("insert") ? 4 : 0);
-  return jump | (keys.has("w") ? 1 : 0) | (keys.has("a") ? 2 : 0) | (keys.has("s") ? 4 : 0) | (keys.has("d") ? 8 : 0);
+  return jump | (keys.has("w") ? 1 : 0) | (keys.has("a") ? 2 : 0) | (keys.has("s") ? 4 : 0) | (keys.has("d") ? 8 : 0) | (keys.has("c") && (pred.swim || flying()) ? 32 : 0);
 }
 function aimAngle() { if (use3d) return aimYaw; const o = myScr(); return Math.atan2(mouseY - o.y, mouseX - o.x); }
 const aiming = () => adsDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen;
+let padExit = false;
 setInterval(() => {
   if (!joined) return;
   const msg = { t: "in", k: keyMask(), a: aimAngle(), f: mouseDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen, ads: aiming() ? 1 : 0 };
   if (use3d) { msg.pt = +aimPitch.toFixed(3); msg.rel = 1; }
+  if (piloting()) {
+    const fi = flyInput();
+    if (fi) {
+      msg.fly = fi.f.map((v) => +v.toFixed(3)); if (fi.fire) msg.f = true; if (fi.alt) msg.ads = 1;
+      if (fi.exit && !padExit) send({ t: "use" });
+      padExit = fi.exit;
+    }
+  }
   send(msg);
 }, 33);
+// ---------------------------------------------------------------- flight sticks and gamepads (helicopters)
+// A standard gamepad just works: left stick flies, right stick turns, triggers climb and descend, bumpers shoot.
+// Anything else (a HOTAS like the Thrustmaster T.16000M) uses the axes chosen in Options, which you can re-bind.
+const AIR = { heli: 1, gunship: 1 };
+const FLY = { pitch: 1, roll: 0, yaw: 5, thr: 2, inv: { pitch: true, roll: false, yaw: false, thr: true }, dead: 0.08 };
+try { const f = JSON.parse(localStorage.getItem("slop-fly") || "{}"); Object.assign(FLY, f); FLY.inv = { pitch: true, roll: false, yaw: false, thr: true, ...(f.inv || {}) }; } catch {}
+function saveFly() { try { localStorage.setItem("slop-fly", JSON.stringify(FLY)); } catch {} }
+function pad() { try { return [...(navigator.getGamepads ? navigator.getGamepads() : [])].find((g) => g && g.axes.length >= 2) || null; } catch { return null; } }
+function myVehicle() { const mine = S?.p.find((p) => p.id === me); return mine && mine.vh ? S.vh.find((v) => v[0] === mine.vh) : null; }
+function flying() { const v = myVehicle(); return !!(v && AIR[v[1]]); }
+function piloting() { const v = myVehicle(); return !!(v && AIR[v[1]] && v[6] === me); }
+function flyInput() {
+  const gp = pad(); if (!gp) return null;
+  const dz = (v) => (Math.abs(v || 0) < FLY.dead ? 0 : v || 0);
+  const ax = (k) => { const v = dz(gp.axes[FLY[k]]); return FLY.inv[k] ? -v : v; };
+  const b = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+  if (gp.mapping === "standard") return { f: [-dz(gp.axes[1]), dz(gp.axes[0]), dz(gp.axes[2]), (gp.buttons[7]?.value || 0) - (gp.buttons[6]?.value || 0)], fire: b(5), alt: b(4), exit: b(3) };
+  return { f: [ax("pitch"), ax("roll"), ax("yaw"), ax("thr")], fire: b(0), alt: b(1), exit: b(2) };
+}
 setInterval(() => { if (shopOpen) renderShop(); }, 250);
 
 // ---------------------------------------------------------------- prediction (own player)
@@ -691,10 +751,11 @@ function buildDecor() {
 
 
 // ---------------------------------------------------------------- vehicles
-const VEH_NAME = { tractor: "Tractor", buggy: "Slop Buggy", limo: "Limo" };
-function drawVehicle(kind, x, y, a, t, occ, speed) {
+const VEH_NAME = { tractor: "Tractor", buggy: "Slop Buggy", limo: "Limo", heli: "Crop Chopper", gunship: "Slop Gunship" };
+function drawVehicle(kind, x, y, a, t, occ, speed, z = 0) {
   ctx.save(); ctx.translate(x, y);
-  ctx.fillStyle = "#0004"; ctx.beginPath(); ctx.ellipse(6, 10, kind === "limo" ? 56 : 34, 20, a, 0, 7); ctx.fill();
+  ctx.fillStyle = "#0004"; ctx.beginPath(); ctx.ellipse(6, 10, kind === "limo" ? 56 : AIR[kind] ? 44 : 34, AIR[kind] ? 26 : 20, a, 0, 7); ctx.fill();
+  ctx.translate(0, -z * 0.3);
   ctx.rotate(a);
   const wheel = (wx, wy, w, h) => { ctx.fillStyle = "#1a1a1a"; ctx.fillRect(wx - w / 2, wy - h / 2, w, h); };
   if (kind === "tractor") {
@@ -711,6 +772,17 @@ function drawVehicle(kind, x, y, a, t, occ, speed) {
     ctx.strokeStyle = "#333"; ctx.lineWidth = 3; ctx.strokeRect(-14, -11, 18, 22);
     ctx.fillStyle = "#6fcf3a"; ctx.fillRect(-24, -3, 8, 6);
     ctx.fillStyle = "#fff8a0"; ctx.fillRect(24, -8, 4, 4); ctx.fillRect(24, 4, 4, 4);
+  } else if (AIR[kind]) {
+    const gs = kind === "gunship";
+    ctx.strokeStyle = "#333"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-20, -16); ctx.lineTo(20, -16); ctx.moveTo(-20, 16); ctx.lineTo(20, 16); ctx.stroke(); // skids
+    ctx.fillStyle = gs ? "#4a5a3a" : "#e8c040"; ctx.fillRect(-58, -4, 40, 8); // tail boom
+    ctx.fillStyle = gs ? "#3a4a2c" : "#d0a830"; ctx.fillRect(-62, -12, 8, 24);
+    ctx.fillStyle = gs ? "#55663f" : "#f0d050"; ctx.beginPath(); ctx.ellipse(0, 0, 30, 18, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#9fd0e0"; ctx.beginPath(); ctx.ellipse(14, 0, 12, 12, 0, -1.2, 1.2); ctx.fill();
+    if (gs) { ctx.fillStyle = "#2a2a2a"; ctx.fillRect(-6, -30, 12, 60); ctx.fillRect(26, -2, 16, 4); for (const sy of [-26, 26]) { ctx.fillStyle = "#3a3a3a"; ctx.fillRect(-10, sy - 5, 18, 10); } }
+    ctx.strokeStyle = "rgba(30,30,30,0.55)"; ctx.lineWidth = 4; const ra = t * (z > 2 || speed > 1 ? 30 : 8);
+    for (let i = 0; i < 4; i++) { const q = ra + i * Math.PI / 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(q) * 54, Math.sin(q) * 54); ctx.stroke(); }
+    ctx.fillStyle = "#222"; ctx.beginPath(); ctx.arc(0, 0, 5, 0, 7); ctx.fill();
   } else if (kind === "limo") {
     for (const [wx, wy] of [[-36, -16], [-36, 16], [34, -16], [34, 16]]) wheel(wx, wy, 14, 6);
     ctx.fillStyle = "#ff8fc8"; ctx.beginPath(); ctx.roundRect(-52, -15, 104, 30, 8); ctx.fill();
@@ -720,7 +792,7 @@ function drawVehicle(kind, x, y, a, t, occ, speed) {
   occ.forEach((p, i) => { if (!p) return; ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(kind === "tractor" ? -12 : -6, i ? 7 : -7, 7, 0, 7); ctx.fill(); ctx.strokeStyle = "#0008"; ctx.lineWidth = 1.5; ctx.stroke(); });
   ctx.restore();
   const names = occ.filter(Boolean).map((p) => p.n.split(" ")[0]);
-  if (names.length) text(names.join(" + "), x, y + 34, 11, "#fff");
+  if (names.length) text(names.join(" + "), x, y + 34 - z * 0.3, 11, "#fff");
 }
 
 // ---------------------------------------------------------------- opening cutscene
@@ -857,7 +929,8 @@ function drawMinimap(mine, t) {
   const mw = 190, mh = mw * MAP.H / MAP.W, mx = 12, my = 12, k = mw / MAP.W;
   ctx.fillStyle = "#000b"; ctx.fillRect(mx - 3, my - 3, mw + 6, mh + 6);
   ctx.fillStyle = "#3f6030"; ctx.fillRect(mx, my, mw, mh);
-  ctx.fillStyle = "#0006"; for (const w of MAP.walls) ctx.fillRect(mx + w.x * k, my + w.y * k, Math.max(1, w.w * k), Math.max(1, w.h * k));
+  ctx.fillStyle = "#0006"; for (const w of MAP.walls) if (w.z1 > 0 && w.kind !== "hwall" && w.kind !== "furn") ctx.fillRect(mx + w.x * k, my + w.y * k, Math.max(1, w.w * k), Math.max(1, w.h * k));
+  for (const w of MAP.walls) if (w.kind === "lake") { ctx.fillStyle = "#2a6a8e"; ctx.fillRect(mx + w.x * k, my + w.y * k, w.w * k, w.h * k); }
   if (S.g.mode !== "royale") { const h = MAP.hearth; ctx.fillStyle = "#ff8a2a"; ctx.fillRect(mx + h.x * k, my + h.y * k, h.w * k, h.h * k); }
   ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
   if (S.g.zone) {
@@ -872,7 +945,7 @@ function drawMinimap(mine, t) {
   if (S.ball) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(mx + S.ball[0] * k, my + S.ball[1] * k, 2, 0, 7); ctx.fill(); }
   for (const [, cx2, cy2] of S.ca || []) { ctx.fillStyle = "#7dffb0"; ctx.fillRect(mx + cx2 * k - 2, my + cy2 * k - 2, 4, 4); }
   if (S.g.dis && S.g.dis.k === "tornado") text("🌪", mx + S.g.dis.x * k, my + S.g.dis.y * k, 12, "#ccc");
-  for (const v of S.vh) { ctx.fillStyle = "#9fe0ff"; ctx.fillRect(mx + v[2] * k - 2, my + v[3] * k - 2, 4, 4); }
+  for (const v of S.vh) { ctx.fillStyle = AIR[v[1]] ? "#ffd34d" : "#9fe0ff"; ctx.fillRect(mx + v[2] * k - 2, my + v[3] * k - 2, 4, 4); }
   for (const p of S.p) {
     if (p.d || p.air === 1) continue;
     if (S.g.mode === "royale" && p.id !== me) continue; // no wallhacks in the Royale
@@ -926,6 +999,7 @@ function trailFx(p, d, t) {
 function rayWorld(o, d, maxT, skipId, boxesOnly) {
   let best = maxT;
   for (const b of worldBoxes()) {
+    if (b.kind === "lake") continue; // water doesn't stop a bullet or a camera
     let tmin = 0, tmax = Infinity, miss = false;
     const lo = [b.x, b.y, b.z0 || 0], hi = [b.x + b.w, b.y + b.h, b.z1 || 60];
     for (let i = 0; i < 3 && !miss; i++) {
@@ -970,7 +1044,8 @@ function render3d(mine, t, dt) {
     const dv = [want[0] - tx, want[1] - ty, want[2] - tz], L = Math.hypot(...dv) || 1, u = dv.map((v) => v / L);
     const hit = rayWorld([tx, ty, tz], u, L, me);
     const k = Math.max(6, hit - 16);
-    return { x: tx + u[0] * k, y: ty + u[1] * k, z: Math.max(8, tz + u[2] * k), yaw, pitch, fov: OPTS.fov - 6 - adsK * 20 };
+    const cx = tx + u[0] * k, cy = ty + u[1] * k, lk = MV.lakeAt(MAP.walls, cx, cy);
+    return { x: cx, y: cy, z: Math.max(lk ? lk.z0 + 8 : 8, tz + u[2] * k), yaw, pitch, fov: OPTS.fov - 6 - adsK * 20 };
   };
   if (!mine) cam = { x: MAP.W / 2, y: MAP.H + 300, z: 900, look: [MAP.W / 2, MAP.H / 2, 0], fov: 60 };
   else if (mine.d || mine.out) {
@@ -1052,9 +1127,14 @@ function overlay3d(mine, t, dt) {
     const b = bubbles.get(p.id);
     if (b && t - b.t < 4.5) { ctx.font = "bold 13px Trebuchet MS"; const tw = Math.min(260, ctx.measureText(b.text).width + 16); ctx.fillStyle = "#fffe"; ctx.beginPath(); ctx.roundRect(s.x - tw / 2, y - 44, tw, 24, 8); ctx.fill(); text(b.text.length > 36 ? b.text.slice(0, 35) + "…" : b.text, s.x, y - 32, 13, "#222", "center", false); }
   }
+  if (S.sh && pred.z < -40) for (const w of MAP.walls) {
+    if (w.kind === "shrine") { const s = P(w.x + w.w / 2, w.y + w.h / 2, w.z1 + 30); if (s && s.d < 600) text(S.sh[5] ? "The shrine stands open" : "Carved here:  " + S.sh.slice(0, 4).map((g, i) => (i < S.sh[4] ? "✓" : "") + GLYPH_CH[g]).join("   "), s.x, s.y, 18, "#bfe8ff"); }
+    if (w.kind === "glyph") { const s = P(w.x + 15, w.y + 15, w.z1 + 16); if (s && s.d < 500) text(GLYPH_CH[w.g], s.x, s.y, 26, S.sh.slice(0, S.sh[4]).includes(w.g) ? "#ffffff" : "#7dd8ff"); }
+  }
   if (MAP.npcs && S.g.mode !== "royale") for (const n of MAP.npcs) {
     const s = P(n.x, n.y, 72); if (!s || s.d > 900) continue;
     text(n.name, s.x, s.y, 12, "#e0c0ff"); text(n.role, s.x, s.y + 13, 10, "#b0a0c8");
+    if (myLove(n.id) >= 20) text(hearts(myLove(n.id)), s.x, s.y + 26, 11, "#ff8fc8");
     if (mine && (!mine.nt.includes(n.id) || mine.qr.includes(n.id))) { const q = mine.qr.includes(n.id); text(q ? "?" : "!", s.x, s.y - 20 + Math.sin(t * 4) * 3, 24, q ? "#7dffb0" : "#ffd34d"); }
     if (n.id === "chef" && Math.sin(t * 1.3 + n.x) > 0.6) text(["IT'S RAW!", "DONKEY!", "SHUT IT DOWN!", "WHERE'S THE LAMB SAUCE?"][Math.floor(t / 4.8 + n.x) % 4], s.x, s.y - 40, 14, "#ff5050");
   }
@@ -1187,10 +1267,45 @@ function render() {
     ctx.strokeStyle = "#5a3a1e"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(wl.x - 26, wl.y - 4); ctx.lineTo(wl.x - 26, wl.y - 34); ctx.lineTo(wl.x + 26, wl.y - 34); ctx.lineTo(wl.x + 26, wl.y - 4); ctx.stroke();
   }
 
+  // the lake: deep water, with the sunken shrine just about visible on the bottom
+  const lake = MAP.walls.find((w) => w.kind === "lake");
+  if (lake) {
+    ctx.fillStyle = "#6a6a62"; ctx.fillRect(lake.x - 24, lake.y - 24, lake.w + 48, lake.h + 48);
+    const g = ctx.createRadialGradient(lake.x + lake.w / 2, lake.y + lake.h / 2, 40, lake.x + lake.w / 2, lake.y + lake.h / 2, Math.max(lake.w, lake.h) * 0.7);
+    g.addColorStop(0, "#14405e"); g.addColorStop(1, "#2a6a8e"); ctx.fillStyle = g; ctx.fillRect(lake.x, lake.y, lake.w, lake.h);
+    for (const w of MAP.walls) {
+      if (w.z1 > 0 || w.kind === "lake" || w.kind === "bank") continue;
+      ctx.globalAlpha = 0.55;
+      if (w.kind === "shrine") { ctx.fillStyle = "#8a9a8a"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#c8b060"; ctx.fillRect(w.x + w.w / 2 - 14, w.y + w.h - 30, 28, 30); }
+      else if (w.kind === "glyph") { const lit = S.sh && S.sh.slice(0, S.sh[4]).includes(w.g); ctx.fillStyle = lit ? "#60e0ff" : "#5a6a6a"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.globalAlpha = 0.9; text(GLYPH_CH[w.g], w.x + 15, w.y + 16, 16, lit ? "#fff" : "#bfe8ff"); }
+      else if (w.kind === "vent") { ctx.fillStyle = "#bfe8ff"; for (let i = 0; i < 3; i++) { const q = (t * 0.7 + i / 3) % 1; ctx.beginPath(); ctx.arc(w.x + 20 + Math.sin(t * 3 + i) * 6, w.y + 20 - q * 40, 3 + q * 4, 0, 7); ctx.fill(); } }
+      else { ctx.fillStyle = "#1a3a50"; ctx.beginPath(); ctx.roundRect(w.x, w.y, w.w, w.h, 14); ctx.fill(); }
+      ctx.globalAlpha = 1;
+    }
+    for (let i = 0; i < 14; i++) { const q = (t * 0.05 + i * 0.37) % 1; ctx.strokeStyle = `rgba(255,255,255,${0.12 * Math.sin(q * Math.PI)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(lake.x + ((i * 97) % lake.w), lake.y + q * lake.h); ctx.lineTo(lake.x + ((i * 97) % lake.w) + 40, lake.y + q * lake.h); ctx.stroke(); }
+    const sh = MAP.walls.find((w) => w.kind === "shrine");
+    if (sh && S.sh && (sh.x + sh.w / 2 - pred.x) ** 2 + (sh.y + sh.h / 2 - pred.y) ** 2 < 420 * 420 && pred.z < -40) text(S.sh[5] ? "The shrine stands open" : "Carved on the shrine:  " + S.sh.slice(0, 4).map((g, i) => (i < S.sh[4] ? "✓" : "") + GLYPH_CH[g]).join("  "), sh.x + sh.w / 2, sh.y - 14, 15, "#bfe8ff");
+  }
   // walls / buildings
+  const inside = MAP.walls.find((w) => w.kind === "house" && pred.x > w.x && pred.x < w.x + w.w && pred.y > w.y && pred.y < w.y + w.h && pred.z < w.z0);
   const walls2d = [...MAP.walls].sort((a, b) => (a.z1 || 0) - (b.z1 || 0)); // low things first, so towers and catwalks sit on top
   for (const w of walls2d) {
-    if (w.kind === "hearth") continue;
+    if (w.kind === "hearth" || w.kind === "lake" || w.kind === "bank" || w.z1 <= 0) continue;
+    if (w.kind === "hwall") { ctx.fillStyle = "#6b4228"; ctx.fillRect(w.x, w.y, w.w, w.h); continue; }
+    if (w.kind === "furn") {
+      if (w.f === "bed") { ctx.fillStyle = "#5a3a1e"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#e8e0d0"; ctx.fillRect(w.x + 4, w.y + 4, w.w - 8, 18); ctx.fillStyle = ["#a33b2b", "#3b5ea3", "#5d6b3a", "#6b4a8a"][(w.id || 0) % 4]; ctx.fillRect(w.x + 4, w.y + 24, w.w - 8, w.h - 28); }
+      else { ctx.fillStyle = "#7a5530"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#94693c"; ctx.fillRect(w.x + 3, w.y + 3, w.w - 6, w.h - 6); ctx.fillStyle = "#e8d84a"; ctx.beginPath(); ctx.arc(w.x + w.w / 2, w.y + w.h / 2, 4, 0, 7); ctx.fill(); }
+      continue;
+    }
+    if (w.kind === "house") {
+      if (w === inside) { ctx.fillStyle = "#c8a878"; ctx.globalAlpha = 0.18; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.globalAlpha = 1; continue; } // you're inside: lift the roof off
+      const roof = [["#a33b2b", "#c24a36"], ["#3b5ea3", "#4a6fc2"], ["#5d6b3a", "#6f7f45"], ["#6b4a8a", "#7d5aa0"]][w.roof || 0];
+      ctx.fillStyle = "#00000040"; ctx.fillRect(w.x + 8, w.y + 10, w.w, w.h);
+      ctx.fillStyle = roof[0]; ctx.fillRect(w.x - 4, w.y - 4, w.w + 8, w.h + 8);
+      ctx.fillStyle = roof[1]; for (let xx = w.x - 4; xx < w.x + w.w + 4; xx += 16) ctx.fillRect(xx, w.y - 4, 8, w.h + 8);
+      ctx.fillStyle = "#3a2616"; ctx.fillRect(w.x + w.w / 2 - 14, w.door === "n" ? w.y - 8 : w.y + w.h - 2, 28, 10);
+      continue;
+    }
     if (w.kind === "rubble") { ctx.fillStyle = "#00000030"; ctx.fillRect(w.x + 4, w.y + 6, w.w, w.h); ctx.fillStyle = "#6d5a4a"; ctx.fillRect(w.x + 8, w.y + 8, w.w - 16, w.h - 16); ctx.fillStyle = "#8b5a3a"; for (let i = 0; i < 9; i++) ctx.fillRect(w.x + ((i * 37) % 97) / 97 * (w.w - 20), w.y + ((i * 61) % 89) / 89 * (w.h - 16), 20, 14); continue; }
     if (w.kind === "post") { ctx.fillStyle = "#f4f4f4"; ctx.fillRect(w.x, w.y, w.w, w.h); continue; }
     if (w.kind === "pad") { const cx = w.x + w.w / 2, cy = w.y + w.h / 2, k = (t * 1.5) % 1; ctx.fillStyle = "#1090c0"; ctx.beginPath(); ctx.arc(cx, cy, w.w / 2, 0, 7); ctx.fill(); ctx.strokeStyle = `rgba(190,248,255,${1 - k})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, w.w / 2 * (0.4 + k * 0.8), 0, 7); ctx.stroke(); continue; }
@@ -1282,10 +1397,10 @@ function render() {
     if (hp < 100 && kind !== "spikes") bar(bx + 2, by - 7, 36, 4, hp / 100, "#e8a33a");
   }
   // vehicles
-  if (!shot || shot.npcs) for (const [id, kind, vx, vy, va, vhp, drv, pas, vs] of S.vh) {
+  if (!shot || shot.npcs) for (const [id, kind, vx, vy, va, vhp, drv, pas, vs, vz] of S.vh) {
     const d = smooth("v" + id, vx, vy, dt);
     let a = va; const prevA = disp.get("va" + id); if (prevA) { let da = va - prevA.x; da = Math.atan2(Math.sin(da), Math.cos(da)); a = prevA.x + da * Math.min(1, dt * 14); } disp.set("va" + id, { x: a, y: 0, seen: frameNo });
-    drawVehicle(kind, d.x, d.y, a, t, [drv, pas].map((pid) => S.p.find((p) => p.id === pid)), vs);
+    drawVehicle(kind, d.x, d.y, a, t, [drv, pas].map((pid) => S.p.find((p) => p.id === pid)), vs, vz || 0);
     if (vhp < 100) bar(d.x - 26, d.y - 42, 52, 5, vhp / 100, vhp > 35 ? "#8fd35a" : "#e84a3a");
     if (vhp < 35) { ctx.fillStyle = `rgba(60,60,60,${0.4 + Math.sin(t * 9 + id) * 0.2})`; ctx.beginPath(); ctx.arc(d.x - Math.cos(a) * 10, d.y - 30 - ((t * 30 + id) % 20), 8, 0, 7); ctx.fill(); }
   }
@@ -1301,6 +1416,7 @@ function render() {
     if (n.id === "chef") { drawVehicle("limo", n.x + 90, n.y + 20, 0.2, t, [], 0); if (Math.sin(t * 1.3 + n.x) > 0.6) { ctx.fillStyle = "#fffe"; ctx.beginPath(); ctx.roundRect(n.x - 60, n.y - 92, 120, 22, 8); ctx.fill(); text(["IT'S RAW!", "DONKEY!", "SHUT IT DOWN!", "WHERE'S THE LAMB SAUCE?"][Math.floor(t / 4.8 + n.x) % 4], n.x, n.y - 81, 12, "#c02020", "center", false); } }
     text(n.name, n.x, n.y - 38, 12, "#e0c0ff");
     text(n.role, n.x, n.y - 25, 10, "#b0a0c8");
+    if (myLove(n.id) >= 20) text(hearts(myLove(n.id)), n.x, n.y + 30, 11, "#ff8fc8");
     if (mine && (!mine.nt.includes(n.id) || mine.qr.includes(n.id))) {
       const q = mine.qr.includes(n.id);
       text(q ? "?" : "!", n.x, n.y - 58 + Math.sin(t * 4) * 3, 22, q ? "#7dffb0" : "#ffd34d");
@@ -1629,6 +1745,12 @@ function drawHud(mine, t) {
     text("Dawn or an Antidote from the shop will cure it.", VW / 2, 139, 10, "#9fdc5acc");
   }
   if (mine.md) { ctx.fillStyle = `rgba(255,60,30,${0.12 + Math.sin(t * 9) * 0.06})`; ctx.fillRect(0, 0, VW, VH); text("MELTDOWN", VW / 2 + Math.sin(t * 31) * 4, VH * 0.3, 40, "#ff6040"); text("You can't hold a gun steady. Breathe. Or go and kick a ball about.", VW / 2, VH * 0.3 + 34, 15, "#ffd0c0"); }
+  if (mine.sw && pred.z < -44) { ctx.fillStyle = "rgba(20,70,120,0.28)"; ctx.fillRect(0, 0, VW, VH); }
+  if (mine.br < 15 || (mine.sw && pred.z < -44)) {
+    const b = mine.br / 15; ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 110, VH - 252, 220, 24, 8); ctx.fill();
+    text("Breath", VW / 2 - 100, VH - 240, 12, b < 0.3 && Math.floor(t * 4) % 2 ? "#f55" : "#bfe8ff", "left");
+    bar(VW / 2 - 50, VH - 245, 150, 8, b, b < 0.3 ? "#e33" : "#7fd0ff");
+  }
   if (mine.fz) { ctx.fillStyle = "rgba(150,220,255,0.22)"; ctx.fillRect(0, 0, VW, VH); text("FROZEN", VW / 2, VH * 0.36, 30, "#bfefff"); }
   if (g.dis && g.dis.k === "flood" && g.dis.w > 1 && pred.z < g.dis.w) { ctx.fillStyle = `rgba(40,110,170,${Math.min(0.3, g.dis.w / 100)})`; ctx.fillRect(0, VH * 0.55, VW, VH * 0.45); text("wading", VW / 2, VH * 0.55 + 16, 12, "#bfe0ff"); }
   // bottom left: bladder and bowels
@@ -1678,7 +1800,7 @@ function drawHud(mine, t) {
     ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW - 312, VH - 190, 300, 52, 10); ctx.fill();
     const driving = myVeh[6] === me;
     text(`${VEH_NAME[myVeh[1]]} · ${driving ? "driving" : "passenger"}`, VW - 296, VH - 176, 14, "#9fe0ff", "left");
-    text(`${Math.round(Math.abs(myVeh[8]) * 0.36)} km/h`, VW - 24, VH - 176, 14, "#fff", "right");
+    text(`${AIR[myVeh[1]] ? `ALT ${Math.round((myVeh[9] || 0) / 10)}m · ` : ""}${Math.round(Math.abs(myVeh[8]) * 0.36)} km/h`, VW - 24, VH - 176, 14, "#fff", "right");
     bar(VW - 296, VH - 158, 268, 8, myVeh[5] / 100, myVeh[5] > 35 ? "#8fd35a" : "#e84a3a");
   }
 
@@ -1688,8 +1810,9 @@ function drawHud(mine, t) {
     for (const [, x, y, busy] of S.ca || []) if ((x - pred.x) ** 2 + (y - pred.y) ** 2 < 62 * 62) { hint = [busy ? "Someone's hacking this one" : "E  hack the Slop-Tech cache", "#7dffb0"]; break; }
     if (!hint) for (const [, x, y, rar, grave] of S.cr) if ((x - pred.x) ** 2 + (y - pred.y) ** 2 < 60 * 60) { hint = [`E  ${grave ? "loot grave" : "open crate"}`, RARITY_COL[rar]]; break; }
     if (!hint) MAP.plots.forEach((pl, i) => { if (!hint && (pl.x - pred.x) ** 2 + (pl.y - pred.y) ** 2 < 48 * 48) { const s = S.pl[i]; hint = s === 0 ? [mine.sd ? "E  plant seed" : "No seeds — buy some [B]", "#8f8"] : s === 3 ? ["E  harvest", "#ffd34d"] : ["growing...", "#aaa"]; } });
-    if (!hint && !mine.vh) for (const [, kind, vx, vy, , , drv, pas] of S.vh) if ((vx - pred.x) ** 2 + (vy - pred.y) ** 2 < 62 * 62 && (!drv || !pas)) { hint = [`E  ${drv ? "ride in" : "drive"} the ${VEH_NAME[kind]}`, "#9fe0ff"]; break; }
-    if (mine.vh) hint = [S.vh.find((v) => v[0] === mine.vh)?.[6] === me ? "WASD drive · E get out" : "E get out", "#9fe0ff"];
+    if (!hint && !mine.vh) for (const [, kind, vx, vy, , , drv, pas, , vz] of S.vh) if ((vx - pred.x) ** 2 + (vy - pred.y) ** 2 < (AIR[kind] ? 76 : 62) ** 2 && Math.abs((vz || 0) - pred.z) < 70 && (!drv || !pas)) { hint = [`E  ${drv ? "ride in" : AIR[kind] ? "fly" : "drive"} the ${VEH_NAME[kind]}`, "#9fe0ff"]; break; }
+    if (mine.vh) hint = piloting() ? [pad() ? "Flying with your stick · button 3 gets out" : "W/S pitch · A/D strafe · mouse turns · SPACE up · C down · E out", "#9fe0ff"] : [S.vh.find((v) => v[0] === mine.vh)?.[6] === me ? "WASD drive · E get out" : "E get out", "#9fe0ff"];
+    if (!hint && mine.sw && pred.z < -60 && MAP.walls.some((w) => w.kind === "glyph" && (w.x + 15 - pred.x) ** 2 + (w.y + 15 - pred.y) ** 2 < 60 * 60)) hint = ["E  touch the glyph", "#7dd8ff"];
     if (!hint && MAP.npcs && g.mode !== "royale" && !dlgOpen) for (const n of MAP.npcs) if ((n.x - pred.x) ** 2 + (n.y - pred.y) ** 2 < 70 * 70) { hint = [`E  talk to ${n.name}`, "#e0c0ff"]; break; }
     if (!hint && mine.hoe && g.mode !== "royale" && !mine.vh && pred.gr && pred.z < 4 && (g.ph === "day" || g.ph === "night") && !dlgOpen) hint = ["E  till a new plot here", "#b8e070"];
     if (mine.air === 1) hint = ["SPACE to jump", "#ffd34d"];
