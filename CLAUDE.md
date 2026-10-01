@@ -27,6 +27,7 @@ More than one Claude works on this repo, often at the same time, from different 
    ```
    Test the systems you changed, plus anything the other merged work changed that touches yours.
 4. Only then merge the PR.
+5. After the release is published, update the requests sheet (see "Where work comes from").
 
 ## PR descriptions
 
@@ -34,6 +35,7 @@ Make it obvious to the other Claude (and to Jay) what moved:
 - A **Systems changed** list naming each game system touched (e.g. Dome, stock market, radial menu, crops, story/dialogue, bots) and the main files.
 - Anything that changes balance numbers (prices, damage, timings) called out with old → new values.
 - Which other branches/PRs you checked for overlap.
+- Which requests-sheet rows this delivers (and, if you can't reach the sheet, a **Sheet updates** section; see below).
 
 ## Builds and releases
 
@@ -46,7 +48,11 @@ Make it obvious to the other Claude (and to Jay) what moved:
 
 The backlog is Jay's Google Sheet **"Slop Game requests"** (tab "Requests"): https://docs.google.com/spreadsheets/d/10WxUCtSSvFdvOd7SgpiaWfvu2vmLg7BNDJxHA7Q2Ug0/edit
 
-Work it highest priority first, skip Done rows, set Status to "In progress" when you start an item (this is also how the other Claude knows you've claimed it) and "Done" with the PR link in Notes when it ships. If a row is already "In progress", someone else has it; don't start it too.
+Work it highest priority first, skip Done rows, and set Status to "In progress" when you start an item (this is also how the other Claude knows you've claimed it). If a row is already "In progress", someone else has it; don't start it too.
+
+**When your work ships, you must update the sheet.** Every Claude, every time. Once the PR is merged and the release exists, set each row you delivered to "Done" and put the PR link and the real build tag (e.g. `PR #12, build-10`) in Notes. If you only did part of a row, leave it "In progress" and say in Notes what's left. If you picked up work that wasn't in the sheet, add a row for it marked Done so the sheet stays the full record.
+
+If you can't reach Google Sheets (no connector in your session), list the rows to update in your PR description under a **Sheet updates** heading (the row's Idea text, the new Status, and the Notes text) so Jay or the other Claude can copy them across.
 
 ## Running it
 
