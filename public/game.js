@@ -191,6 +191,12 @@ function handleEvent(e) {
   else if (e.k === "splash") { fx.push({ kind: "boom", t0: t, dur: 0.6, x: e.x, y: e.y, z: -12, r: 40, dust: true, col: 0xbfe8ff, c2: "190,230,255" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("splash"); }
   else if (e.k === "glyph") { fx.push({ kind: "shout", t0: t, dur: 0.9, x: e.x, y: e.y, z: e.z, a: 0, full: true, col: e.g < 0 ? 0xff4040 : 0x60e0ff, c2: e.g < 0 ? "255,64,64" : "96,224,255" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx(e.g < 0 ? "jam" : "perfect"); }
   else if (e.k === "wedding") { sfx("goal"); for (let i = 0; i < 18; i++) fx.push({ kind: "text", t0: t + i * 0.05, dur: 2, x: pred.x + (Math.random() - 0.5) * 300, y: pred.y + (Math.random() - 0.5) * 200, z: 60 + Math.random() * 60, text: "♥", color: ["#ff8fc8", "#ff5fa0", "#fff"][i % 3], big: true }); }
+  else if (e.k === "glass") {
+    if (MAP) { MAP.walls = MAP.walls.filter((w) => w.id !== e.id); chunkVer++; MAP.cv = chunkVer; }
+    const d = Math.hypot(e.x - pred.x, e.y - pred.y);
+    if (d < 900) sfx("glass", 1 - d / 900);
+    fx.push({ kind: "boom", t0: t, dur: 0.45, x: e.x, y: e.y, z: e.z, r: 24, col: 0xbfe2f0 });
+  }
   else if (e.k === "collapse") { fx.push({ kind: "boom", t0: t, dur: 0.9, x: e.x, y: e.y, z: 10, r: Math.max(e.w, e.h) * 0.6, dust: true }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) { sfx("boom", 0.6); shake = Math.max(shake, 6); } }
   else if (e.k === "zap") { fx.push({ kind: "zap", t0: t, dur: 0.35, pts: e.pts }); if (Math.hypot(e.pts[0][0] - pred.x, e.pts[0][1] - pred.y) < 900) sfx("zap"); }
   else if (e.k === "meteor") { fx.push({ kind: "boom", t0: t, dur: 0.8, x: e.x, y: e.y, z: e.z, r: 170 }); fx.push({ kind: "boom", t0: t, dur: 1.4, x: e.x, y: e.y, z: e.z, r: 120, dust: true }); const d = Math.hypot(e.x - pred.x, e.y - pred.y); if (d < 1200) { sfx("boom", 1 - d / 1400); shake = Math.max(shake, 16 * (1 - d / 1200)); } }
@@ -824,6 +830,7 @@ function sfx(kind, vol = 1, sub) {
   }
   else if (kind === "whoosh") { noise(0.22, 0.35 * vol, 1200); tone("sine", 220, 520, 0.18, 0.08 * vol); }
   else if (kind === "slide") noise(0.55, 0.3 * vol, 400);
+  else if (kind === "glass") { noise(0.3, 0.3 * vol, 4000); for (let i = 0; i < 4; i++) tone("triangle", 2400 + i * 900, 1600, 0.12 + i * 0.04, 0.05 * vol); }
   else if (kind === "step") { tone("sine", 120, 60, 0.07, 0.25 * vol); noise(0.05, 0.25 * vol, 900); }
   else if (kind === "boost") { tone("square", 300, 1400, 0.35, 0.12 * vol); tone("sine", 600, 2400, 0.3, 0.1 * vol); }
   else if (kind === "casing") { tone("triangle", 3300, 2900, 0.05, 0.045); tone("triangle", 2600, 2400, 0.04, 0.03); }
@@ -1797,6 +1804,14 @@ function render() {
   const walls2d = MAP.walls.filter((w) => !(w.x > vx1 + 60 || w.y > vy1 + 60 || w.x + w.w < vx0 - 60 || w.y + w.h < vy0 - 60)).sort((a, b) => (a.z1 || 0) - (b.z1 || 0)); // low things first, so towers and catwalks sit on top
   for (const w of walls2d) {
     if (w.kind === "hearth" || w.kind === "lake" || w.kind === "bank" || w.z1 <= 0) continue;
+    if (w.kind === "hole" || w.kind === "earth" || w.kind === "slab" || w.kind === "rail" || w.kind === "bulb" || w.kind === "glass" || w.kind === "pillar" || w.kind === "hatch") continue; // insides: only the 3D view draws these
+    if (w.kind === "office") { // an office block, from above
+      ctx.fillStyle = "#00000050"; ctx.fillRect(w.x + 12, w.y + 16, w.w, w.h);
+      ctx.fillStyle = "#6a6e72"; ctx.fillRect(w.x, w.y, w.w, w.h);
+      ctx.fillStyle = "#8a929c"; for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) ctx.fillRect(w.x + 20 + i * 70, w.y + 24 + j * 60, 50, 40);
+      text(w.name || "OFFICES", w.x + w.w / 2, w.y - 8, 14, "#cfe6ff");
+      continue;
+    }
     if (w.x > vx1 + 60 || w.y > vy1 + 60 || w.x + w.w < vx0 - 60 || w.y + w.h < vy0 - 60) continue; // off screen
     if (w.kind === "ruin") { ctx.fillStyle = "#00000040"; ctx.fillRect(w.x + 4, w.y + 6, w.w, w.h); ctx.fillStyle = "#8a8478"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#a29c90"; for (let i = 0; i < Math.max(w.w, w.h) / 20; i++) ctx.fillRect(w.w > w.h ? w.x + i * 20 + 2 : w.x + 2, w.w > w.h ? w.y + 2 : w.y + i * 20 + 2, w.w > w.h ? 16 : w.w - 4, w.w > w.h ? w.h - 4 : 16); continue; }
     if (w.kind === "hwall") { ctx.fillStyle = "#6b4228"; ctx.fillRect(w.x, w.y, w.w, w.h); continue; }

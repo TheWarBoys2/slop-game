@@ -19,6 +19,7 @@ var R3D = (function () {
     if (!m) { m = new T.MeshLambertMaterial({ color, emissive: emissive || 0x000000, ...(extra || {}) }); matCache.set(key, m); }
     return m;
   }
+  let GLASS = null; // office glazing: see-through, and lit from both sides
   const basic = (color, opacity) => new T.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
   function mesh(geo, m, x = 0, y = 0, z = 0) { const o = new T.Mesh(geo, m); o.position.set(x, y, z); return o; }
   // helpers taking game coordinates
@@ -44,7 +45,9 @@ var R3D = (function () {
       L.hearth = new T.PointLight(0xff9a40, 2, 700, 0); scene.add(L.hearth);
       for (let i = 0; i < 5; i++) { const s = new T.SpotLight(0xfff0c8, 0, 800, 0.45, 0.45, 0); scene.add(s); scene.add(s.target); L.spots.push(s); }
       for (let i = 0; i < 4; i++) { const p = new T.PointLight(0xffd890, 0, 280, 0); scene.add(p); L.points.push(p); }
+      L.bulbs = []; for (let i = 0; i < 3; i++) { const p = new T.PointLight(0xfff0c0, 0, 320, 0); scene.add(p); L.bulbs.push(p); } // cellars, tunnels and office floors, lit day and night
       L.muzzle = []; for (let i = 0; i < 2; i++) { const p = new T.PointLight(0xffc070, 0, 260, 1.2); scene.add(p); L.muzzle.push(p); } // gunfire lights up the dark
+      GLASS = new T.MeshLambertMaterial({ color: 0xbfe2f0, emissive: 0x16303c, transparent: true, opacity: 0.3, side: T.DoubleSide, depthWrite: false });
       ok = true;
     } catch (e) { console.warn("3D unavailable:", e); ok = false; if (gl) gl.remove(); }
     return ok;
@@ -116,11 +119,29 @@ var R3D = (function () {
     level = new T.Group(); wallObjs.clear();
     const gm = new T.MeshLambertMaterial({ map: groundTexture(MAP) }), lake = MAP.walls.find((w) => w.kind === "lake");
     // a piece of the ground, with its texture lined up to the whole map
-    const groundPiece = (x, y, w, h) => {
+    // stairwells down into the cellars and tunnels: the ground has a hole in it there
+    const cuts = (MAP.walls || []).filter((w) => w.kind === "hole" && w.cut);
+    const minus = (a, c) => { // a rectangle with another cut out of it, as up to four rectangles
+      const ax1 = a.x + a.w, ay1 = a.y + a.h, cx0 = Math.max(a.x, c.x), cy0 = Math.max(a.y, c.y), cx1 = Math.min(ax1, c.x + c.w), cy1 = Math.min(ay1, c.y + c.h);
+      if (cx0 >= cx1 || cy0 >= cy1) return [a];
+      const out = [];
+      if (cy0 > a.y) out.push({ x: a.x, y: a.y, w: a.w, h: cy0 - a.y });
+      if (ay1 > cy1) out.push({ x: a.x, y: cy1, w: a.w, h: ay1 - cy1 });
+      if (cx0 > a.x) out.push({ x: a.x, y: cy0, w: cx0 - a.x, h: cy1 - cy0 });
+      if (ax1 > cx1) out.push({ x: cx1, y: cy0, w: ax1 - cx1, h: cy1 - cy0 });
+      return out;
+    };
+    const piece = (x, y, w, h) => {
       if (w <= 0 || h <= 0) return;
       const geo = new T.PlaneGeometry(w, h), pos = geo.attributes.position, uv = geo.attributes.uv;
       for (let i = 0; i < pos.count; i++) uv.setXY(i, (x + w / 2 + pos.getX(i)) / MAP.W, 1 - (y + h / 2 - pos.getY(i)) / MAP.H);
       const m = mesh(geo, gm, x + w / 2, 0, y + h / 2); m.rotation.x = -Math.PI / 2; level.add(m);
+    };
+    const groundPiece = (x, y, w, h) => {
+      if (w <= 0 || h <= 0) return;
+      let parts = [{ x, y, w, h }];
+      for (const c of cuts) parts = parts.flatMap((r) => minus(r, c));
+      for (const r of parts) piece(r.x, r.y, r.w, r.h);
     };
     level.userData.lake = lake || null; level.userData.gm = gm; level.userData.bio = new Set();
     if (lake) { // the ground goes round the lake, not over it
@@ -172,8 +193,10 @@ var R3D = (function () {
       for (const s of [-1, 1]) tgt.add(at(box(6, w.h, 12, mat(rc)), cx + s * (w.w / 2 + 3), cy, z1 + 6));
       tgt.add(at(box(16, 16, 40, mat(0x6d5a4a)), w.x + w.w * 0.75, w.y + w.h * 0.3, z1 + 20)); // chimney
       tgt.add(at(box(20, 20, 4, mat(0x4a3e34)), w.x + w.w * 0.75, w.y + w.h * 0.3, z1 + 41));
-      const fl = mesh(new T.PlaneGeometry(w.w - 4, w.h - 4), mat(0x9a6e44), cx, 0.5, cy); fl.rotation.x = -Math.PI / 2; fl.userData.keep = true; tgt.add(fl); // floorboards
-      for (let i = 1; i < w.w / 24; i++) { const b = at(box(1.2, w.h - 6, 0.4, mat(0x7a5232)), w.x + i * 24, cy, 0.8); b.userData.keep = true; tgt.add(b); }
+      if (!w.fl) { // a one-storey house's floorboards; a two-storey one has real floors (kind "slab")
+        const fl = mesh(new T.PlaneGeometry(w.w - 4, w.h - 4), mat(0x9a6e44), cx, 0.5, cy); fl.rotation.x = -Math.PI / 2; fl.userData.keep = true; tgt.add(fl);
+        for (let i = 1; i < w.w / 24; i++) { const b = at(box(1.2, w.h - 6, 0.4, mat(0x7a5232)), w.x + i * 24, cy, 0.8); b.userData.keep = true; tgt.add(b); }
+      }
       tgt.add(at(mesh(new T.SphereGeometry(5, 10, 8), mat(0xffe0a0, 0xffb040)), cx, cy, z0 - 8)); // a lamp hanging inside
       tgt.userData.roof = true;
     } else if (w.kind === "hwall") {
@@ -191,7 +214,38 @@ var R3D = (function () {
       }
     } else if (w.kind === "furn") {
       const g = new T.Group(), horiz = w.w >= w.h, rotY = horiz ? 0 : Math.PI / 2, L2 = horiz ? w.w : w.h, D2 = horiz ? w.h : w.w;
-      if (w.f === "bed") {
+      const slab2 = (col, ht, y0) => g.add(mesh(new T.BoxGeometry(L2, ht, D2), mat(col), 0, y0 + ht / 2, 0));
+      if (w.f === "sofa") {
+        slab2(0x6a4a6a, 18, 0); g.add(mesh(new T.BoxGeometry(L2, 26, 10), mat(0x7a5a7a), 0, 24, -D2 / 2 + 5));
+        for (const sx of [-1, 1]) g.add(mesh(new T.BoxGeometry(8, 14, D2), mat(0x7a5a7a), sx * (L2 / 2 - 4), 24, 0));
+      } else if (w.f === "counter") {
+        slab2(0x8a7a62, hgt - 4, 0); g.add(mesh(new T.BoxGeometry(L2 + 3, 4, D2 + 3), mat(0xcfd2d8), 0, hgt - 2, 0));
+        g.add(mesh(new T.CylinderGeometry(1.5, 1.5, 14, 6), mat(0xcfd2d8), L2 / 4, hgt + 5, 0)); // a tap
+      } else if (w.f === "wardrobe") {
+        slab2(0x6a4024, hgt, 0); for (const sx of [-1, 1]) g.add(mesh(new T.SphereGeometry(2, 6, 5), mat(0xd8c060), sx * 5, hgt * 0.5, D2 / 2 + 1));
+      } else if (w.f === "desk") {
+        g.add(mesh(new T.BoxGeometry(L2, 4, D2), mat(0x8a6a42), 0, hgt - 2, 0));
+        for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.add(mesh(new T.BoxGeometry(3, hgt - 4, 3), mat(0x6a4024), sx * (L2 / 2 - 3), (hgt - 4) / 2, sz * (D2 / 2 - 3)));
+        g.add(mesh(new T.BoxGeometry(L2 * 0.4, 16, 2), mat(0x2a2a32, 0x16303c), 0, hgt + 8, -D2 / 4)); // a monitor
+        g.add(mesh(new T.BoxGeometry(L2 * 0.4, 2, 10), mat(0x3a3a42), 0, hgt + 1, D2 / 6));
+      } else if (w.f === "shelf") {
+        for (let i = 0; i < 3; i++) g.add(mesh(new T.BoxGeometry(L2, 3, D2), mat(0x6a5236), 0, 14 + i * 20, 0));
+        for (let i = 0; i < 6; i++) g.add(mesh(new T.BoxGeometry(7, 11, 7), mat([0x8a6a3a, 0x6a8a4a, 0xa05a4a][i % 3]), -L2 / 2 + 8 + (i % 3) * 12, 20 + ((i / 3) | 0) * 20, 0));
+      } else if (w.f === "barrels") {
+        for (const [sx, sz] of [[-1, -1], [1, 0], [0, 1]]) g.add(mesh(new T.CylinderGeometry(9, 9, hgt, 10), mat(0x6a4a2a), sx * 9, hgt / 2, sz * 9));
+      } else if (w.f === "reception") {
+        slab2(0x3a4a5a, hgt - 4, 0); g.add(mesh(new T.BoxGeometry(L2 + 4, 4, D2 + 6), mat(0xa8a49c), 0, hgt - 2, 0));
+      } else if (w.f === "plant") {
+        g.add(mesh(new T.CylinderGeometry(8, 7, 14, 10), mat(0x8a5a3a), 0, 7, 0));
+        for (let i = 0; i < 5; i++) { const lf = mesh(new T.ConeGeometry(5, 26, 4), mat(0x2f6a3a), Math.cos(i * 1.26) * 4, 24, Math.sin(i * 1.26) * 4); lf.rotation.z = Math.cos(i) * 0.3; g.add(lf); }
+      } else if (w.f === "cooler") {
+        slab2(0xdfe6ec, hgt - 14, 0); g.add(mesh(new T.CylinderGeometry(7, 7, 16, 10), mat(0x9fd8f0, 0x2a6a8a), 0, hgt - 6, 0));
+      } else if (w.f === "printer") {
+        slab2(0x45484e, hgt - 6, 0); g.add(mesh(new T.BoxGeometry(L2 - 4, 3, D2 * 0.6), mat(0xf0ead8), 0, hgt - 4, D2 * 0.2));
+      } else if (w.f === "ac") { // air-conditioning units on an office roof
+        slab2(0x8a8e92, hgt - 6, 0); g.add(mesh(new T.CylinderGeometry(D2 * 0.3, D2 * 0.3, 5, 12), mat(0x6a6e72), 0, hgt - 3, 0));
+        g.add(mesh(new T.BoxGeometry(L2 * 0.6, 2, 2), mat(0x45484e), 0, hgt, 0));
+      } else if (w.f === "bed") {
         g.add(mesh(new T.BoxGeometry(L2, 10, D2), mat(0x6a4024), 0, 5, 0));
         g.add(mesh(new T.BoxGeometry(L2 - 4, 6, D2 - 4), mat(0xf0ead8), 0, 13, 0));
         g.add(mesh(new T.BoxGeometry(L2 * 0.6, 7, D2 - 2), mat([0xb04040, 0x4060a0, 0x5a8a40, 0x8a5aa0][w.id % 4]), L2 * 0.18, 14, 0)); // blanket
@@ -205,6 +259,50 @@ var R3D = (function () {
         g.add(mesh(new T.CylinderGeometry(5, 4, 3, 10), mat(0xd8d0c0), L2 / 4, z1 + 1.5, 0)); // a bowl of slop
       }
       g.rotation.y = rotY; at(g, cx, cy, 0); tgt.add(g);
+    } else if (w.kind === "bulb") { // a bare bulb; the lights themselves follow the camera (see below)
+      const g = new T.Group();
+      g.add(mesh(new T.CylinderGeometry(0.5, 0.5, 10, 4), mat(0x3a3a3a), 0, 5, 0));
+      g.add(mesh(new T.SphereGeometry(4, 10, 8), new T.MeshBasicMaterial({ color: 0xfff0c0 }), 0, 0, 0));
+      at(g, cx, cy, z0); tgt.add(g);
+      (level.userData.bulbs = level.userData.bulbs || []).push([cx, cy, z0]);
+    } else if (w.kind === "hole" || w.ns === 1) {
+      // a dug-out patch: the only thing to draw is the floor at the bottom. Its walls are "earth" boxes.
+      if (w.kind === "hole" && !w.cut) {
+        const FC = { cellar: 0x6a6054, tunnel: 0x5e564a, hatch: 0x6a6a64 }[w.look] || 0x5e564a;
+        const fl = mesh(new T.PlaneGeometry(w.w, w.h), mat(FC), cx, z0 + 0.2, cy); fl.rotation.x = -Math.PI / 2; tgt.add(fl);
+        const n = Math.max(1, Math.round(Math.min(w.w, w.h) / 30)); // boards / sleepers across it
+        for (let i = 1; i < n; i++) tgt.add(at(box(w.w > w.h ? 2 : w.w, w.w > w.h ? w.h : 2, 1, mat(0x4a443a)), w.w > w.h ? w.x + (i / n) * w.w : cx, w.w > w.h ? cy : w.y + (i / n) * w.h, z0 + 1));
+      }
+      // a building's footprint is not a thing you can see (its walls and floors are their own boxes)
+      if (w.kind === "office" && w.name) { // the company name over the door
+        const sg = new T.Group(), horiz = true, nz = w.fl * 100 + 6;
+        sg.add(mesh(new T.BoxGeometry(w.w * 0.6, 22, 4), mat(0x1a2230), 0, 0, w.door === "n" ? -w.h / 2 - 3 : w.h / 2 + 3));
+        for (let i = 0; i < w.name.length; i++) sg.add(mesh(new T.BoxGeometry(5, 12, 1.5), mat(0x9fe0ff, 0x3a8ab0), -w.w * 0.26 + i * (w.w * 0.52 / Math.max(1, w.name.length - 1)), 0, (w.door === "n" ? -w.h / 2 - 6 : w.h / 2 + 6)));
+        at(sg, cx, cy, nz); tgt.add(sg); void horiz;
+      }
+    } else if (w.kind === "glass") { // an office window: a pane with a frame round it
+      tgt.add(at(box(w.w, w.h, hgt, GLASS), cx, cy, (z0 + z1) / 2));
+      const horiz = w.w >= w.h;
+      tgt.add(at(box(horiz ? w.w : w.w + 1, horiz ? w.h + 1 : w.h, 4, mat(0x7a8290)), cx, cy, z0 + 2));
+      tgt.add(at(box(horiz ? w.w : w.w + 1, horiz ? w.h + 1 : w.h, 4, mat(0x7a8290)), cx, cy, z1 - 2));
+    } else if (w.kind === "slab") { // a floor, a ceiling, or the turf over a tunnel
+      const SL = { wood: [0x9a6e44, 0x7a5232], carpet: [0x4a5a66, 0x3a4a56], roof: [0x6a6e72, 0x55585c], turf: [0x5a4632, 0x6b4a33], stone: [0x8a8a86, 0x72726e] }[w.look] || [0x8a8a8a, 0x6a6a6a];
+      tgt.add(at(box(w.w, w.h, hgt, mat(SL[0])), cx, cy, (z0 + z1) / 2));
+      if (w.look === "wood" || w.look === "carpet") for (let i = 1; i < w.w / 26; i++) tgt.add(at(box(1.2, w.h, 0.6, mat(SL[1])), w.x + i * 26, cy, z1 + 0.3));
+      if (w.look === "roof") tgt.add(at(box(w.w - 6, w.h - 6, 1, mat(0x4a4e52)), cx, cy, z1 + 0.6));
+    } else if (w.kind === "rail") {
+      const horiz = w.w >= w.h;
+      tgt.add(at(box(w.w, w.h, 4, mat(0x6a6a74)), cx, cy, z1 - 2));
+      for (let i = 0; i <= Math.max(1, Math.round((horiz ? w.w : w.h) / 40)); i++) {
+        const f = i / Math.max(1, Math.round((horiz ? w.w : w.h) / 40));
+        tgt.add(at(box(4, 4, hgt, mat(0x6a6a74)), horiz ? w.x + f * w.w : cx, horiz ? cy : w.y + f * w.h, (z0 + z1) / 2));
+      }
+    } else if (w.kind === "pillar") {
+      const PC = { mullion: 0x8a929c, core: 0xa8a49c, parapet: 0x9a9690 }[w.look] || 0xb4b0a8;
+      tgt.add(at(box(w.w, w.h, hgt, mat(PC)), cx, cy, (z0 + z1) / 2));
+    } else if (w.kind === "earth") { // packed earth round the cellars and tunnels, with a brick face
+      tgt.add(at(box(w.w, w.h, hgt - 1, mat(0x5a4632)), cx, cy, (z0 + z1 - 1) / 2));
+      tgt.add(at(box(w.w + 0.5, w.h + 0.5, 10, mat(0x6b4a33)), cx, cy, z1 - 24));
     } else if (w.kind === "lake") {
       // drawn with the ground
     } else if (w.kind === "bank") { // the sides of the lake, seen from under the water
@@ -1049,6 +1147,11 @@ var R3D = (function () {
       L.muzzle.forEach((pt, i) => { const f = shots[i]; if (!f) { pt.intensity = 0; return; } at(pt, f.x1, f.y1, (f.z1 ?? 36) + 4); pt.color.setHex(f.c === "laser" ? 0xff3030 : 0xffc070); pt.intensity = (2 + n * 6) * (1 - (t - f.t0) / 0.07); });
     }
     L.points.forEach((pt, i) => { const l = lamps[i]; if (!l || n < 0.05) { pt.intensity = 0; return; } at(pt, l[0], l[1], 76); pt.intensity = 4 * n; });
+    { // the bulbs indoors: light the nearest few, so cellars and offices aren't black
+      const bl = level.userData.bulbs || [], c0b = st.cam;
+      if (bl.length) bl.sort((a, b) => ((a[0] - c0b.x) ** 2 + (a[1] - c0b.y) ** 2 + (a[2] - c0b.z) ** 2) - ((b[0] - c0b.x) ** 2 + (b[1] - c0b.y) ** 2 + (b[2] - c0b.z) ** 2));
+      L.bulbs.forEach((pt, i) => { const b = bl[i]; if (!b || Math.hypot(b[0] - c0b.x, b[1] - c0b.y, b[2] - c0b.z) > 900) { pt.intensity = 0; return; } at(pt, b[0], b[1], b[2]); pt.intensity = 5; });
+    }
     // the balloon
     if (S.g.drop && S.g.drop[4] < 1) {
       const [x0, y0, x1, y1, k] = S.g.drop;

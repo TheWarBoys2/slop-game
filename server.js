@@ -18,6 +18,7 @@ import { ITEMS, GEAR, SLOTS, GEAR_KEYS, BAG_SIZE, gearSum, bagAdd, bagCount, bag
 import { STOCKS, SYMS, FEE, newMarket, shock, marketTick } from "./market.js";
 import { CANDIDATES, ELECT_EVERY, ballot } from "./politics.js";
 import { CS, makeChunk, BIOMES } from "./world.js";
+import { CD, placeBig, finishTown, regionOf } from "./town.js";
 import { CARDS, LOCS, STARTER, OPPONENTS, DECK_SIZE, newMatch, stage as cgStage, resolveTurn as cgResolve, aiPlays, view as cgView, deckFor, packCard } from "./cards.js";
 
 const MV = new Function(moveJs + "\nreturn MV;")(); // the same movement code the browser predicts with
@@ -114,11 +115,11 @@ const HOE_COST = [40, 90, 160];
 const hoeLimit = (lvl) => 3 + 3 * lvl;
 
 const bunkerWall = () => WALLS.find((w) => w.kind === "bunker");
-const WALL_HP = { house: 1100, fence: 160, crate: 180, tree: 320, rock: 800, hwall: 1, furn: 60 };
+const WALL_HP = { house: 1100, fence: 160, crate: 180, tree: 320, rock: 800, hwall: 1, furn: 60, glass: 1 };
 const WOODEN = new Set(["house", "fence", "crate", "tree", "hwall", "furn"]);
 let wallId = 1, mapVer = 0, mapDirty = false, PITCH = null, LAKE = null, LAKE_SOLID = [], BOOSTS = [];
 const LAKE_D = 260; // how deep the lake is
-const inHouse = (p) => WALLS.some((w) => w.kind === "house" && p.x > w.x && p.x < w.x + w.w && p.y > w.y && p.y < w.y + w.h);
+const inHouse = (p) => WALLS.some((w) => (w.kind === "house" || w.kind === "office" || w.kind === "hatch") && p.x > w.x && p.x < w.x + w.w && p.y > w.y && p.y < w.y + w.h);
 const BALL = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, last: 0, resetAt: 0 };
 function damageWall(w, dmg) {
   if (w.kind === "built") { const b = builds.find((q) => q === w); if (b) hurtPiece(b, dmg * 0.5); return; }
@@ -126,6 +127,11 @@ function damageWall(w, dmg) {
   if (!w.hp || w.hp <= 0) return;
   w.hp -= dmg;
   if (w.hp > 0) return;
+  if (w.kind === "glass") { // windows shatter without resending the whole map: clients drop the pane themselves
+    WALLS = WALLS.filter((o) => o !== w);
+    events.push({ k: "glass", id: w.id, x: Math.round(w.x + w.w / 2), y: Math.round(w.y + w.h / 2), z: Math.round((w.z0 + w.z1) / 2) });
+    return;
+  }
   WALLS = WALLS.filter((o) => o !== w && !(w.kind === "house" && o.hid === w.id));
   events.push({ k: "collapse", x: Math.round(w.x + w.w / 2), y: Math.round(w.y + w.h / 2), w: Math.round(w.w), h: Math.round(w.h), z: w.z1 || 40, kind: w.kind });
   if (w.kind === "house") WALLS.push({ id: wallId++, x: w.x + 10, y: w.y + 10, w: w.w - 20, h: w.h - 20, kind: "rubble", roof: w.roof, z0: 0, z1: 22 });
@@ -134,14 +140,17 @@ function damageWall(w, dmg) {
 }
 // the distance from a point to a box, in 3D
 function boxDist(w, x, y, z) {
-  const dx = Math.max(w.x - x, 0, x - (w.x + w.w)), dy = Math.max(w.y - y, 0, y - (w.y + w.h)), dz = Math.max((w.z0 || 0) - z, 0, z - (w.z1 || 60));
+  const dx = Math.max(w.x - x, 0, x - (w.x + w.w)), dy = Math.max(w.y - y, 0, y - (w.y + w.h)), dz = Math.max((w.z0 || 0) - z, 0, z - (w.z1 ?? 60));
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
+// the town is the same every game (only the wild is procedural), so it's worth learning. The seed only names the valley and grows the wild.
+const TOWN_SEED = 20261002;
+let TOWN_NAV = null; // doors, stairs and tunnels, for the dead (town.js)
 function generateMap(seed) {
   MAP_SEED = seed;
-  const rng = mulberry(seed);
+  const rng = mulberry(TOWN_SEED);
   const R = (a, b) => a + rng() * (b - a);
-  VALLEY = valleyName(rng);
+  VALLEY = valleyName(mulberry(seed));
   const walls = [HEARTH, { ...STALL }, { ...STORE }, { ...ARMOURY }];
   const clear = { x: 1260, y: 1100, w: 880, h: 400 }; // farm + hearth stay open
   const overlaps = (r, pad) => {
@@ -187,6 +196,8 @@ function generateMap(seed) {
   // the casino: a big gaudy box with a neon sign, somewhere in town
   place(1, () => { const x = Math.round(R(200, W - 460)), y = Math.round(R(200, H - 380)); return Math.hypot(x + 130 - 1700, y + 80 - 1300) > 600 ? { x, y, w: 260, h: 160, kind: "shop", sid: "casino", z0: 0, z1: 120 } : { x: 0, y: 0, w: W, h: H }; }, 90);
   if (!walls.some((w) => w.sid === "casino")) walls.push({ x: 2300, y: 1650, w: 260, h: 160, kind: "shop", sid: "casino", z0: 0, z1: 120 });
+  // the big buildings: office blocks, two-storey houses with cellars, and shelters down into the tunnels (town.js)
+  const big = placeBig({ walls, R, rng, overlaps, W, H });
   // verticality first, so the big stuff gets room: watchtowers joined by catwalks, each with a staircase
   const stairs = (tx, ty, tw, th, top, dir) => { // a solid staircase climbing towards one face of a box
     const n = Math.ceil(top / 20), d = 30, wd = 44, out = [];
@@ -213,9 +224,9 @@ function generateMap(seed) {
     const st = stairs(a.x, a.y, tw, tw, top, horiz ? 1 : 3);
     if (group([a, b, br, ...st], 60)) i++;
   }
-  place(8 + ((rng() * 6) | 0), () => ({ x: R(80, W - 320), y: R(80, H - 260), w: R(170, 280), h: R(120, 180), kind: "house", roof: (rng() * 4) | 0, z0: 0, z1: Math.round(R(96, 136)) }), 90);
+  place(12 + ((rng() * 5) | 0), () => ({ x: R(80, W - 320), y: R(80, H - 260), w: R(170, 280), h: R(120, 180), kind: "house", roof: (rng() * 4) | 0, z0: 0, z1: Math.round(R(96, 136)) }), 90);
   // some houses get an outside staircase to the roof
-  for (const h of walls.filter((w) => w.kind === "house")) {
+  for (const h of walls.filter((w) => w.kind === "house" && !w.fl)) {
     if (rng() < 0.35) continue;
     const dir = (rng() * 4) | 0, st = stairs(h.x, h.y, h.w, h.h, h.z1, dir);
     walls.splice(walls.indexOf(h), 1);
@@ -235,19 +246,26 @@ function generateMap(seed) {
   place(5 + ((rng() * 4) | 0), () => ({ x: R(80, W - 140), y: R(80, H - 140), w: 44, h: 44, kind: "pad", z0: 0, z1: 4 }), 60); // jump pads out in the open
   place(8 + ((rng() * 6) | 0), () => ({ x: R(80, W - 140), y: R(80, H - 140), w: 50, h: 50, kind: "crate", z0: 0, z1: 50 }), 50); // hay bales to hop on
   // houses are hollow: four walls and a door, a roof you can still stand on, a bed and a table inside
-  for (const h of walls.filter((w) => w.kind === "house")) {
+  for (const h of walls.filter((w) => w.kind === "house" && !w.fl)) {
     const T = 10, dw = 48, cx = h.x + h.w / 2, top = h.z1 - 10, north = h.st === 2; // the door goes on the side without stairs
     h.z0 = top; h.door = north ? "n" : "s";
     const wall = (x, y, w, hh, z0 = 0, z1 = top) => walls.push({ x, y, w, h: hh, kind: "hwall", house: h, roof: h.roof, z0, z1 });
     const front = (y) => { wall(h.x, y, (h.w - dw) / 2, T); wall(cx + dw / 2, y, (h.w - dw) / 2, T); wall(cx - dw / 2, y, dw, T, 66, top); };
     if (north) { front(h.y); wall(h.x, h.y + h.h - T, h.w, T); } else { wall(h.x, h.y, h.w, T); front(h.y + h.h - T); }
     wall(h.x, h.y + T, T, h.h - 2 * T); wall(h.x + h.w - T, h.y + T, T, h.h - 2 * T);
-    walls.push({ x: h.x + T + 6, y: north ? h.y + h.h - T - 84 : h.y + T + 4, w: 52, h: 80, kind: "furn", f: "bed", house: h, z0: 0, z1: 18 });
-    walls.push({ x: h.x + h.w - T - 58, y: h.y + h.h / 2 - 18, w: 48, h: 36, kind: "furn", f: "table", house: h, z0: 0, z1: 28 });
+    // the inside of a cottage: a bed, a table, a sofa by the wall, a kitchen counter and a dresser
+    const back = north ? h.y + h.h - T : h.y + T, bk = north ? -1 : 1;
+    const fn = (f, x, y, w2, h2, z1) => walls.push({ x, y, w: w2, h: h2, kind: "furn", f, house: h, z0: 0, z1 });
+    fn("bed", h.x + T + 6, north ? h.y + h.h - T - 84 : h.y + T + 4, 52, 80, 18);
+    fn("table", h.x + h.w - T - 58, h.y + h.h / 2 - 18, 48, 36, 28);
+    fn("counter", h.x + T + 6, back + (bk > 0 ? 4 : -48), 60, 44, 32);
+    if (h.w > 210) fn("sofa", h.x + h.w / 2 - 15, north ? h.y + T + 6 : h.y + h.h - T - 72, 30, 66, 24);
+    if (h.h > 150) fn("shelf", h.x + h.w - T - 24, h.y + h.h / 2 + 30, 22, 60, 60);
   }
+  TOWN_NAV = finishTown(big, { walls, W, H, lake: LAKE }).nav; // their insides, the tunnels, and the waypoints
   // most things can be blown up (or burnt down)
   walls.forEach((w, i) => { w.id = i + 1; const hp = WALL_HP[w.kind]; if (hp) w.hp = w.maxHp = hp; });
-  for (const w of walls) if (w.house) { w.hid = w.house.id; delete w.house; }
+  for (const w of walls) { if (w.house) { w.hid = w.house.id; delete w.house; } if (w.bld) { w.bid = w.bld.id; delete w.bld; } }
   wallId = walls.length + 1;
   WALLS = walls; mapVer++; CHUNKS.clear(); BOOSTS = walls.filter((w) => w.kind === "boost");
   CASINO = walls.find((w) => w.sid === "casino");
@@ -989,11 +1007,14 @@ function kick(q, vx, vy, vz) {
   q.vx += vx; q.vy += vy; q.vz = Math.max(q.vz, 0) + vz; if (vz > 0) q.gr = false;
   q.pe.push({ k: "kick", vx: Math.round(vx), vy: Math.round(vy), vz: Math.round(vz) });
 }
+// underground: in a cellar or a tunnel, below the ground. Blasts up top don't reach you down there (and the other way round).
+const underground = (e) => (e.z || 0) < -40 && !!MV.holeAt(nearXY(e.x, e.y), e.x, e.y);
 function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
   events.push({ k: "boom", x: Math.round(x), y: Math.round(y), z: Math.round(z), r: Math.round(r) });
   const d3 = (ex, ey, ez) => Math.sqrt((ex - x) ** 2 + (ey - y) ** 2 + (ez - z) ** 2);
+  const below = underground({ x, y, z }), otherSide = (e) => underground(e) !== below;
   for (const zb of zombies) {
-    if (zb.hp <= 0) continue;
+    if (zb.hp <= 0 || otherSide(zb)) continue;
     const d = Math.max(0, d3(zb.x, zb.y, (zb.z || 0) + zHeight(zb) / 2) - zb.r);
     if (d >= r) continue;
     const f = 1 - (d / r) * 0.6;
@@ -1002,7 +1023,7 @@ function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
     if (zb.type !== "boss" && zb.type !== "elite" && zb.type !== "rex") { zb.vx += (zb.x - x) / hd * 320 * f; zb.vy += (zb.y - y) / hd * 320 * f; if (zb.type !== "flyer") { zb.vz = Math.max(zb.vz, 260 * f); zb.gr = false; } }
   }
   for (const q of players.values()) {
-    if (q.dead || q.air) continue;
+    if (q.dead || q.air || otherSide(q)) continue;
     const cz = q.z + MV.HGT / 2, d = d3(q.x, q.y, cz);
     if (d >= r + 16) continue;
     const f = 1 - (Math.max(0, d - 16) / r) * 0.7;
@@ -1017,7 +1038,7 @@ function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
   { const once = new Set(); for (const w of [...WALLS]) if (w.hp && w.kind !== "built") { const d = boxDist(w, x, y, z), key = w.hid && w.kind === "hwall" ? w.hid : w.id; if (d < r && !once.has(key)) { once.add(key); damageWall(w, dmg * 1.4 * (1 - d / r * 0.5)); } } }
   for (const v of vehicles) if ((v.x - x) ** 2 + (v.y - y) ** 2 < (r + VEHICLES[v.kind].r) ** 2 && Math.abs((v.z || 0) + 20 - z) < r + 30) hurtVehicle(v, dmg * 0.5, owner);
 }
-const insideWall = (x, y, z) => nearXY(x, y).some((w) => w.kind !== "lake" && x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h && z < w.z1 - 2 && z > (w.z0 || 0) - 2);
+const insideWall = (x, y, z) => nearXY(x, y).some((w) => !MV.soft(w) && x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h && z < w.z1 - 2 && z > (w.z0 || 0) - 2);
 function throwIt(p, kind) {
   const t = now();
   if (p.dead || p.air || p.veh || t < p.throwAt || t < p.going || p.dlg) return;
@@ -1180,11 +1201,11 @@ function shoot(p, w) {
     const dx = Math.cos(a) * Math.cos(pt), dy = Math.sin(a) * Math.cos(pt), dz = Math.sin(pt);
     const o = [mx, my, mz], d = [dx, dy, dz];
     let wallT = def.range;
-    { const hl = Math.hypot(dx, dy) || 1; for (const wl of wallsAlong(mx, my, dx / hl, dy / hl, def.range)) if (wl.kind !== "lake") wallT = Math.min(wallT, rayBox3(o, d, wl)); }
-    if (dz < -1e-6) { // the ground, or the lake bed if the shot goes into the water
+    { const hl = Math.hypot(dx, dy) || 1; for (const wl of wallsAlong(mx, my, dx / hl, dy / hl, def.range)) if (!MV.soft(wl)) wallT = Math.min(wallT, rayBox3(o, d, wl)); }
+    if (dz < -1e-6) { // the ground, or the lake bed if the shot goes into the water, or the floor of a cellar or tunnel
       let tg = mz > 0 ? -mz / dz : 0;
-      const lk = LAKE && MV.lakeAt([LAKE], mx + dx * tg, my + dy * tg);
-      if (lk) tg = (lk.z0 - mz) / dz;
+      const gx = mx + dx * tg, gy = my + dy * tg, base = mz > 0 ? MV.baseAt(nearXY(gx, gy), gx, gy) : MV.baseAt(nearXY(mx, my), mx, my);
+      if (base < 0) tg = (base - mz) / dz;
       wallT = Math.min(wallT, Math.max(0, tg));
     }
     const hits = [];
@@ -1623,6 +1644,27 @@ function moveTick(p, t, dt) {
       events.push({ k: "kd", x: Math.round(z.x), y: Math.round(z.y) });
     }
   }
+}
+// ---------------------------------------------------------------- the dead find their way inside (town.js builds the waypoints)
+// A zombie heading for someone in a different part of town (upstairs, in a cellar, down the tunnels) walks
+// to the nearest waypoint in its own part, then follows the route to the one nearest its target.
+function navGoal(z, target) {
+  const nav = TOWN_NAV;
+  if (!nav || !nav.N) return null;
+  const zr = regionOf(nav, z), tr = regionOf(nav, target);
+  if (zr === tr) return null; // same floor: walk straight at them
+  const pick = (e, region) => {
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < nav.N; i++) { const n = nav.nodes[i]; if (n.r !== region) continue; const d = (n.x - e.x) ** 2 + (n.y - e.y) ** 2 + ((n.z - (e.z || 0)) * 2) ** 2; if (d < bd) { bd = d; best = i; } }
+    return best;
+  };
+  let from = pick(z, zr), to = pick(target, tr);
+  if (from < 0 || to < 0) return null;
+  // already standing on its waypoint: step to the next one along
+  const reached = (i) => { const n = nav.nodes[i]; return (n.x - z.x) ** 2 + (n.y - z.y) ** 2 < (z.r + 26) ** 2 && Math.abs(n.z - (z.z || 0)) < 46; };
+  if (reached(from)) { const nx = nav.NX[from * nav.N + to]; if (nx >= 0 && nx !== from) from = nx; }
+  const n = nav.nodes[from];
+  return { x: n.x, y: n.y, z: n.z };
 }
 // speed boosters fling the dead too
 function boostZombies(t) {
@@ -2200,7 +2242,7 @@ function nukeWarn(why) {
   let gz = freeSpot(40);
   for (let i = 0; i < 40; i++) { const c = freeSpot(40); if (Math.hypot(c.x - hc.x, c.y - hc.y) > 900) { gz = c; break; } }
   game.nuke = { at: now() + NUKE_WARN, x: gz.x, y: gz.y }; if (game.dome) game.dome.struck = true;
-  events.push({ k: "banner", text: "☢ NUCLEAR LAUNCH DETECTED ☢", sub: `${why} Get to the bunker [E] or dive deep into the lake. ${NUKE_WARN} seconds.` });
+  events.push({ k: "banner", text: "☢ NUCLEAR LAUNCH DETECTED ☢", sub: `${why} Get to the bunker [E], down a cellar or a shelter into the tunnels, or deep into the lake. ${NUKE_WARN} seconds.` });
   events.push({ k: "siren" });
   feed(domeK() >= 1 ? "☢ Missile inbound. The Dome is up: get inside it, near the Hearth. Or the bunker, or deep underwater." : "☢ Missile inbound and the Hearth Dome isn't finished. Pay into it at the Hearth NOW, then get to the bunker or deep underwater.", "#9fff60");
   shock(game.market, "*", -0.15, "Missile warning: markets panic"); shock(game.market, "BNKR", 0.9, "Bunkr & Sons flooded with enquiries");
@@ -2213,9 +2255,10 @@ function nukeBlast() {
     if (p.dead || p.air === "bunker") continue;
     if (safe(p)) { toast(p, "The sky goes white. The dome flickers... and holds.", "#9fe0ff"); addRad(p, 15); continue; }
     if (p.swim && p.z < -120) { toast(p, "The world above turns white. Down here, you're fine. Mostly.", "#9fff60"); addRad(p, 30); continue; }
+    if (underground(p)) { toast(p, "The ground shakes and dust pours from the ceiling. The tunnels hold.", "#c8b48c"); addRad(p, 20); continue; }
     killPlayer(p, null, "vaporised by a nuclear bomb");
   }
-  for (const z of zombies) if (z.type === "boss" || z.type === "elite") z.hp *= 0.5; else z.hp = 0;
+  for (const z of zombies) if (underground(z)) continue; else if (z.type === "boss" || z.type === "elite") z.hp *= 0.5; else z.hp = 0;
   zombies = zombies.filter((z) => z.hp > 0);
   for (const w of [...WALLS]) if (WOODEN.has(w.kind) && w.kind !== "hwall" && !safe({ x: w.x + w.w / 2, y: w.y + w.h / 2 })) damageWall(w, w.kind === "house" ? 500 : 9999);
   for (const v of [...vehicles]) hurtVehicle(v, VEHICLES[v.kind].hp * 0.6, null);
@@ -3309,7 +3352,11 @@ function tick() {
     if (target) bd = dist2(target, z);
     if (!target && game.mode === "royale") { if (!z.wander || dist2(z, z.wander) < 900 || Math.random() < dt * 0.1) z.wander = freeSpot(20); }
     if (!target && z.wild) { if (!z.wander || dist2(z, z.wander) < 900 || Math.random() < dt * 0.1) z.wander = { x: z.x + rand(-400, 400), y: z.y + rand(-400, 400) }; } // shambling about in the wild
-    const goal = target || (game.mode === "royale" || z.wild ? z.wander : hc);
+    let goal = target || (game.mode === "royale" || z.wild ? z.wander : hc);
+    // indoors and underground: follow the stairs and tunnels instead of scraping at a wall
+    if (target && game.mode !== "royale" && z.type !== "flyer" && (tickN + z.id) % 15 === 0) z.nav = navGoal(z, target);
+    else if (!target) z.nav = null;
+    if (z.nav) { const d2n = (z.nav.x - z.x) ** 2 + (z.nav.y - z.y) ** 2; if (d2n < (z.r + 20) ** 2 && Math.abs(z.nav.z - (z.z || 0)) < 46) z.nav = null; else goal = z.nav; }
     let dx = goal.x - z.x, dy = goal.y - z.y;
     const d = Math.hypot(dx, dy) || 1;
     dx /= d; dy /= d;
@@ -3350,7 +3397,8 @@ function tick() {
     // the dead climb: walls, roofs, towers. Not trees, not the Hearth, not your barricades (those they chew).
     const hit = MV.pushOut(z, z.r, near(z), BW(), BH(), z.z, zHeight(z));
     if (z.type !== "flyer" && (z.z || 0) > -8 && LAKE_SOLID.length) MV.pushOut(z, z.r, LAKE_SOLID, BW(), BH(), 0, 10); // the dead don't swim
-    if ((z.z || 0) < -60 && z.type !== "boss") z.hp -= z.maxHp * 0.04 * dt; // ...but they do drown, slowly
+    if ((z.z || 0) < -60 && z.type !== "boss" && LAKE && MV.lakeAt([LAKE], z.x, z.y)) z.hp -= z.maxHp * 0.04 * dt; // ...but they do drown, slowly (in the lake; the tunnels are dry)
+    if (hit && hit.kind === "glass") damageWall(hit, 5); // and they come through windows
     if ((z.type === "charger" || z.type === "boss" || z.type === "rex") && t < z.charge && hit && hit !== "edge") damageWall(hit, z.type === "charger" ? 90 : 220);
     if (z.type === "charger" && t < z.charge && hit && hit !== "edge") { z.charge = 0; z.stun = t + 1.6; events.push({ k: "boom", x: z.x, y: z.y, z: z.z, r: 40, dust: 1 }); }
     if (z.type === "flyer") {
@@ -3361,7 +3409,7 @@ function tick() {
       z.z += clamp(want - z.z, -300 * dt, 220 * dt); z.z = Math.max(z.z, floor);
       z.vz = 0; z.gr = false;
     } else {
-      const climbable = hit && hit !== "edge" && hit.kind !== "tree" && hit.kind !== "hearth" && hit.kind !== "built";
+      const climbable = hit && hit !== "edge" && hit.kind !== "tree" && hit.kind !== "hearth" && hit.kind !== "built" && !hit.noclimb; // they can't scale the offices or the big houses: those have doors and windows
       if (climbable && (!target || target.z > z.z + 10 || Math.random() < 0.6)) z.vz = Math.max(z.vz, z.type === "runner" ? 220 : z.type === "walker" || z.type === "screamer" ? 130 : 80);
       else if (hit && !touchingHearth) {
         const moved = Math.hypot(z.x - ox, z.y - oy);
@@ -3543,6 +3591,7 @@ function onMessage(ws, raw) {
       if (m.ammo !== undefined) p.weapons[p.active].ammo = m.ammo;
       if (m.night) game.night = m.night;
       if (m.spawn) { const z = spawnZombie(m.spawn, { x: p.x + 120, y: p.y }); if (z) { z.x = p.x + 120; z.y = p.y; z.stun = now() + 30; } }
+      if (m.zat) { const z = spawnZombie(m.zat[2] || "walker", { x: m.zat[0], y: m.zat[1] }); if (z) { z.x = m.zat[0]; z.y = m.zat[1]; z.z = 0; } } // testing only: a zombie right there, awake
       if (m.die) killPlayer(p, null, "testing");
       if (m.clearZ) zombies = [];
       if (m.infect) infect(p);
