@@ -19,13 +19,13 @@ Only the host installs anything. Everyone else just opens a link in their browse
 | Post-match ratings out of 10 and Player of the Match; the Gaffer class | Football Manager |
 | Classes (Fighter, Rogue, Wizard, Farmer, Gaffer) | Baldur's Gate 3 |
 | Friendly fire earns wanted stars; kill a wanted player to collect the bounty. WASTED. | GTA V |
-| Night 5 is a contract to kill a monster: the Slop Leshen | The Witcher 3 |
+| The last night is a contract to kill whatever the well-poisoner raised (the Slop Leshen, a Brass Golem or the Drowned Mayor) | The Witcher 3 |
 | Slop Snap: a three-lane card game you play against the townsfolk to win their cards | Gwent, Marvel Snap |
 | A bag, gear slots, hunger, thirst and radiation | Fallout, DayZ |
 | A stock exchange that reacts to everything that happens | Bitlife, GTA V's BAWSAQ |
 | Mayoral elections every five nights, one of the candidates a Posadist | Tropico |
 
-**How a match goes:** a short first day, then five nights with days in between. Zombies come from the map edges and go for players or straight for the Hearth. If the Hearth's health hits zero you lose. Kill the Leshen on night 5 to win. Winner winner, chicken dinner.
+**How a match goes:** a short first day, then nights with days in between. Zombies come from the map edges and go for players or straight for the Hearth. If the Hearth's health hits zero you lose. Somebody in town poisoned the well, and it's a different person every game: talk to the townsfolk (follow the orange **?** and the compass), collect three clues, then accuse the culprit. The night after you name them, what they raised comes for the Hearth. Kill it to win. Guess wrong and the dead get angrier. Take too long and the culprit gets found out anyway after night 7. Winner winner, chicken dinner.
 
 **Controls:** WASD move, mouse look and shoot (click the game to lock the mouse), right-click aim down sights, R reload (tap R again as the marker crosses the green window for an instant, empowered reload), E to use, talk, shop, plant, harvest, loot and get in and out of things, Space jump (hold it to bunny hop), CTRL crouch (tap to toggle, or set it to hold in Options; it also dives underwater), Shift dodge, F takes out your hoe (click to till), T switches first person / third person, Q shout, 1/2 or mouse wheel swap weapons, Tab scoreboard, Enter chat, F ready.
 
