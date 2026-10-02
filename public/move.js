@@ -11,6 +11,10 @@ var MV = (function () {
 
   // the lake: a box of kind "lake" whose z0 is its bed. Inside it the ground is the lake bed, not z=0.
   function lakeAt(boxes, x, y) { for (const b of boxes) if (b.kind === "lake" && x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h) return b; return null; }
+  // cellars and tunnels: a box of kind "hole" is a dug-out patch where the ground is its z0, not z=0. Like the lake, it isn't solid itself.
+  function holeAt(boxes, x, y) { for (const b of boxes) if (b.kind === "hole" && x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h) return b; return null; }
+  const soft = (b) => b.kind === "lake" || b.kind === "hole" || b.ns === 1; // ns: a marker box (an office or shelter footprint), not a solid thing
+  function baseAt(boxes, x, y) { const lk = lakeAt(boxes, x, y); if (lk) return lk.z0; const hl = holeAt(boxes, x, y); return hl ? hl.z0 : 0; }
 
   const touches = (b, x, y, r) => { const cx = Math.max(b.x, Math.min(x, b.x + b.w)), cy = Math.max(b.y, Math.min(y, b.y + b.h)); return (x - cx) ** 2 + (y - cy) ** 2 < r * r; };
   const blocks = (b, z, hgt) => z < b.z1 - STEP && z + hgt > b.z0;
@@ -19,7 +23,7 @@ var MV = (function () {
   function pushOut(e, r, boxes, W, H, z = e.z || 0, hgt = HGT) {
     let hit = null;
     for (const w of boxes) {
-      if (w.kind === "lake" || !blocks(w, z, hgt)) continue;
+      if (soft(w) || !blocks(w, z, hgt)) continue;
       const cx = Math.max(w.x, Math.min(e.x, w.x + w.w)), cy = Math.max(w.y, Math.min(e.y, w.y + w.h));
       const dx = e.x - cx, dy = e.y - cy, d2 = dx * dx + dy * dy;
       if (d2 >= r * r) continue;
@@ -37,14 +41,13 @@ var MV = (function () {
   }
   // the highest surface under a point that is at or below `z` (+ a step)
   function floorAt(x, y, r, z, boxes) {
-    const lk = lakeAt(boxes, x, y);
-    let h = lk ? lk.z0 : 0, box = null;
-    for (const b of boxes) if (b.kind !== "lake" && b.z1 <= z + STEP && b.z1 > h && touches(b, x, y, r)) { h = b.z1; box = b; }
+    let h = baseAt(boxes, x, y), box = null;
+    for (const b of boxes) if (!soft(b) && b.z1 <= z + STEP && b.z1 > h && touches(b, x, y, r)) { h = b.z1; box = b; }
     return { h, box };
   }
   function ceilAt(x, y, r, headWas, boxes) {
     let c = Infinity;
-    for (const b of boxes) if (b.kind !== "lake" && b.z0 >= headWas - 1 && b.z0 < c && touches(b, x, y, r)) c = b.z0;
+    for (const b of boxes) if (!soft(b) && b.z0 >= headWas - 1 && b.z0 < c && touches(b, x, y, r)) c = b.z0;
     return c;
   }
   // apply gravity, floors, ceilings and jump pads. Returns "pad" if it launched off one.
@@ -181,5 +184,5 @@ var MV = (function () {
     e.pk = keys;
     return vev || ev;
   }
-  return { GRAV, JUMP, STEP, HGT, EYE, PAD, KEY, BOOST, SURF, touches, blocks, pushOut, floorAt, vertical, wishDir, step, lakeAt, inWater };
+  return { GRAV, JUMP, STEP, HGT, EYE, PAD, KEY, BOOST, SURF, touches, blocks, pushOut, floorAt, vertical, wishDir, step, lakeAt, holeAt, baseAt, soft, inWater };
 })();
