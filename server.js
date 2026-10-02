@@ -359,6 +359,31 @@ const RARITY_MULT = [1, 1.2, 1.4, 1.7, 2.0];
 const ENH_NAMES = ["", "PRI", "DUO", "TRI", "TET", "PEN"];
 const ENH_COST = [40, 80, 140, 220, 320];
 const ENH_CHANCE = [0.9, 0.7, 0.5, 0.3, 0.15];
+// Legendary and Mythic guns roll a firing mode. Enhancing to TET or PEN overcharges it.
+const GUNS = new Set(["pistol", "smg", "shotgun", "rifle", "sniper", "ak"]);
+const MODES = {
+  ricochet: { name: "Ricochet", desc: "bullets bounce on to the next zombie" },
+  fire:     { name: "Incendiary", desc: "sets whatever it hits on fire" },
+  frost:    { name: "Cryo", desc: "slows what it hits, and enough hits freeze it solid" },
+  storm:    { name: "Shock", desc: "lightning arcs to two more zombies" },
+  boom:     { name: "Explosive", desc: "every hit goes off with a small bang" },
+};
+const MODE_KEYS = Object.keys(MODES);
+// Haddock bolts these onto the gun in your hands. One of each kind per gun.
+const ATTACH = {
+  dot:  { slot: "sight", name: "Red dot sight", cost: 120, desc: "Much tighter aim down sights." },
+  mag:  { slot: "mag", name: "Extended mag", cost: 150, desc: "+50% rounds, but reloads take 15% longer." },
+  comp: { slot: "muzzle", name: "Compensator", cost: 110, desc: "Less bloom and less kick when you spray." },
+};
+const SKINS = {
+  camo:  { name: "Camo", cost: 80 },
+  slop:  { name: "Slop Green", cost: 120 },
+  tiger: { name: "Tiger Stripe", cost: 160 },
+  pink:  { name: "Hot Pink", cost: 160 },
+  gold:  { name: "Gold", cost: 400 },
+};
+function magOf(w) { const m = WEAPONS[w.type].mag; return w.att && w.att.mag ? Math.ceil(m * 1.5) : m; }
+function attList(w) { return w.att ? Object.values(w.att).join(",") : ""; }
 
 const CLASSES = {
   fighter: { name: "Fighter", hp: 150, speed: 1.0,  start: "smg" },
@@ -438,8 +463,10 @@ SHOP.dome250 = { name: "Put 250g towards the Hearth Dome", cost: 250, cat: "dome
 // call one in: Haddock radios it through and it lands near you a few seconds later
 const CALL_IN = { call_tractor: ["tractor", 200, "Tractor"], call_buggy: ["buggy", 350, "Slop Buggy"], call_heli: ["heli", 800, "Crop Chopper"], call_gunship: ["gunship", 1800, "Slop Gunship"] };
 for (const [id, [, cost, name]] of Object.entries(CALL_IN)) SHOP[id] = { name: `Call in a ${name} (lands near you)`, cost, cat: "veh" };
+for (const [id, a] of Object.entries(ATTACH)) SHOP["att_" + id] = { name: a.name, cost: a.cost, cat: "mods", desc: a.desc + " Fits the gun in your hands." };
+for (const [id, k] of Object.entries(SKINS)) SHOP["skin_" + id] = { name: `${k.name} skin`, cost: k.cost, cat: "mods", desc: "Paints the gun in your hands. Purely for looking good." };
 // which counter sells what
-for (const [id, it] of Object.entries(SHOP)) it.shop = ["repair", "dome50", "dome250"].includes(id) ? "hearth" : ["case", "gcase"].includes(id) ? "casino" : it.cat === "arms" || it.cat === "gear" || it.cat === "veh" || id === "enhance" ? "armoury" : "general";
+for (const [id, it] of Object.entries(SHOP)) it.shop = ["repair", "dome50", "dome250"].includes(id) ? "hearth" : ["case", "gcase"].includes(id) ? "casino" : it.cat === "arms" || it.cat === "gear" || it.cat === "veh" || it.cat === "mods" || id === "enhance" ? "armoury" : "general";
 
 const VEHICLES = {
   tractor: { name: "Tractor",    r: 28, max: 260, acc: 240, turn: 2.2, hp: 700, ram: 1.6 },
@@ -534,9 +561,11 @@ const game = { mode: "story", countdown: 0, skip: new Set(), deeds: freshDeeds()
 gameReady = true;
 
 function newWeapon(type, rarity = 0, enh = 0) {
-  return { type, rarity, enh, ammo: WEAPONS[type].mag, reloadUntil: 0, reloadStart: 0, nextShot: 0, bloom: 0, hot: false, tried: false };
+  const w = { type, rarity, enh, ammo: WEAPONS[type].mag, reloadUntil: 0, reloadStart: 0, nextShot: 0, bloom: 0, hot: false, tried: false };
+  if (rarity >= 3 && (GUNS.has(type) || type === "sword")) w.mode = pick(type === "sword" ? ["fire", "frost", "storm"] : MODE_KEYS);
+  return w;
 }
-function wName(w) { return w.rarity === 4 ? MYTHIC[w.type] : WEAPONS[w.type].name; }
+function wName(w) { return w.rarity === 4 ? MYTHIC[w.type] : (w.mode ? MODES[w.mode].name + " " : "") + WEAPONS[w.type].name; }
 function traitOf(p) { return TRAITS[p.trait] || {}; }
 function sk(p, s) { return p.sk[s] || 0; }
 function maxHp(p) { return CLASSES[p.cls].hp + (traitOf(p).hp || 0) + 20 * sk(p, "tough") + game.mods.hpBonus + (p.champion ? 50 : 0) + p.bonusHp; }
@@ -643,7 +672,7 @@ function dmgMult(p, w) {
   return m * TEST_DMG;
 }
 function price(p, cost) { return Math.round(cost * Math.max(0.2, 1 - 0.1 * sk(p, "haggler") - p.discount - game.mods.discount)); }
-function reloadTime(p, w) { return WEAPONS[w.type].reload * (1 - 0.15 * sk(p, "quick")) * (1 - Math.min(0.5, gearSum(p.gear, "reload"))); }
+function reloadTime(p, w) { return WEAPONS[w.type].reload * (w.att && w.att.mag ? 1.15 : 1) * (1 - 0.15 * sk(p, "quick")) * (1 - Math.min(0.5, gearSum(p.gear, "reload"))); }
 // current cone half-angle: tight first shot, blooms while spraying, worse while moving
 function spreadOf(p, w) {
   const def = WEAPONS[w.type];
@@ -652,6 +681,7 @@ function spreadOf(p, w) {
   if (moving) s *= w.type === "sniper" ? 8 : 1.7;
   if (w.type === "shotgun") s = def.spread * (moving ? 1.15 : 1);
   if (p.ads) s *= w.type === "shotgun" ? 0.75 : 0.4;
+  if (p.ads && w.att && w.att.sight) s *= 0.6; // red dot
   if (crouched(p)) s *= 0.6; // a steadier aim, crouched
   if (p.stress > 60) s *= 1 + (p.stress - 60) / 50; // shaky hands
   if (p.drunk > 0) s *= 1 + p.drunk / 45; // grog
@@ -821,7 +851,7 @@ function bombsAway(p, kind) {
 function hurtZombie(z, dmg, p, kind) {
   if (z.hp <= 0) return;
   z.hp -= dmg;
-  if (p) { p.st.dmg += dmg; p.pe.push({ k: "dmg", x: z.x, y: z.y - z.r, z: Math.round((z.z || 0) + zHeight(z)), v: Math.round(dmg), crit: kind === "crit", hs: kind === "hs", wk: kind === "wk" ? 1 : 0, arm: kind === "arm" ? 1 : 0, kill: z.hp <= 0 ? 1 : 0 }); }
+  if (p) { p.st.dmg += dmg; p.pe.push({ k: "dmg", x: z.x, y: z.y - z.r, z: Math.round((z.z || 0) + zHeight(z)), v: Math.round(dmg), crit: kind === "crit", hs: kind === "hs", wk: kind === "wk" ? 1 : 0, arm: kind === "arm" ? 1 : 0, kill: z.hp <= 0 ? 1 : 0, big: z.r >= 26 ? 1 : 0 }); }
   if (z.hp <= 0) {
     const def = ZTYPES[z.type];
     if (p) deed("blood", z.type === "boss" || z.type === "elite" ? 20 : 0.4);
@@ -883,7 +913,7 @@ function killPlayer(v, attacker, cause) {
   if (v.dlg) { v.dlg = null; v.pe.push({ k: "dlg", close: 1 }); }
   if (v.fix) endFix(v, "You died.");
   const prim = v.weapons.find((w) => w.type !== "pistol");
-  if (prim) crates.push({ id: nextId++, x: v.x, y: v.y, w: { ...prim, ammo: WEAPONS[prim.type].mag, reloadUntil: 0, hot: false, tried: false, jam: false }, grave: true });
+  if (prim) crates.push({ id: nextId++, x: v.x, y: v.y, w: { ...prim, ammo: magOf(prim), reloadUntil: 0, hot: false, tried: false, jam: false }, grave: true });
   const vStars = Math.min(5, Math.floor(v.heat / 40));
   if (game.mode === "royale") {
     v.out = true;
@@ -1113,6 +1143,7 @@ function swing(p, w) {
     let dmg = def.dmg * mult * (plunge ? 1.8 : 1), tag = plunge ? "hs" : "";
     if (p.cls === "rogue" && Math.random() < 0.25 + (traitOf(p).luck ? 0.1 : 0)) { dmg *= 2; tag = tag || "crit"; }
     hurtZombie(z, dmg, p, tag);
+    if (w.mode) modeHit(p, w, z, dmg);
     const d = Math.hypot(z.x - p.x, z.y - p.y) || 1; z.vx += (z.x - p.x) / d * 220; z.vy += (z.y - p.y) / d * 220;
   }
   for (const q of players.values()) if (q !== p && !q.dead && !q.veh && !q.air && inArc(q, 16, q.z, MV.HGT)) { any = true; hurtPlayer(q, def.dmg * mult * (plunge ? 1.8 : 1), p, "cut in half"); }
@@ -1131,7 +1162,7 @@ function shoot(p, w) {
   const myth = w.rarity === 4;
   const mult = dmgMult(p, w);
   const spread = spreadOf(p, w);
-  w.bloom = Math.min(1.6, w.bloom + def.bloom * (1 - 0.2 * sk(p, "steady")));
+  w.bloom = Math.min(1.6, w.bloom + def.bloom * (1 - 0.2 * sk(p, "steady")) * (w.att && w.att.muzzle ? 0.6 : 1));
   const pellets = def.pellets + (myth && w.type === "shotgun" ? 4 : 0);
   const pierce = def.pierce || (myth && w.type === "rifle");
   const boom = def.boom ? def.boom * (myth ? 1.6 : 1) : myth && w.type === "sniper" ? 110 : 0;
@@ -1193,6 +1224,8 @@ function shoot(p, w) {
         if (p.cls === "rogue" && Math.random() < 0.25 + (traitOf(p).luck ? 0.1 : 0)) { dmg *= 2; tag = tag || "crit"; }
         if (kind === "z") {
           hurtZombie(target, dmg, p, tag);
+          { const kb = (KNOCK[w.type] || 20) * Math.min(1, 20 / target.r); target.vx += dx * kb; target.vy += dy * kb; } // every hit shoves a little
+          if (w.mode && (w.type !== "shotgun" || Math.random() < 0.3)) modeHit(p, w, target, dmg);
           if (myth && w.type === "shotgun") { target.vx += dx * 160; target.vy += dy * 160; }
           if (myth && w.type === "smg") p.hp = Math.min(maxHp(p), p.hp + dmg * 0.12);
         } else hurtPlayer(target, dmg, p, "shot");
@@ -1208,6 +1241,36 @@ function shoot(p, w) {
   if (anyHit) p.st.hits++;
   if (w.ammo <= 0) w.hot = false;
 }
+// how hard each gun shoves what it hits (per bullet; heavier zombies move less)
+const KNOCK = { pistol: 40, smg: 18, rifle: 40, ak: 34, shotgun: 30, sniper: 220, laser: 320 };
+// a Legendary's firing mode going off on a zombie it just hit
+function modeHit(p, w, z, dmg) {
+  const t = now(), over = w.enh >= 4 ? 1.5 : 1, def = WEAPONS[w.type];
+  const nearest = (from, n, r, skip) => zombies.filter((q) => q.hp > 0 && !skip.has(q) && dist2(q, from) < r * r).sort((a, b) => dist2(a, from) - dist2(b, from)).slice(0, n);
+  const zc = (q) => Math.round((q.z || 0) + zHeight(q) * 0.6);
+  if (w.mode === "ricochet") {
+    const [n] = nearest(z, 1, 280, new Set([z]));
+    if (!n) return;
+    events.push({ k: "tr", x1: z.x, y1: z.y, z1: zc(z), x2: n.x, y2: n.y, z2: zc(n), c: "rico", m: 0 });
+    hurtZombie(n, dmg * 0.55 * over, p, "");
+  } else if (w.mode === "fire") {
+    z.fireUntil = Math.max(z.fireUntil || 0, t + 1.2 * over); z.fireBy = p.id;
+  } else if (w.mode === "frost") {
+    z.slowUntil = t + 1.5; z.chill = (z.chill || 0) + clamp(def.dmg * 0.6, 5, 70) * over;
+    if (z.chill >= 100 && z.type !== "boss") { z.chill = 0; z.frozen = t + 1.6; z.stun = Math.max(z.stun || 0, t + 1.6); z.fireUntil = 0; }
+  } else if (w.mode === "storm") {
+    if (t < (w.zapAt || 0)) return; // not every bullet of an SMG
+    w.zapAt = t + (def.rate > 4 ? 0.3 : 0);
+    const hit = new Set([z]), pts = [[Math.round(z.x), Math.round(z.y), zc(z)]];
+    let cur = z;
+    for (let i = 0; i < 2; i++) { const [n] = nearest(cur, 1, 230, hit); if (!n) break; hit.add(n); hurtZombie(n, dmg * 0.45 * over, p, ""); n.stun = Math.max(n.stun || 0, t + 0.25); pts.push([Math.round(n.x), Math.round(n.y), zc(n)]); cur = n; }
+    if (pts.length > 1) events.push({ k: "zap", pts });
+  } else if (w.mode === "boom") {
+    const r = 55 * over;
+    events.push({ k: "boom", x: z.x, y: z.y, z: zc(z), r, small: 1 });
+    for (const q of zombies) if (q !== z && q.hp > 0 && dist2(q, z) < (r + q.r) ** 2) hurtZombie(q, dmg * 0.35 * over, p, "");
+  }
+}
 // Active reloads (back by popular demand). Press R to reload, then tap R again inside the green window
 // for an instant reload and an empowered mag. Miss the window and you fumble, which costs a little time.
 // guns get dirty as you shoot them, and dirty guns can jam: R clears a jam
@@ -1218,14 +1281,14 @@ function startReload(p, w) {
   if (def.melee || w.reloadUntil) return;
   const t = now();
   if (w.jam) { w.reloadStart = t; w.reloadUntil = t + 0.8; w.tried = true; w.clearing = true; return; }
-  if (w.ammo >= def.mag) return;
+  if (w.ammo >= magOf(w)) return;
   w.reloadStart = t; w.reloadUntil = t + reloadTime(p, w); w.tried = false; w.hot = false; w.clearing = false;
 }
 function tryActiveReload(p, w) {
   if (!w.reloadUntil || w.tried) return;
   w.tried = true;
   const t = now(), total = w.reloadUntil - w.reloadStart, k = (t - w.reloadStart) / total;
-  if (k >= RL_LO && k <= RL_HI) { w.reloadUntil = 0; w.ammo = WEAPONS[w.type].mag; w.hot = true; p.st.perfect++; p.pe.push({ k: "perfect" }); }
+  if (k >= RL_LO && k <= RL_HI) { w.reloadUntil = 0; w.ammo = magOf(w); w.hot = true; p.st.perfect++; p.pe.push({ k: "perfect" }); }
   else { w.reloadUntil += 0.5; p.pe.push({ k: "jam", text: "Fumbled it" }); }
 }
 function pressReload(p, w) { if (w.reloadUntil) tryActiveReload(p, w); else startReload(p, w); }
@@ -1233,7 +1296,7 @@ function reloadTick(p, w, t) {
   if (!w.reloadUntil || t < w.reloadUntil) return;
   w.reloadUntil = 0;
   if (w.clearing) { w.clearing = false; w.jam = false; p.pe.push({ k: "toast", text: "Jam cleared.", color: "#8f8" }); return; }
-  w.ammo = WEAPONS[w.type].mag;
+  w.ammo = magOf(w);
 }
 function cleanWeapon(p, m) {
   const w = p.weapons[p.active], t = now();
@@ -1355,6 +1418,7 @@ function buy(p, item) {
   if (!shopIsOpen(it.shop)) return toast(p, SHOPS[it.shop].shut || "Shut.", "#f88");
   if (item.startsWith("dome")) return fundDome(p, it.cost);
   if (item === "enhance") return enhance(p);
+  if (item.startsWith("att_") || item.startsWith("skin_")) return fitMod(p, item);
   if (item === "hoe" && p.hoe >= 3) return toast(p, "Your Golden Hoe is as good as hoes get.", "#bbb");
   const cost = price(p, item === "hoe" ? HOE_COST[p.hoe] : it.cost);
   if (p.gold < cost) return toast(p, `${it.name} costs ${cost}g. You have ${p.gold}g.`, "#f88");
@@ -1385,6 +1449,7 @@ function buy(p, item) {
     const r = Math.random() * 100 - (traitOf(p).luck ? 8 : 0);
     const rarity = r < 0.3 ? 4 : r < 2 ? 3 : r < 10 ? 2 : r < 40 ? 1 : 0;
     const w = newWeapon(lootType(), rarity);
+    if (GUNS.has(w.type) && Math.random() < 0.3) w.skin = Math.random() < 0.08 ? "gold" : pick(["camo", "slop", "tiger", "pink"]); // cases sometimes come painted
     giveWeapon(p, w);
     p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) }); p.st.cases++;
     if (rarity >= 2) setTimeout(() => feed(`${fullName(p)} unboxed ${RARITY[rarity].toUpperCase()} ${wName(w)}`, ["", "", "#c070ff", "#ffc030", "#ff4b4b"][rarity]), 3200);
@@ -1409,6 +1474,19 @@ function callIn(p, kind) {
     toast(p, `Your ${VEHICLES[kind].name} has landed. Press E to get in.`, "#8f8");
   }, CALL_DELAY * 1000);
 }
+// Haddock bolts an attachment on (or paints) the gun in your hands
+function fitMod(p, item) {
+  const w = p.weapons[p.active], it = SHOP[item], cost = price(p, it.cost);
+  if (!w || !GUNS.has(w.type)) return toast(p, `"I can't bolt that onto a ${WEAPONS[w ? w.type : "sword"].name}, son." Hold a gun first.`, "#f88");
+  const att = ATTACH[item.slice(4)], skin = SKINS[item.slice(5)];
+  if (att && w.att && w.att[att.slot] === item.slice(4)) return toast(p, `Your ${wName(w)} already has ${/^[AEIOU]/.test(att.name) ? "an" : "a"} ${att.name}.`, "#bbb");
+  if (skin && w.skin === item.slice(5)) return toast(p, `It's already ${skin.name}.`, "#bbb");
+  if (p.gold < cost) return toast(p, `${it.name} costs ${cost}g. You have ${p.gold}g.`, "#f88");
+  p.gold -= cost; deed("coin", cost / 25);
+  if (att) { w.att = { ...(w.att || {}), [att.slot]: item.slice(4) }; if (att.slot === "mag") w.ammo = Math.min(w.ammo, magOf(w)); toast(p, `Haddock fits ${/^[AEIOU]/.test(att.name) ? "an" : "a"} ${att.name} to your ${wName(w)}. ${att.desc}`, "#8f8"); }
+  else { w.skin = item.slice(5); toast(p, `Your ${wName(w)} comes back ${skin.name}. Looks faster.`, "#8f8"); }
+  p.pe.push({ k: "fitted" });
+}
 function enhance(p) {
   const w = p.weapons[p.active];
   if (w.enh >= 5) return toast(p, "Already PEN. Touch grass.", "#ffc030");
@@ -1423,6 +1501,8 @@ function enhance(p) {
   } else {
     const down = w.enh >= 2;
     if (down) w.enh--;
+    const slots = w.att ? Object.keys(w.att) : [];
+    if (slots.length && Math.random() < 0.35) { const sl = pick(slots), lost = ATTACH[w.att[sl]].name; delete w.att[sl]; w.ammo = Math.min(w.ammo, magOf(w)); setTimeout(() => toast(p, `The failed enhance knocked your ${lost} off. It's gone.`, "#f88"), 1800); }
     p.pe.push({ k: "enh", ok: false, lvl: w.enh, down });
   }
 }
@@ -1723,6 +1803,7 @@ const npcApi = {
     const r = Math.random() * 100 - (traitOf(p).luck ? 8 : 0);
     const rarity = r < 8 ? 4 : r < 30 ? 3 : r < 65 ? 2 : 1;
     const w = newWeapon(lootType(), rarity);
+    if (GUNS.has(w.type) && Math.random() < 0.3) w.skin = Math.random() < 0.08 ? "gold" : pick(["camo", "slop", "tiger", "pink"]); // cases sometimes come painted
     giveWeapon(p, w); p.st.cases++;
     p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) });
     if (rarity >= 3) setTimeout(() => feed(`${fullName(p)} unboxed ${RARITY[rarity].toUpperCase()} ${wName(w)} from Vex's coat`, rarity === 4 ? "#ff4b4b" : "#ffc030"), 3200);
@@ -2665,7 +2746,7 @@ function spawnCrates() { // town gets a trickle; the good stuff is out in the wi
 // ---------------------------------------------------------------- the wild, past the hedge
 function ensureChunks() {
   if (!OPEN() || !(game.phase === "day" || game.phase === "night" || game.phase === "intro")) return;
-  const fresh = [];
+  const fresh = [], bio = [];
   for (const p of players.values()) {
     if (p.dead) continue;
     const pcx = Math.floor(p.x / CS), pcy = Math.floor(p.y / CS);
@@ -2674,7 +2755,7 @@ function ensureChunks() {
       if (CHUNKS.has(key)) continue;
       if (cx * CS >= 0 && cy * CS >= 0 && (cx + 1) * CS <= W && (cy + 1) * CS <= H) { CHUNKS.set(key, { kind: "town" }); continue; }
       const c = makeChunk(MAP_SEED, cx, cy, TOWN);
-      CHUNKS.set(key, { kind: c.kind });
+      CHUNKS.set(key, { kind: c.kind }); bio.push([cx, cy, c.kind]); // the client paints the ground to match
       for (const w of c.walls) w.id = wallId++;
       WALLS.push(...c.walls); fresh.push(...c.walls);
       for (const l of c.loot) { // something worth walking out here for. Better the further you go.
@@ -2688,7 +2769,7 @@ function ensureChunks() {
     const own = CHUNKS.get(pcx + "," + pcy), where = inTownXY(p.x, p.y) ? "town" : own && own.kind;
     if (where && where !== p.where) { if (p.where && where !== "town" && BIOMES[where]) toast(p, `You wander into ${BIOMES[where].name}.`, "#b8e070"); else if (p.where && where === "town") toast(p, `Back in ${VALLEY}.`, "#ffe9a0"); p.where = where; }
   }
-  if (fresh.length) broadcastRaw(JSON.stringify({ t: "ck", seed: MAP_SEED, walls: fresh }));
+  if (fresh.length || bio.length) broadcastRaw(JSON.stringify({ t: "ck", seed: MAP_SEED, walls: fresh, bio }));
 }
 // the dead roam the wild, by day as well as night, and there are more of them the further out you go
 function wildTick(t) {
@@ -3230,6 +3311,7 @@ function tick() {
       for (const q of alive) if (dist2(q, z) < 340 * 340) { q.frozen = t + 0.8; addStress(q, 12); q.pe.push({ k: "deaf" }); }
     }
     if (t < z.stun) sp = 0;
+    else if (t < (z.slowUntil || 0)) sp *= 0.5; // cryo rounds
     if (t < z.frozen) { z.atk = Math.max(z.atk, z.frozen); }
     const ox = z.x, oy = z.y;
     z.x += (dx * sp + z.vx) * dt; z.y += (dy * sp + z.vy) * dt;
@@ -3345,7 +3427,7 @@ function snapshot() {
       return {
         id: p.id, n: fullName(p), x: r(p.x), y: r(p.y), z: r(p.z), mv: [r(p.vx), r(p.vy), r(p.vz), p.gr ? 1 : 0], pt: p.pt == null ? 0 : +p.pt.toFixed(2), a: +p.a.toFixed(2), hp: r(p.hp), mh: maxHp(p), ar: r(p.armor),
         c: p.color, h: p.hat, ey: p.eyes, cl: p.cls, bg: p.bg, d: p.dead ? 1 : 0, g: p.gold, sd: seedCount(p), st: Math.min(5, Math.floor(p.heat / 40)),
-        w: w.type, wn: wName(w), wr: w.rarity, we: w.enh, am: w.ammo, hot: w.hot ? 1 : 0, chg: w.chargeAt ? +Math.min(1, (t - w.chargeAt) / WEAPONS[w.type].charge).toFixed(2) : 0, sec: p.weapons.length > 1 ? 1 : 0,
+        w: w.type, wn: wName(w), wr: w.rarity, we: w.enh, am: w.ammo, mg: magOf(w), wmo: w.mode || "", wat: attList(w), wsk: w.skin || "", hot: w.hot ? 1 : 0, chg: w.chargeAt ? +Math.min(1, (t - w.chargeAt) / WEAPONS[w.type].charge).toFixed(2) : 0, sec: p.weapons.length > 1 ? 1 : 0,
         rl: w.reloadUntil ? +(w.reloadUntil - t).toFixed(2) : 0, rt: w.reloadUntil ? +(w.reloadUntil - w.reloadStart).toFixed(2) : 0, rtr: w.tried ? 1 : 0,
         jam: w.jam ? 1 : 0, dirt: Math.round(w.dirt || 0), cln: p.cleaning ? 1 : 0,
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
@@ -3425,6 +3507,9 @@ function onMessage(ws, raw) {
       if (m.dusk) game.ends = now() + 0.5;
       if (m.killBoss) { const b = zombies.find((z) => z.id === game.bossId); if (b) hurtZombie(b, b.hp + 1, p); }
       if (m.weapon) giveWeapon(p, newWeapon(m.weapon, m.rarity || 0));
+      if (m.mode !== undefined) p.weapons[p.active].mode = m.mode || undefined;
+      if (m.enh !== undefined) p.weapons[p.active].enh = m.enh;
+      if (m.zinfo) p.pe.push({ k: "test", v: zombies.map((z) => [z.type, Math.round(z.hp), z.frozen > now() ? 1 : 0, (z.fireUntil || 0) > now() ? 1 : 0, (z.slowUntil || 0) > now() ? 1 : 0, Math.round(z.x)]) });
       if (m.ammo !== undefined) p.weapons[p.active].ammo = m.ammo;
       if (m.night) game.night = m.night;
       if (m.spawn) { const z = spawnZombie(m.spawn, { x: p.x + 120, y: p.y }); if (z) { z.x = p.x + 120; z.y = p.y; z.stun = now() + 30; } }
@@ -3521,7 +3606,7 @@ const server = Bun.serve({
       spectators.add(ws);
       ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, shops: SHOPS, domeR: DOME_R, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS, items: ITEMS, crops: CROPS, seedPack: SEED_PACK, gear: GEAR, cards: CARDS, locs: LOCS, stocks: STOCKS, cands: CANDIDATES }));
       ws.send(JSON.stringify(mapMsg()));
-      ws.send(JSON.stringify({ t: "ck", reset: 1, seed: MAP_SEED, walls: WALLS.filter((w) => w.ck) }));
+      ws.send(JSON.stringify({ t: "ck", reset: 1, seed: MAP_SEED, walls: WALLS.filter((w) => w.ck), bio: [...CHUNKS].filter(([, c]) => c.kind !== "town").map(([k, c]) => [...k.split(",").map(Number), c.kind]) }));
     },
     message: onMessage,
     close(ws) {
