@@ -44,6 +44,7 @@ var R3D = (function () {
       L.hearth = new T.PointLight(0xff9a40, 2, 700, 0); scene.add(L.hearth);
       for (let i = 0; i < 5; i++) { const s = new T.SpotLight(0xfff0c8, 0, 800, 0.45, 0.45, 0); scene.add(s); scene.add(s.target); L.spots.push(s); }
       for (let i = 0; i < 4; i++) { const p = new T.PointLight(0xffd890, 0, 280, 0); scene.add(p); L.points.push(p); }
+      L.muzzle = []; for (let i = 0; i < 2; i++) { const p = new T.PointLight(0xffc070, 0, 260, 1.2); scene.add(p); L.muzzle.push(p); } // gunfire lights up the dark
       ok = true;
     } catch (e) { console.warn("3D unavailable:", e); ok = false; if (gl) gl.remove(); }
     return ok;
@@ -80,6 +81,34 @@ var R3D = (function () {
     return tex;
   }
 
+  // the wild's ground: a small tiling texture per biome, so the outlands aren't one flat green
+  const BIO_LOOK = { // base, blobs, tufts, specks
+    grass:   ["#466f35", ["#3f6630", "#507a3c"], "#355a26", ["#e86", "#fd5", "#fff"]],
+    forest:  ["#3d4f2a", ["#4a3a24", "#34482a", "#5a4a2e"], "#2a3c1e", ["#7a5a30", "#6a4a28"]],
+    meadow:  ["#5a8a3e", ["#64964a", "#507e36"], "#47753a", ["#fd5", "#fff", "#c8f", "#e86"]],
+    moor:    ["#6a7048", ["#7a7a5a", "#5a6040", "#8a8468"], "#585e3a", ["#9a9a8a", "#7a7a6a"]],
+    orchard: ["#4f7c38", ["#5a8a40", "#466e32"], "#3d6a2c", ["#d04030", "#e0a030"]],
+    ruins:   ["#5e6448", ["#7a7466", "#6a6a5a", "#545a40"], "#4a5236", ["#8a8478", "#6a645a"]],
+    stones:  ["#56684a", ["#6a7458", "#4a5a3e"], "#44563a", ["#bfd8ff", "#9aa4ad"]],
+  };
+  const bioTex = {};
+  function bioTexture(kind) {
+    if (bioTex[kind]) return bioTex[kind];
+    const L = BIO_LOOK[kind] || BIO_LOOK.grass, c = document.createElement("canvas"); c.width = c.height = 256;
+    const g = c.getContext("2d"); let seed = 1 + kind.length * 977; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    g.fillStyle = L[0]; g.fillRect(0, 0, 256, 256);
+    const wrap = (x, y, f) => { for (const ox of [-256, 0, 256]) for (const oy of [-256, 0, 256]) f(x + ox, y + oy); }; // draw across the edges so it tiles
+    for (let i = 0; i < 70; i++) { const x = rnd() * 256, y = rnd() * 256, r = 6 + rnd() * 22; g.fillStyle = L[1][(rnd() * L[1].length) | 0]; wrap(x, y, (px, py) => { g.beginPath(); g.arc(px, py, r, 0, 7); g.fill(); }); }
+    g.strokeStyle = L[2]; g.lineWidth = 1.5;
+    for (let i = 0; i < 220; i++) { const x = rnd() * 256, y = rnd() * 256; g.beginPath(); g.moveTo(x - 2, y); g.lineTo(x - 1, y - 5); g.moveTo(x, y); g.lineTo(x + 1, y - 6); g.stroke(); }
+    for (let i = 0; i < 30; i++) { g.fillStyle = L[3][(rnd() * L[3].length) | 0]; g.beginPath(); g.arc(rnd() * 256, rnd() * 256, 1.5 + rnd() * 1.5, 0, 7); g.fill(); }
+    const tex = new T.CanvasTexture(c); tex.wrapS = tex.wrapT = T.RepeatWrapping; tex.colorSpace = T.SRGBColorSpace; tex.anisotropy = Math.min(8, R.capabilities.getMaxAnisotropy());
+    return (bioTex[kind] = tex);
+  }
+  const BIO_TILE = 250; // world units per repeat of the texture
+  const bioMats = {};
+  function bioMat(kind) { return bioMats[kind] || (bioMats[kind] = new T.MeshLambertMaterial({ map: bioTexture(kind) })); }
+
   // ---------------------------------------------------------------- static level
   const ROOFS = [0xa33b2b, 0x3b5ea3, 0x5d6b3a, 0x6b4a8a];
   function buildLevel(MAP) {
@@ -93,7 +122,7 @@ var R3D = (function () {
       for (let i = 0; i < pos.count; i++) uv.setXY(i, (x + w / 2 + pos.getX(i)) / MAP.W, 1 - (y + h / 2 - pos.getY(i)) / MAP.H);
       const m = mesh(geo, gm, x + w / 2, 0, y + h / 2); m.rotation.x = -Math.PI / 2; level.add(m);
     };
-    level.userData.lake = lake || null; level.userData.gm = gm;
+    level.userData.lake = lake || null; level.userData.gm = gm; level.userData.bio = new Set();
     if (lake) { // the ground goes round the lake, not over it
       groundPiece(0, 0, MAP.W, lake.y); groundPiece(0, lake.y + lake.h, MAP.W, MAP.H - lake.y - lake.h);
       groundPiece(0, lake.y, lake.x, lake.h); groundPiece(lake.x + lake.w, lake.y, MAP.W - lake.x - lake.w, lake.h);
@@ -109,10 +138,11 @@ var R3D = (function () {
     // the world's edge: a low dark hedge all round
     const hedge = new T.Group(); level.add(hedge); level.userData.hedge = hedge; // only royale keeps the hedge: everywhere else the wild goes on forever
     for (const [x, y, w, d] of [[MAP.W / 2, -10, MAP.W + 40, 20], [MAP.W / 2, MAP.H + 10, MAP.W + 40, 20], [-10, MAP.H / 2, 20, MAP.H], [MAP.W + 10, MAP.H / 2, 20, MAP.H]]) hedge.add(at(box(w, d, 60, mat(0x2a3d20)), x, y, 30));
-    const wild = new T.Group(), wm = mat(0x3f6430), WE = 120000; level.add(wild); level.userData.wild = wild; // grass out to the horizon, with a hole for the lake
+    const wild = new T.Group(), wm = bioMat("grass"), WE = 120000; level.add(wild); level.userData.wild = wild; // grass out to the horizon, with a hole for the lake
     const L0 = lake || { x: -1, y: -1, w: 0, h: 0 };
     for (const [x, y, w, h] of [[-WE, -WE, 2 * WE, L0.y + WE], [-WE, L0.y + L0.h, 2 * WE, WE - L0.y - L0.h], [-WE, L0.y, L0.x + WE, L0.h], [L0.x + L0.w, L0.y, WE - L0.x - L0.w, L0.h]]) {
-      if (w <= 0 || h <= 0) continue; const m = mesh(new T.PlaneGeometry(w, h), wm, x + w / 2, -1, y + h / 2); m.rotation.x = -Math.PI / 2; wild.add(m);
+      if (w <= 0 || h <= 0) continue; const geo = new T.PlaneGeometry(w, h), uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / BIO_TILE, uv.getY(i) * h / BIO_TILE);
+      const m = mesh(geo, wm, x + w / 2, -1, y + h / 2); m.rotation.x = -Math.PI / 2; wild.add(m);
     }
     // farmland beyond the hedge, so the valley doesn't float in the sky when you fly
     const far = mat(0x3f6430), E = 4000;
@@ -307,7 +337,18 @@ var R3D = (function () {
   // ---------------------------------------------------------------- models
   const WEAPON_LEN = { laser: 46, pistol: 18, smg: 24, shotgun: 30, rifle: 34, sniper: 44, staff: 40, ak: 32, sword: 44, rocket: 42 };
   const RAR = [0xd8d8d8, 0x4da6ff, 0xc070ff, 0xffc030, 0xff4b4b];
-  function weaponMesh(type, rar) {
+  // paint jobs: [metal, furniture, emissive]
+  const SKIN = { camo: [0x4a5a32, 0x8a7a50, 0], slop: [0x5aa03a, 0x3a7a24, 0x123a08], tiger: [0xd07020, 0x1c1c1c, 0x2a1000], pink: [0xff6ab0, 0xffd0e8, 0x3a0a20], gold: [0xd8b040, 0xb08a20, 0x403000] };
+  function weaponMesh(type, rar, skin, att) {
+    const g = weaponBody(type, rar, skin, att), len = WEAPON_LEN[type] || 24;
+    const tip = GUN[type] ? GUN[type].rc + GUN[type].bl + 2 : len + 3;
+    const flash = new T.Group(); // muzzle flash, shown for a blink when you fire
+    flash.add(mesh(new T.SphereGeometry(3.2, 8, 6), new T.MeshBasicMaterial({ color: 0xfff0b0, transparent: true, opacity: 0.95, depthWrite: false })));
+    for (let i = 0; i < 4; i++) { const sp = mesh(new T.ConeGeometry(1.6, 9, 5), new T.MeshBasicMaterial({ color: 0xffb040, transparent: true, opacity: 0.85, depthWrite: false })); sp.rotation.z = -Math.PI / 2; sp.rotation.x = i * Math.PI / 2; sp.position.x = 4; flash.add(sp); }
+    flash.position.set(tip + 2, 1.2, 0); flash.visible = false; g.add(flash); g.userData.flash = flash;
+    return g;
+  }
+  function weaponBody(type, rar, skin, att) {
     const g = new T.Group(), len = WEAPON_LEN[type] || 24;
     if (type === "sword") {
       g.add(mesh(new T.BoxGeometry(len, 5, 1.6), mat(0xdfe4ea, rar === 4 ? 0x802020 : 0x202428), len / 2 + 6, 0, 0));
@@ -332,7 +373,7 @@ var R3D = (function () {
       g.add(mesh(new T.BoxGeometry(3, 6, 3), dark, len * 0.55, -4.5, 0)); // front grip
       g.add(mesh(new T.BoxGeometry(5, 3, 3), dark, len * 0.42, 8, 0)); // sight
       if (rar > 0) g.add(mesh(new T.BoxGeometry(len * 0.6, 1.2, 6.4), mat(RAR[rar], RAR[rar]), len * 0.35, -2.6, 0));
-    } else gunParts(g, type, len, rar);
+    } else gunParts(g, type, len, rar, skin, att);
     return g;
   }
   // a gun from parts: receiver, barrel, grip, magazine, stock and sights, all pointing along +x
@@ -344,8 +385,9 @@ var R3D = (function () {
     sniper: { rc: 13, bl: 30, mag: 6, st: 2, sight: "scope", wood: 0, bipod: 1 },
     ak: { rc: 13, bl: 17, mag: 11, st: 2, sight: "iron", wood: 1, curve: 1 },
   };
-  function gunParts(g, type, len, rar) {
-    const d = GUN[type] || GUN.smg, metal = mat(0x2e3034), dark = mat(0x1c1d20), wood = mat(0x7a4a24), furn = d.wood ? wood : dark;
+  function gunParts(g, type, len, rar, skin, att) {
+    const sk = SKIN[skin], a = (att || "").split(",");
+    const d = GUN[type] || GUN.smg, metal = sk ? mat(sk[0], sk[2]) : mat(0x2e3034), dark = mat(0x1c1d20), wood = sk ? mat(sk[1], sk[2]) : mat(0x7a4a24), furn = d.wood || sk ? wood : dark;
     const tube = (r, l, m, x, y) => { const c = mesh(new T.CylinderGeometry(r, r, l, 10), m, x, y, 0); c.rotation.z = Math.PI / 2; g.add(c); return c; };
     g.add(mesh(new T.BoxGeometry(d.rc, 5.5, 4), metal, d.rc / 2, 0.5, 0)); // receiver
     g.add(mesh(new T.BoxGeometry(d.rc - 2, 1.2, 3.2), dark, d.rc / 2, 3.6, 0)); // top rail
@@ -355,7 +397,10 @@ var R3D = (function () {
     g.add(mesh(new T.BoxGeometry(4, 1, 1), dark, 5, -2.8, 0)); // trigger guard
     if (type !== "pistol") g.add(mesh(new T.BoxGeometry(Math.min(d.bl * 0.7, 14), 4, 4.6), furn, d.rc + Math.min(d.bl * 0.7, 14) / 2, -0.2, 0)); // handguard
     if (d.pump) g.add(mesh(new T.CylinderGeometry(2.2, 2.2, 9, 8), wood, d.rc + 8, -2.2, 0).rotateZ(Math.PI / 2));
-    if (d.mag) { const m = mesh(new T.BoxGeometry(3.4, d.mag, 2.8), dark, d.rc - 3, -2 - d.mag / 2, 0); if (d.curve) m.rotation.z = 0.35; g.add(m); }
+    const ml = a.includes("mag") ? (d.mag || 6) * 1.6 : d.mag; // the extended mag hangs lower
+    if (ml) { const m = mesh(new T.BoxGeometry(a.includes("mag") ? 4 : 3.4, ml, a.includes("mag") ? 3.4 : 2.8), dark, d.rc - 3, -2 - ml / 2, 0); if (d.curve) m.rotation.z = 0.35; g.add(m); }
+    if (a.includes("dot") && d.sight !== "scope") { g.add(mesh(new T.BoxGeometry(5, 3.6, 3), dark, d.rc / 2 + 1, 5.6, 0)); g.add(mesh(new T.BoxGeometry(0.6, 2.4, 2.2), mat(0x88aacc, 0x102030), d.rc / 2 + 3.6, 5.8, 0)); g.add(mesh(new T.SphereGeometry(0.55, 6, 5), new T.MeshBasicMaterial({ color: 0xff2020 }), d.rc / 2 - 1.2, 5.8, 0)); }
+    if (a.includes("comp")) { const c = mesh(new T.CylinderGeometry(2.4, 2.4, 5, 8), dark, d.rc + d.bl + 2.5, 1.2, 0); c.rotation.z = Math.PI / 2; g.add(c); for (const s2 of [-1, 1]) g.add(mesh(new T.BoxGeometry(3, 0.8, 0.6), mat(0x606468), d.rc + d.bl + 2.5, 1.2, s2 * 2.3)); }
     if (d.st === 1) { g.add(mesh(new T.BoxGeometry(9, 1.2, 1.2), metal, -4, 1.5, 0)); g.add(mesh(new T.BoxGeometry(1.4, 5, 3), metal, -8.5, -0.3, 0)); } // wire stock
     if (d.st === 2) { const s2 = mesh(new T.BoxGeometry(12, 5, 3.4), furn, -6, -1, 0); s2.rotation.z = 0.12; g.add(s2); g.add(mesh(new T.BoxGeometry(1.5, 7, 3.8), dark, -12, -1.6, 0)); }
     if (d.sight === "iron") { g.add(mesh(new T.BoxGeometry(1, 2.4, 1), dark, d.rc + d.bl - 1, 3.2, 0)); g.add(mesh(new T.BoxGeometry(1.5, 2, 2.6), dark, 2, 4.8, 0)); }
@@ -636,6 +681,19 @@ var R3D = (function () {
       const open = S.g.mode !== "royale", ud = level.userData;
       if (ud.hedge) ud.hedge.visible = !open;
       if (ud.wild) ud.wild.visible = open;
+      if (ud.wild && MAP.bio) for (const k in MAP.bio) { // each chunk of the wild gets its biome's ground
+        if (ud.bio.has(k)) continue; ud.bio.add(k);
+        const [cx, cy] = k.split(",").map(Number), CS = 1000, x0 = cx * CS, y0 = cy * CS, x1 = x0 + CS, y1 = y0 + CS;
+        // leave the town (and its lake) alone: a chunk on the town's edge only paints the part outside it
+        const tx0 = Math.max(x0, 0), tx1 = Math.min(x1, MAP.W), ty0 = Math.max(y0, 0), ty1 = Math.min(y1, MAP.H);
+        const parts = tx0 >= tx1 || ty0 >= ty1 ? [[x0, y0, x1, y1]] : [[x0, y0, x1, ty0], [x0, ty1, x1, y1], [x0, ty0, tx0, ty1], [tx1, ty0, x1, ty1]];
+        for (const [a0, b0, a1, b1] of parts) {
+          const w = a1 - a0, h = b1 - b0; if (w <= 0 || h <= 0) continue;
+          const geo = new T.PlaneGeometry(w, h), pos = geo.attributes.position, uv = geo.attributes.uv;
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, (a0 + w / 2 + pos.getX(i)) / BIO_TILE, -(b0 + h / 2 - pos.getY(i)) / BIO_TILE);
+          const m = mesh(geo, bioMat(MAP.bio[k]), a0 + w / 2, -0.6, b0 + h / 2); m.rotation.x = -Math.PI / 2; ud.wild.add(m);
+        }
+      }
       const pv = st.pred || (cam && { x: cam.position.x, y: cam.position.z });
       if (pv && frameNo % 20 === 0) for (const o of wallObjs.values()) { const c = o.userData.ck; if (c) o.visible = Math.abs(c[0] - pv.x) < 3600 && Math.abs(c[1] - pv.y) < 3600; }
     }
@@ -804,7 +862,7 @@ var R3D = (function () {
     // the dead
     const bk = S.g.bk;
     for (const zz of S.z) {
-      const [id, type, zx, zy, , burn, zh, charging, frozen, glow, armd] = zz;
+      const [id, type, zx, zy, zhp, burn, zh, charging, frozen, glow, armd] = zz;
       const e = pooled(`z:${id}:${type}:${type === "b" ? bk : ""}:${glow ? 1 : 0}`, () => zombieMesh(type, bk, glow));
       const px = e.x, py = e.y;
       smoothTo(e, zx, zy, zh || 0, dt);
@@ -817,7 +875,11 @@ var R3D = (function () {
       if (e.obj.userData.legs && mv > 0.05 && !frozen) e.obj.userData.legs.forEach((l, i) => { l.rotation.z = Math.sin(t * 10 + id + i * Math.PI) * 0.6; });
       const fr = e.obj.userData.fire; fr.visible = !!burn; if (burn) { fr.scale.set(1, 0.8 + Math.sin(t * 20 + id) * 0.2, 1); fr.rotation.y = t * 3; }
       if (e.obj.userData.wings) e.obj.userData.wings.forEach((w, i) => { w.rotation.x = (i ? 1 : -1) * Math.sin(t * 14 + id) * 0.7; });
-      if (charging) { e.obj.userData.arms.forEach((a) => { a.rotation.z = 0.5; }); e.obj.rotation.z = -0.25; } else e.obj.rotation.z = 0;
+      if (e.hp !== undefined && zhp < e.hp) e.hitT = t; // took a hit: rock back and squash for a moment
+      e.hp = zhp;
+      const fk = e.hitT ? Math.max(0, 1 - (t - e.hitT) / 0.18) : 0;
+      if (charging) { e.obj.userData.arms.forEach((a) => { a.rotation.z = 0.5; }); e.obj.rotation.z = -0.25; } else e.obj.rotation.z = fk * 0.32;
+      e.obj.scale.set(1 + fk * 0.08, 1 - fk * 0.1, 1 + fk * 0.08);
       // armour plates, and the weak spot that glows red (the head; on a charger, its back)
       if (armd && !e.obj.userData.plate) {
         const r = ZR[type] || 15, h = r * 3.7, g = new T.Group(), steel = mat(0x7a828a);
@@ -944,8 +1006,8 @@ var R3D = (function () {
       e.obj.userData.legs.forEach((l, i) => { l.rotation.z = Math.sin(wt + i * Math.PI) * 0.7 * walk; });
       if (e.obj.userData.hat.userData.spin) e.obj.userData.hat.userData.spin.rotation.y = t * 20;
       // weapon in hand
-      const wk = p.w + ":" + p.wr;
-      if (e.wk !== wk) { const arm = e.obj.userData.arm; while (arm.children.length > 2) arm.remove(arm.children[2]); const wm = weaponMesh(p.w, p.wr); wm.position.set(2, 0, 0); arm.add(wm); e.wk = wk; }
+      const wk = p.w + ":" + p.wr + ":" + (p.wsk || "") + ":" + (p.wat || "");
+      if (e.wk !== wk) { const arm = e.obj.userData.arm; while (arm.children.length > 2) arm.remove(arm.children[2]); const wm = weaponMesh(p.w, p.wr, p.wsk, p.wat); wm.position.set(2, 0, 0); arm.add(wm); e.wk = wk; }
       const arm = e.obj.userData.arm;
       const sl = st.slashT.get(p.id), sk = sl ? Math.min(1, (t - sl) / 0.25) : 1;
       arm.rotation.z = p.w === "sword" && sk < 1 ? pitch + 1.4 - sk * 2.6 : pitch;
@@ -970,6 +1032,10 @@ var R3D = (function () {
       at(s.target, u.x + Math.cos(u.yaw) * Math.cos(u.pitch) * 100, u.y + Math.sin(u.yaw) * Math.cos(u.pitch) * 100, u.z + Math.sin(u.pitch) * 100);
     }
     lamps.sort((a, b) => ((a[0] - st.cam.x) ** 2 + (a[1] - st.cam.y) ** 2) - ((b[0] - st.cam.x) ** 2 + (b[1] - st.cam.y) ** 2));
+    { // muzzle flashes: the newest shots light up whatever's around them
+      const shots = st.fx.filter((f) => f.kind === "tr" && f.c !== "rico" && f.c !== "staff" && t - f.t0 < 0.07).slice(-2);
+      L.muzzle.forEach((pt, i) => { const f = shots[i]; if (!f) { pt.intensity = 0; return; } at(pt, f.x1, f.y1, (f.z1 ?? 36) + 4); pt.color.setHex(f.c === "laser" ? 0xff3030 : 0xffc070); pt.intensity = (2 + n * 6) * (1 - (t - f.t0) / 0.07); });
+    }
     L.points.forEach((pt, i) => { const l = lamps[i]; if (!l || n < 0.05) { pt.intensity = 0; return; } at(pt, l[0], l[1], 76); pt.intensity = 4 * n; });
     // the balloon
     if (S.g.drop && S.g.drop[4] < 1) {
@@ -1032,11 +1098,11 @@ var R3D = (function () {
   // the gun (or sword) in front of your face in first person
   function updateViewModel(st, t) {
     const vm = st.vm;
-    const key = vm ? vm.type + ":" + vm.rar : "";
+    const key = vm ? vm.type + ":" + vm.rar + ":" + (vm.sk || "") + ":" + (vm.at || "") : "";
     if (key !== vmKey) {
       if (viewModel) cam.remove(viewModel);
       viewModel = null; vmKey = key;
-      if (vm) { viewModel = new T.Group(); const w = weaponMesh(vm.type, vm.rar); w.rotation.y = Math.PI / 2; w.scale.setScalar(0.55); viewModel.add(w); cam.add(viewModel); }
+      if (vm) { viewModel = new T.Group(); const w = weaponMesh(vm.type, vm.rar, vm.sk, vm.at); w.rotation.y = Math.PI / 2; w.scale.setScalar(0.55); viewModel.add(w); viewModel.userData.flash = w.userData.flash; cam.add(viewModel); }
     }
     if (!viewModel) return;
     viewModel.visible = !!(vm && vm.show);
@@ -1044,6 +1110,8 @@ var R3D = (function () {
     const bob = vm.bob || 0, kick = vm.kick || 0, ads = vm.ads || 0;
     viewModel.position.set(lerp(7, 0, ads) + Math.cos(bob) * 0.5, lerp(-6.5, -3.6, ads) + Math.abs(Math.sin(bob)) * 0.5 + kick * 0.8, -20 + kick * 3);
     viewModel.rotation.set(kick * 0.25, 0, 0);
+    const fl = viewModel.userData.flash; // a blink of fire at the muzzle
+    if (fl) { fl.visible = kick > 0.55 && vm.type !== "sword" && vm.type !== "staff"; if (fl.visible) { fl.rotation.x = Math.random() * 6.3; fl.scale.setScalar(0.7 + Math.random() * 0.6); } }
     if (vm.type === "sword") { const s = vm.swing ?? 1; viewModel.rotation.set(0.2, s < 1 ? 1.2 - s * 2.4 : 0.3, s < 1 ? -0.8 + s * 1.2 : 0.35); }
   }
 

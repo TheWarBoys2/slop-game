@@ -1,0 +1,11 @@
+
+  ==============================================
+     SLOP VALLEY server running on port 7844
+  ==============================================
+   You (host):      http://localhost:7844
+   Same Wi-Fi/LAN:  http://192.0.2.2:7844
+   Friends online:  http://<your public IP>:7844
+                    (forward TCP port 7844 on your router to this PC)
+   Bug reports are saved to: /home/claude/slop-game/bug-reports.txt
+   Close this window to stop the server.
+

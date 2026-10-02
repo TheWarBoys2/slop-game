@@ -16,7 +16,7 @@ const RARITY_COL = ["#d8d8d8", "#4da6ff", "#c070ff", "#ffc030", "#ff4b4b"];
 const RARITY = ["Common", "Rare", "Epic", "Legendary", "Mythic"];
 const ENH = ["", "PRI", "DUO", "TRI", "TET", "PEN"];
 const WNAME = { pistol: "Pistol", smg: "SMG", shotgun: "Shotgun", rifle: "Rifle", sniper: "Sniper", staff: "Fire Staff", ak: "AK-Maybe", laser: "Spartan Laser", sword: "Slop Sword", rocket: "Rocket Launcher" };
-const TRACER = { laser: "#ff2a2a", pistol: "#ffe9a0", smg: "#ffe9a0", shotgun: "#ffcf70", rifle: "#fff3b0", sniper: "#ffffff", staff: "#ff7a2a", ak: "#ffb0ff", rocket: "#ffb040" };
+const TRACER = { rico: "#aee8ff", laser: "#ff2a2a", pistol: "#ffe9a0", smg: "#ffe9a0", shotgun: "#ffcf70", rifle: "#fff3b0", sniper: "#ffffff", staff: "#ff7a2a", ak: "#ffb0ff", rocket: "#ffb040" };
 // ---------------------------------------------------------------- view: first person, third person, or the classic top-down map
 const VIEWS = ["fp", "tp"], VIEW_NAME = { fp: "First person", tp: "Third person" }; // top-down is gone as a playing view
 let viewMode = (() => { try { return localStorage.getItem("slop-view") || "fp"; } catch { return "fp"; } })();
@@ -88,7 +88,7 @@ setTimeout(() => { if (!joined) $("name").focus(); }, 0);
 // ---------------------------------------------------------------- network
 let WHEEL = [], COSM = {}, FREE_HATS = [], myCos = [];
 let ws, MAP = null, SHOP = null, SHOPS = {}, DOME_R = 1000, shopSid = "general", ENH_COST = [], ENH_CHANCE = [], PIECES = {}, VEH = {}, LEGENDS = {};
-let CHUNK_WALLS = [], chunkVer = 0; // the wild past the hedge, sent a chunk at a time as people explore
+let CHUNK_WALLS = [], chunkVer = 0, CHUNK_BIO = {}; // the wild past the hedge, sent a chunk at a time as people explore
 const openWorld = () => !S || S.g.mode !== "royale";
 const BWc = () => (openWorld() ? Infinity : MAP.W), BHc = () => (openWorld() ? Infinity : MAP.H);
 let ITEMS = {}, GEAR = {}, CARDS = {}, LOCS = {}, STOCKS = {}, CANDS = {}, INV = null, CROPS = {}, CROP_KEYS = [], SEED_PACK = 3;
@@ -100,8 +100,8 @@ function connect() {
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     if (m.t === "hello") { WHEEL = m.wheel || []; COSM = m.cosmetics || {}; FREE_HATS = m.freeHats || []; SHOP = m.shop; SHOPS = m.shops || {}; DOME_R = m.domeR || 1000; ENH_COST = m.enhCost; ENH_CHANCE = m.enhChance; PIECES = m.pieces || {}; VEH = m.vehicles || {}; LEGENDS = m.legends || {}; ITEMS = m.items || {}; CROPS = m.crops || {}; CROP_KEYS = Object.keys(CROPS); SEED_PACK = m.seedPack || 3; GEAR = m.gear || {}; CARDS = m.cards || {}; LOCS = m.locs || {}; STOCKS = m.stocks || {}; CANDS = m.cands || {}; renderBuildBar(); if (joined) send({ t: "join", ...choice }); return; }
-    if (m.t === "map") { const fresh = !MAP || MAP.seed !== m.map.seed; if (fresh) CHUNK_WALLS = []; MAP = m.map; MAP.walls = MAP.walls.concat(CHUNK_WALLS); MAP.cv = chunkVer; if (fresh) { buildDecor(); disp.clear(); } return; }
-    if (m.t === "ck") { if (m.reset) CHUNK_WALLS = []; CHUNK_WALLS.push(...m.walls); chunkVer++; if (MAP && MAP.seed === m.seed) { MAP.walls = MAP.walls.filter((w) => !w.ck).concat(CHUNK_WALLS); MAP.cv = chunkVer; } return; }
+    if (m.t === "map") { const fresh = !MAP || MAP.seed !== m.map.seed; if (fresh) { CHUNK_WALLS = []; CHUNK_BIO = {}; } MAP = m.map; MAP.bio = CHUNK_BIO; MAP.walls = MAP.walls.concat(CHUNK_WALLS); MAP.cv = chunkVer; if (fresh) { buildDecor(); disp.clear(); } return; }
+    if (m.t === "ck") { if (m.reset) { CHUNK_WALLS = []; for (const k in CHUNK_BIO) delete CHUNK_BIO[k]; } CHUNK_WALLS.push(...m.walls); for (const [cx, cy, kind] of m.bio || []) CHUNK_BIO[cx + "," + cy] = kind; chunkVer++; if (MAP && MAP.seed === m.seed) { MAP.walls = MAP.walls.filter((w) => !w.ck).concat(CHUNK_WALLS); MAP.cv = chunkVer; } return; }
     if (m.t === "s") onSnap(m);
   };
   ws.onclose = () => { setTimeout(connect, 1500); };
@@ -156,8 +156,8 @@ function onSnap(m) {
 }
 function handleEvent(e) {
   const t = T();
-  if (e.k === "tr") { fx.push({ kind: "tr", t0: t, dur: e.c === "laser" ? 0.6 : e.c === "sniper" ? 0.25 : use3d ? 0.12 : 0.08, col: parseInt((TRACER[e.c] || "#ffffff").slice(1), 16), ...e }); if (Math.hypot(e.x1 - pred.x - Math.cos(aimYaw) * 20, e.y1 - pred.y - Math.sin(aimYaw) * 20) < 4) lastShotT = t; const d = Math.hypot(e.x1 - pred.x, e.y1 - pred.y); if (d < 700) sfx("shot", 1 - d / 700, e.c); }
-  else if (e.k === "boom") { fx.push({ kind: "boom", t0: t, dur: 0.4, ...e }); nearShake(e, 8); sfx("boom"); }
+  if (e.k === "tr") { fx.push({ kind: "tr", t0: t, dur: e.c === "laser" ? 0.6 : e.c === "sniper" ? 0.25 : use3d ? 0.12 : 0.08, col: parseInt((TRACER[e.c] || "#ffffff").slice(1), 16), ...e }); if (e.c !== "rico" && Math.hypot(e.x1 - pred.x - Math.cos(aimYaw) * 20, e.y1 - pred.y - Math.sin(aimYaw) * 20) < 24) { lastShotT = t; ownShot(e.c, t); } const d = Math.hypot(e.x1 - pred.x, e.y1 - pred.y); if (d < 700) sfx("shot", 1 - d / 700, e.c); }
+  else if (e.k === "boom") { fx.push({ kind: "boom", t0: t, dur: e.small ? 0.25 : 0.4, ...e }); nearShake(e, e.small ? 3 : 8); sfx("boom", e.small ? 0.35 : 1); }
   else if (e.k === "shout") { const el = ELEMS[e.el] || ELEMS.force; fx.push({ kind: "shout", t0: t, dur: 0.7, ...e, text: e.text || el.word + "!", col: el.hex, c2: el.rgb }); nearShake(e, 10); sfx("shout", 1, e.el); }
   else if (e.k === "burn") fx.push({ kind: "burn", t0: t, dur: 0.8, x: e.x + (Math.random() - 0.5) * 20, y: e.y });
   else if (e.k === "trample") fx.push({ kind: "text", t0: t, dur: 1, x: e.x, y: e.y, text: e.burnt ? "burnt!" : "trampled!", color: e.burnt ? "#f84" : "#c96" });
@@ -210,7 +210,10 @@ function handlePersonal(e) {
     hitT = t; hitKind = e.kill ? "kill" : e.wk ? "wk" : e.hs ? "hs" : e.arm ? "arm" : "body";
     if (e.hs) hsT = t;
     sfx(e.wk ? "weak" : e.hs ? "hs" : e.arm ? "clank" : "hit"); if (e.kill) sfx("kill");
+    { const w = (S && S.p.find((q) => q.id === me) || {}).w; // impact frames on the hits that matter
+      if (e.wk) impactFrame("wk"); else if (e.big && e.kill) impactFrame("big"); else if (e.hs && (e.kill || !AUTO_GUNS.has(w))) impactFrame("hs"); else if (e.kill && (w === "sword" || w === "sniper" || w === "laser")) impactFrame(w === "sword" ? "big" : "hs"); }
   }
+  else if (e.k === "fitted") sfx("clank");
   else if (e.k === "lvl") { pushLim(toasts, { text: `LEVEL ${e.lvl}!  Press K to spend your skill point`, color: "#9fe0ff", t }, 4); sfx("lvl"); }
   else if (e.k === "perfect") { pushLim(toasts, { text: "PERFECT RELOAD  +20% damage this mag" + (S && S.p && (S.p.find((q) => q.id === me) || {}).w === "ak" ? ", and no more maybe" : ""), color: "#7dffb0", t }, 4); sfx("perfect"); }
   else if (e.k === "jam") { pushLim(toasts, { text: "Fumbled the reload!", color: "#ff8080", t }, 4); sfx("jam"); }
@@ -249,6 +252,38 @@ const view = { cx: 0, cy: 0, z: 1, sx: 0, sy: 0 };
 const toScr = (x, y) => ({ x: (x - view.cx) * view.z + VW / 2 + view.sx, y: (y - view.cy) * view.z + VH / 2 + view.sy });
 function myScr() { return !use3d && S && S.p.some((p) => p.id === me) ? toScr(pred.x, pred.y) : { x: VW / 2, y: VH / 2 }; }
 function pushLim(arr, v, n) { arr.push(v); while (arr.length > n) arr.shift(); }
+// ---------------------------------------------------------------- weapon feel: recoil, view punch, impact frames
+// [view punch (radians, just the camera), climb (how far it really pushes your aim up), screen shake]
+const RECOIL = { pistol: [0.035, 0.012, 2.5], smg: [0.016, 0.005, 1.4], rifle: [0.028, 0.009, 2.4], ak: [0.04, 0.013, 3], shotgun: [0.09, 0.028, 7], sniper: [0.12, 0.03, 8], staff: [0.03, 0.004, 3], rocket: [0.1, 0.02, 9], laser: [0.16, 0.03, 14] };
+const AUTO_GUNS = new Set(["smg", "ak", "rifle"]);
+const MODE_ICON = { ricochet: "↯", fire: "🔥", frost: "❄", storm: "⚡", boom: "💥" };
+const ATT_ICON = { dot: "🔴", mag: "▮▮", comp: "≋" };
+let punch = 0, punchYaw = 0, lastOwnShot = -9, impact = null, impactLast = -9;
+function ownShot(type, t) {
+  if (t - lastOwnShot < 0.02) return; // a shotgun's pellets are one shot
+  lastOwnShot = t;
+  const r = RECOIL[type]; if (!r) return;
+  const mine = S && S.p.find((q) => q.id === me), comp = mine && (mine.wat || "").includes("comp") ? 0.6 : 1, calm = (crouching() ? 0.7 : 1) * (aiming() ? 0.8 : 1);
+  punch += r[0] * comp; punchYaw += (Math.random() - 0.5) * r[0] * 0.6 * comp;
+  if (use3d) pitch = Math.min(1.45, pitch + r[1] * comp * calm);
+  shake = Math.max(shake, r[2] * comp);
+  if (PARTS[type] && type !== "shotgun") setTimeout(() => sfx("casing"), 260 + Math.random() * 120); // brass on the floor
+}
+function impactFrame(kind) {
+  const t = T();
+  if (OPTS.impact === false || t - impactLast < 0.3) return;
+  impactLast = t;
+  impact = { t0: t, until: t + (kind === "big" ? 0.11 : kind === "wk" ? 0.085 : 0.065), kind, drawn: false };
+}
+function drawImpact() { // one held, high-contrast frame: the screen stops for a blink
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const cx = use3d ? VW / 2 : mouseX, cy = use3d ? VH / 2 : mouseY, red = impact.kind === "wk";
+  ctx.fillStyle = red ? "rgba(255,40,30,0.22)" : "rgba(255,255,255,0.28)"; ctx.fillRect(0, 0, VW, VH);
+  ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.lineWidth = 3;
+  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2 + Math.random() * 0.2, r0 = Math.min(VW, VH) * (0.18 + Math.random() * 0.06); ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); ctx.lineTo(cx + Math.cos(a) * VW, cy + Math.sin(a) * VW); ctx.stroke(); }
+  ctx.strokeStyle = red ? "#ff3030" : "#fff"; ctx.lineWidth = 5;
+  for (const s of [1, -1]) { ctx.beginPath(); ctx.moveTo(cx - 22, cy - 22 * s); ctx.lineTo(cx - 8, cy - 8 * s); ctx.moveTo(cx + 8, cy + 8 * s); ctx.lineTo(cx + 22, cy + 22 * s); ctx.stroke(); }
+}
 function nearShake(e, amt) { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 500) shake = Math.max(shake, amt); }
 let shameT = -99, shameWho = null, deafT = -99, cleanOpen = false, hackOpen = false;
 let hitT = -9, hitKind = "body";
@@ -606,7 +641,8 @@ function toggleShop(force, sid) {
   if (shopOpen) { if (casinoOpen) toggleCasino(false); if (wardOpen) toggleWardrobe(false); toggleStall(false); keys.clear(); mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); renderShop(true); }
 }
 let shopTab = null, shopList = [];
-const SHOP_TABS = [["arms", "Weapons"], ["gear", "Gear"], ["food", "Food & medicine"], ["gift", "Gifts 💐"], ["veh", "Vehicles 🚁"], ["farm", "Farm & fun"], ["dome", "The Dome"]];
+const GUN_TYPES = new Set(["pistol", "smg", "shotgun", "rifle", "sniper", "ak"]);
+const SHOP_TABS = [["arms", "Weapons"], ["mods", "Attachments & skins 🔧"], ["gear", "Gear"], ["food", "Food & medicine"], ["gift", "Gifts 💐"], ["veh", "Vehicles 🚁"], ["farm", "Farm & fun"], ["dome", "The Dome"]];
 const SHOP_VOICE = { general: "vex", armoury: "haddock", casino: "lou", produce: "giles" };
 const SHOP_BLURB = {
   general: "\"Everything a body needs. Mostly tins.\" Open by day.",
@@ -619,7 +655,7 @@ let shopSig = "";
 function renderShop(force) {
   if (!SHOP) return;
   const mine = S?.p.find((p) => p.id === me);
-  const sig = JSON.stringify([shopSid, shopTab, mine && mine.g, mine && mine.we, mine && mine.hoe, mine && mine.wn, S && S.g.dome, casinoState.spins, INV && INV.bag.length]);
+  const sig = JSON.stringify([shopSid, shopTab, mine && mine.g, mine && mine.we, mine && mine.hoe, mine && mine.wn, mine && mine.wat, mine && mine.wsk, S && S.g.dome, casinoState.spins, INV && INV.bag.length]);
   if (sig === shopSig && !force) return; // only redraw when something changed, so clicks don't land on a vanished button
   shopSig = sig;
   const tabs = SHOP_TABS.filter(([k]) => Object.values(SHOP).some((it) => it.shop === shopSid && (it.cat || "arms") === k));
@@ -645,6 +681,10 @@ function renderShop(force) {
       const h = mine.hoe || 0;
       if (h >= 3) { label = "Golden Hoe (maxed): till 12 plots, two at a time"; cost = "MAX"; }
       else { label = h ? `Upgrade to ${["", "Hoe", "Steel Hoe", "Golden Hoe"][h + 1]}: ${3 + 3 * (h + 1)} plots, faster crops, better harvests` : "Hoe: press F to hold it, then click open ground to till new plots"; cost = Math.round([40, 90, 160][h] * disc) + "g"; }
+    }
+    if (it.cat === "mods" && mine) { // what's already on the gun in your hands
+      const on = id.startsWith("att_") ? (mine.wat || "").split(",").includes(id.slice(4)) : mine.wsk === id.slice(5);
+      if (!GUN_TYPES.has(mine.w)) label += ` (hold a gun)`; else if (on) { label += ` ✔ on your ${mine.wn}`; cost = "FITTED"; }
     }
     const d = document.createElement("div");
     const price = parseInt(cost, 10); // can't afford it (or it's maxed out): greyed, and the price goes red
@@ -756,6 +796,8 @@ function zombieSounds(t) {
   const [z, d] = near[(Math.random() * near.length) | 0];
   sfx("moan", Math.max(0.15, 1 - d / 750), z[1]);
 }
+// [crack length, crack pitch, thump pitch, thump length, thump volume, tail length]
+const SHOT_SND = { pistol: [0.08, 1200, 160, 0.12, 0.5, 0.15], smg: [0.06, 1500, 140, 0.08, 0.32, 0.08], rifle: [0.1, 900, 120, 0.15, 0.6, 0.25], ak: [0.11, 800, 105, 0.16, 0.65, 0.25], shotgun: [0.22, 500, 85, 0.26, 0.7, 0.4], sniper: [0.3, 300, 65, 0.36, 0.7, 0.6], staff: [0.05, 2000, 200, 0.1, 0.2, 0], laser: [0.2, 600, 55, 0.5, 0.7, 0.5], rocket: [0.25, 300, 60, 0.3, 0.7, 0.5] };
 function sfx(kind, vol = 1, sub) {
   if (!actx) return;
   const t = actx.currentTime;
@@ -772,7 +814,13 @@ function sfx(kind, vol = 1, sub) {
     const gg = actx.createGain(); gg.gain.value = v; src.connect(f); f.connect(gg); gg.connect(g); src.start(t);
   };
   g.gain.value = 0.35 * OPTS.vol * (T() - deafT < 3 ? 0.35 : 1);
-  if (kind === "shot") { noise(sub === "sniper" ? 0.35 : sub === "shotgun" ? 0.25 : 0.09, 0.5 * vol, sub === "sniper" ? 300 : 900); if (sub === "staff") tone("sawtooth", 300, 80, 0.2, 0.2 * vol); if (sub === "laser") tone("sawtooth", 1400, 120, 0.5, 0.35 * vol); }
+  if (kind === "shot" && sub === "rico") { tone("sine", 2600, 900, 0.2, 0.16 * vol); noise(0.04, 0.2 * vol, 3000); }
+  else if (kind === "shot") { // a crack, a thump you feel, and a tail that rolls off
+    const P = SHOT_SND[sub] || SHOT_SND.pistol;
+    noise(P[0], 0.55 * vol, P[1]); tone("sine", P[2], 35, P[3], P[4] * vol); if (P[5]) noise(P[5], 0.14 * vol, 180);
+    if (sub === "staff") tone("sawtooth", 300, 80, 0.2, 0.2 * vol); if (sub === "laser") tone("sawtooth", 1400, 120, 0.5, 0.35 * vol);
+  }
+  else if (kind === "casing") { tone("triangle", 3300, 2900, 0.05, 0.045); tone("triangle", 2600, 2400, 0.04, 0.03); }
   else if (kind === "hit") tone("square", 220, 120, 0.05, 0.08);
   else if (kind === "hs") { tone("sine", 1760, 1760, 0.18, 0.35); tone("sine", 2640, 2640, 0.12, 0.15); }
   else if (kind === "weak") { tone("sine", 2093, 2093, 0.2, 0.35); tone("sawtooth", 520, 260, 0.12, 0.2); noise(0.08, 0.3, 2000); }
@@ -874,7 +922,7 @@ function hush() { try { if ("speechSynthesis" in window && !shameSpeaking()) spe
 const shameSpeaking = () => T() - shameT < 4;
 
 // ---------------------------------------------------------------- options
-const OPTS = { vol: 1, music: 0.5, sens: 1, fov: 80, invert: false, shake: true, voices: true, crouchHold: false };
+const OPTS = { vol: 1, music: 0.5, sens: 1, fov: 80, invert: false, shake: true, impact: true, voices: true, crouchHold: false };
 try { Object.assign(OPTS, JSON.parse(localStorage.getItem("slop-opts") || "{}")); } catch {}
 let optsOpen = false;
 function saveOpts() { try { localStorage.setItem("slop-opts", JSON.stringify(OPTS)); } catch {} }
@@ -902,6 +950,7 @@ function renderOptions() {
     row("fov", "Field of view", 60, 110, 1, OPTS.fov, (v) => v + "°") +
     `<div class="opt"><label><input type="checkbox" id="o-invert"${OPTS.invert ? " checked" : ""}> Invert mouse Y</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-shake"${OPTS.shake ? " checked" : ""}> Screen shake</label></div>` +
+    `<div class="opt"><label><input type="checkbox" id="o-impact"${OPTS.impact ? " checked" : ""}> Impact frames (a split-second freeze on big hits)</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-voices"${OPTS.voices ? " checked" : ""}> NPC voices (the townsfolk talk out loud)</label></div>` +
     `<div class="opt"><label>View</label><span>${VIEW_NAME[viewMode] || "First person"} (press T to switch)</span></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-crouch"${OPTS.crouchHold ? " checked" : ""}> Hold CTRL to crouch / dive (off: tap CTRL to toggle)</label></div>` +
@@ -925,6 +974,7 @@ function renderOptions() {
     }, 50);
   };
   $("o-shake").onchange = (e) => { OPTS.shake = e.target.checked; saveOpts(); };
+  $("o-impact").onchange = (e) => { OPTS.impact = e.target.checked; saveOpts(); };
   $("o-crouch").onchange = (e) => { OPTS.crouchHold = e.target.checked; crouchOn = false; saveOpts(); };
   $("o-voices").onchange = (e) => { OPTS.voices = e.target.checked; saveOpts(); if (OPTS.voices) speakNpc("grubb", "\"Splendid. Can you hear me? Splendid.\""); else hush(); };
 }
@@ -1478,6 +1528,11 @@ function render3d(mine, t, dt) {
     const px = cam.x + d[0] * hitT, py = cam.y + d[1] * hitT, pz = cam.z + d[2] * hitT;
     aimYaw = Math.atan2(py - eye.y, px - eye.x); aimPitch = Math.atan2(pz - (eye.z - 6), Math.hypot(px - eye.x, py - eye.y));
   }
+  punch -= punch * Math.min(1, dt * 14); punchYaw -= punchYaw * Math.min(1, dt * 14); shake *= Math.pow(0.001, dt);
+  if (cam.yaw !== undefined && !cam.look) { // recoil kicks the camera; shake rattles it
+    const j = OPTS.shake ? shake * 0.0022 : 0;
+    cam = { ...cam, yaw: cam.yaw + punchYaw + (Math.random() - 0.5) * j, pitch: cam.pitch + punch + (Math.random() - 0.5) * j };
+  }
   camNow = cam;
   // what you're about to build
   let ghost = null;
@@ -1492,7 +1547,7 @@ function render3d(mine, t, dt) {
   // expire effects (the 2D renderer normally does this)
   for (let i = fx.length - 1; i >= 0; i--) if ((t - fx[i].t0) / fx[i].dur >= 1) fx.splice(i, 1);
   const sl = slashT.get(me), moving = Math.hypot(pred.vx, pred.vy) > 30 && pred.gr;
-  const vm = ownView && mine && !mine.d && !scoped ? { type: mine.w, rar: mine.wr, show: true, kick: Math.max(0, 1 - (t - lastShotT) / 0.12), bob: moving ? t * 11 : 0, ads: adsK, swing: sl ? Math.min(1, (t - sl) / 0.25) : 1 } : null;
+  const vm = ownView && mine && !mine.d && !scoped ? { type: mine.w, rar: mine.wr, sk: mine.wsk, at: mine.wat, show: true, kick: Math.max(0, 1 - (t - lastShotT) / 0.12), bob: moving ? t * 11 : 0, ads: adsK, swing: sl ? Math.min(1, (t - sl) / 0.25) : 1 } : null;
   R3D.frame({ S, MAP, t, dt, me, pred, aimYaw, aimPitch, fp: ownView, cam, fx, messes, hearthHitT, ghost, vm, slashT, nukeFx, cropKeys: CROP_KEYS, domeR: DOME_R });
   overlay3d(mine, t, dt);
   if (scoped && ownView) { // scope overlay: black outside the lens, fine crosshair inside
@@ -1579,6 +1634,7 @@ let frameNo = 0, lastFrame = T();
 const dark = document.createElement("canvas"), dctx = dark.getContext("2d");
 function render() {
   requestAnimationFrame(render);
+  if (impact && T() < impact.until) { if (!impact.drawn) { impact.drawn = true; drawImpact(); } return; } // impact frame: hold the picture
   const t = T(), dt = Math.min(0.05, t - lastFrame); lastFrame = t; frameNo++;
   drawWheel(t);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -2303,11 +2359,11 @@ function drawHud(mine, t) {
   const sc = mine.sc;
   const shEl = ELEMS[mine.el] || ELEMS.force;
   text(sc > 0 ? `Q  shout ${Math.ceil(sc)}s` : `Q  ${shEl.word} ready`, 24, VH - 22, 13, sc > 0 ? "#888" : shEl.color, "left");
-  // bottom right: weapon
+  // bottom right: weapon (with its firing mode and attachments)
   ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW - 312, VH - 128, 300, 116, 10); ctx.fill();
   const wn = `${mine.we ? ENH[mine.we] + " " : ""}${mine.wn}`;
   text(wn, VW - 24, VH - 80, 20, RARITY_COL[mine.wr], "right");
-  text(`${RARITY[mine.wr]}${mine.we ? `  +${mine.we}` : ""}`, VW - 24, VH - 58, 13, RARITY_COL[mine.wr], "right");
+  text(`${mine.wmo ? `${MODE_ICON[mine.wmo] || ""} ${mine.we >= 4 ? "OVERCHARGED · " : ""}` : ""}${(mine.wat || "").split(",").filter(Boolean).map((a) => ATT_ICON[a]).join(" ")}${mine.wat ? "  " : ""}${RARITY[mine.wr]}${mine.we ? `  +${mine.we}` : ""}`, VW - 24, VH - 58, 13, RARITY_COL[mine.wr], "right");
   const busy = mine.rl > 0 || mine.jam;
   text(mine.jam ? "JAMMED" : mine.rl > 0 ? "RELOADING" : mine.w === "sword" ? "∞" : `${mine.am}`, VW - 24, VH - 32, busy ? 18 : 28, mine.jam ? "#ff8060" : mine.am === 0 ? "#f55" : mine.hot ? "#7dffb0" : "#fff", "right");
   if (mine.hot && !busy) text("EMPOWERED", VW - 70, VH - 32, 12, "#7dffb0", "right");
