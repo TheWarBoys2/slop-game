@@ -116,7 +116,7 @@ const hoeLimit = (lvl) => 3 + 3 * lvl;
 const bunkerWall = () => WALLS.find((w) => w.kind === "bunker");
 const WALL_HP = { house: 1100, fence: 160, crate: 180, tree: 320, rock: 800, hwall: 1, furn: 60 };
 const WOODEN = new Set(["house", "fence", "crate", "tree", "hwall", "furn"]);
-let wallId = 1, mapVer = 0, mapDirty = false, PITCH = null, LAKE = null, LAKE_SOLID = [];
+let wallId = 1, mapVer = 0, mapDirty = false, PITCH = null, LAKE = null, LAKE_SOLID = [], BOOSTS = [];
 const LAKE_D = 260; // how deep the lake is
 const inHouse = (p) => WALLS.some((w) => w.kind === "house" && p.x > w.x && p.x < w.x + w.w && p.y > w.y && p.y < w.y + w.h);
 const BALL = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, last: 0, resetAt: 0 };
@@ -201,6 +201,9 @@ function generateMap(seed) {
     return out;
   };
   const group = (list, pad) => { if (list.every((r) => !overlaps(r, pad))) { walls.push(...list); return true; } return false; };
+  // speed boosters on the two main roads: out from the Hearth near the middle, back in towards it further out
+  for (const [d, out] of [[450, 1], [1000, 0]]) for (const [dx, dy] of [[0, -1], [0, 1]]) group([{ x: W / 2 - 30 + dx * d, y: H / 2 - 30 + dy * d, w: 60, h: 60, kind: "boost", a: Math.atan2(out ? dy : -dy, out ? dx : -dx), z0: 0, z1: 2 }], 6);
+  for (const [d, out] of [[650, 1], [1300, 0]]) for (const [dx, dy] of [[-1, 0], [1, 0]]) group([{ x: W / 2 - 30 + dx * d, y: H / 2 - 30 + dy * d, w: 60, h: 60, kind: "boost", a: Math.atan2(out ? dy : -dy, out ? dx : -dx), z0: 0, z1: 2 }], 6);
   for (let i = 0, tries = 0; i < 3 + ((rng() * 3) | 0) && tries < 400; tries++) { // pairs of towers with a catwalk between them
     const top = Math.round(R(170, 230)), tw = 76, gap = Math.round(R(220, 420)), horiz = rng() < 0.5;
     const ax = R(100, W - 700), ay = R(100, H - 600);
@@ -246,7 +249,7 @@ function generateMap(seed) {
   walls.forEach((w, i) => { w.id = i + 1; const hp = WALL_HP[w.kind]; if (hp) w.hp = w.maxHp = hp; });
   for (const w of walls) if (w.house) { w.hid = w.house.id; delete w.house; }
   wallId = walls.length + 1;
-  WALLS = walls; mapVer++; CHUNKS.clear();
+  WALLS = walls; mapVer++; CHUNKS.clear(); BOOSTS = walls.filter((w) => w.kind === "boost");
   CASINO = walls.find((w) => w.sid === "casino");
   KEEPERS = [KEEPERS[0], { id: "lou", sid: "casino", name: "Lucky Lou", role: "The Golden Slop. Cases, the wheel, the tables.", color: "#c03050", hat: "tophat", x: CASINO.x + CASINO.w / 2 + 50, y: CASINO.y + CASINO.h + 22, hours: "always" }];
 }
@@ -596,7 +599,7 @@ function resetProgress(p) {
   p.gen = 1; p.lineage = []; p.trait = p.chosenTrait || p.rolled || pick(TRAIT_KEYS); p.rolled = null; p.champion = false; p.heat = 0; p.dead = false;
   p.st = { kills: 0, deaths: 0, dmg: 0, crops: 0, tk: 0, gold: 0, bounty: 0, shots: 0, hits: 0, hs: 0, perfect: 0, cases: 0, shoutHits: 0, repairs: 0, pk: 0 };
   p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.pod = false; p.veh = 0; p.spins = 0; p.casino = null; p.spinning = false;
-  p.bl = 0; p.bw = 0; p.going = 0; p.goKind = ""; p.inf = null; p.immune = 0; p.streak = 0; p.soggy = 0; p.ads = false;
+  p.bl = 0; p.bw = 0; p.going = 0; p.goKind = ""; p.inf = null; p.immune = 0; p.streak = 0; p.stam = 100; p.soggy = 0; p.ads = false;
   p.hoe = p.cls === "farmer" ? 1 : 0; p.stress = 0; p.meltdown = 0; p.elem = "force";
   p.love = {}; p.dating = null; p.spouse = null; p.gifted = new Set(); p.breath = 15;
   p.bag = [{ id: "bread", n: 2 }, { id: "water", n: 2 }, { id: "bandage", n: 1 }]; p.gear = {};
@@ -655,7 +658,7 @@ function speedOf(p) {
   if (inAura(p)) s *= 1.1;
   if (p.weapons[p.active]?.type === "sniper") s *= 0.85;
   if (p.ads) s *= 0.6;
-  if (crouched(p)) s *= 0.5;
+  // (crouching halves it inside MV.step, so prediction and the server agree)
   if (now() < p.soggy) s *= 0.8;
   if (wading(p)) s *= 0.55;
   if (p.swim) s *= 1 + gearSum(p.gear, "swim"); else s *= Math.max(0.5, 1 + gearSum(p.gear, "speed"));
@@ -1602,6 +1605,28 @@ function doDodge(p) {
   const spd = Math.max(Math.hypot(p.vx, p.vy), speedOf(p) * 2.7); // works in the air too: an air dash
   p.vx = dx * spd; p.vy = dy * spd; if (!p.gr && p.vz < 0) p.vz = 0;
   p.dashUntil = t + 0.18; p.dashCd = t + (p.cls === "rogue" ? 0.8 : 1.3);
+}
+
+// ---------------------------------------------------------------- movement extras: stamina and slide tackles
+// (the movement itself is in public/move.js, shared with the browser)
+const STAM_DRAIN = 18, STAM_REGEN = 26;
+function moveTick(p, t, dt) {
+  if (p.sprint) { p.stam = Math.max(0, p.stam - STAM_DRAIN * dt * (1 - 0.12 * sk(p, "fleet"))); p.sprintAt = t; }
+  else if (t - (p.sprintAt || 0) > 0.6) p.stam = Math.min(100, p.stam + STAM_REGEN * dt);
+  if (p.slide > 0 && Math.hypot(p.vx, p.vy) > 200) { // sliding into the dead takes their legs out
+    for (const z of zombies) {
+      if (z.hp <= 0 || (z.kd || 0) > t || Math.abs((z.z || 0) - p.z) > 30 || dist2(z, p) > (20 + z.r) ** 2) continue;
+      const big = z.r >= 26;
+      z.stun = Math.max(z.stun || 0, t + (big ? 0.35 : 1.1)); if (!big) z.kd = t + 1.1;
+      z.vx += p.vx * (big ? 0.15 : 0.6); z.vy += p.vy * (big ? 0.15 : 0.6);
+      hurtZombie(z, 12, p, "");
+      events.push({ k: "kd", x: Math.round(z.x), y: Math.round(z.y) });
+    }
+  }
+}
+// speed boosters fling the dead too
+function boostZombies(t) {
+  for (const b of BOOSTS) for (const z of zombies) if ((z.z || 0) < 10 && z.x > b.x && z.x < b.x + b.w && z.y > b.y && z.y < b.y + b.h && !((z.boosted || 0) > t)) { z.vx = Math.cos(b.a) * 800; z.vy = Math.sin(b.a) * 800; z.boosted = t + 0.6; }
 }
 
 // ---------------------------------------------------------------- Vex's Casino (in-game gold only)
@@ -3227,8 +3252,11 @@ function tick() {
     const veh = vehOf(p);
     if (p.veh && !veh) p.veh = 0;
     if (!veh) {
-      const ev = MV.step(p, { keys: p.keys, yaw: p.a, rel: p.rel }, dt, { sp: speedOf(p), boxes: near(p), W: BW(), H: BH(), frozen: t < p.going || !!p.dlg || !!p.cg || t < p.frozen || game.phase === "lobby" });
+      if (p.stam === undefined) p.stam = 100;
+      const ev = MV.step(p, { keys: p.keys, yaw: p.a, rel: p.rel }, dt, { sp: speedOf(p), boxes: near(p), W: BW(), H: BH(), frozen: t < p.going || !!p.dlg || !!p.cg || t < p.frozen || game.phase === "lobby", canSprint: !p.firing && !p.ads, stam: p.stam, wrLen: 0.9 + 0.2 * sk(p, "fleet"), airJumps: 1 });
       if (ev === "pad") events.push({ k: "pad", x: Math.round(p.x), y: Math.round(p.y) });
+      else if (ev) events.push({ k: "mv", id: p.id, m: ev, x: Math.round(p.x), y: Math.round(p.y) }); // so everyone hears the slide, the boost, the wall jump
+      moveTick(p, t, dt);
       breathe(p, t, dt);
       if (p.z > 1400) p.z = 1400;
     } else { p.z = (veh.z || 0) + (veh.seats[1] === p.id ? 8 : VEHICLES[veh.kind].air ? 4 : 0); p.vz = 0; p.vx = 0; p.vy = 0; p.gr = !VEHICLES[veh.kind].air || !veh.z; }
@@ -3243,7 +3271,7 @@ function tick() {
     if (w.chargeAt && (!p.firing || w.ammo <= 0 || w.reloadUntil)) w.chargeAt = 0; // let go and the charge fizzles
     if (p.hoeOut && (!p.hoe || p.veh || p.swim)) p.hoeOut = false;
     if (p.firing && p.hoeOut && !p.dlg && t >= (p.tillAt || 0)) { p.tillAt = t + 0.5; till(p); } // the hoe's out: clicking digs, it doesn't shoot
-    else if (p.firing && !p.dlg && !p.cg && !p.cleaning && !(t < p.going) && !(t < p.meltdown) && !(veh && veh.seats[0] === p.id) && playing && t >= w.nextShot) {
+    else if (p.firing && !p.sprint && !(t < (p.sprintAt || 0) + 0.12) && !p.dlg && !p.cg && !p.cleaning && !(t < p.going) && !(t < p.meltdown) && !(veh && veh.seats[0] === p.id) && playing && t >= w.nextShot) {
       if (w.reloadUntil) { /* busy reloading */ }
       else if (w.jam) { w.nextShot = t + 0.4; p.pe.push({ k: "click" }); }
       else if (w.ammo > 0 && WEAPONS[w.type].charge && !(w.chargeAt && t - w.chargeAt >= WEAPONS[w.type].charge)) {
@@ -3270,6 +3298,7 @@ function tick() {
   // zombies
   const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
   const B = BOSSES[game.bossKind];
+  boostZombies(t);
   for (const z of zombies) {
     const def = ZTYPES[z.type];
     if (z.burn) { z.hp -= z.maxHp * 0.35 * dt; if (Math.random() < dt * 3) events.push({ k: "burn", x: z.x, y: z.y }); continue; }
@@ -3314,6 +3343,7 @@ function tick() {
     else if (t < (z.slowUntil || 0)) sp *= 0.5; // cryo rounds
     if (t < z.frozen) { z.atk = Math.max(z.atk, z.frozen); }
     const ox = z.x, oy = z.y;
+    if (t < (z.kd || 0)) sp = 0; // knocked flat by a slide
     z.x += (dx * sp + z.vx) * dt; z.y += (dy * sp + z.vy) * dt;
     z.vx *= Math.pow(0.03, dt); z.vy *= Math.pow(0.03, dt);
     const touchingHearth = game.mode !== "royale" && z.z < HEARTH.z1 && z.x + z.r > HEARTH.x - 4 && z.x - z.r < HEARTH.x + HEARTH.w + 4 && z.y + z.r > HEARTH.y - 4 && z.y - z.r < HEARTH.y + HEARTH.h + 4;
@@ -3432,12 +3462,12 @@ function snapshot() {
         jam: w.jam ? 1 : 0, dirt: Math.round(w.dirt || 0), cln: p.cleaning ? 1 : 0,
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
         lv: p.lvl, xp: p.xp, xn: xpNeed(p.lvl), pts: p.pts, sk: p.sk, ch: p.champion ? 1 : 0,
-        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? (p.pod ? 4 : 2) : p.air === "bunker" ? 3 : 0, gr: SLOTS.map((k) => (p.gear[k] ? p.gear[k].id : "")), fd: Math.round(p.food), wt: Math.round(p.water), rad: Math.round(p.rad), dr: p.drunk > 5 ? 1 : 0, cg: p.cg ? 1 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", imm: Math.max(0, Math.round((p.immune || 0) - t)), wm: p.warm ? 1 : 0, il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, cro: crouched(p) ? 1 : 0, out: p.out ? 1 : 0, pk: p.st.pk, ks: p.streak || 0, ss: r(p.stress || 0), br: Math.ceil(p.breath ?? 15), sw: p.swim ? 1 : 0, lo: p.love, ro: [p.dating || "", p.spouse || ""], el: p.elem || "force", els: elemsFor(p).join(","), fz: p.frozen > t ? 1 : 0, dl: p.dlg ? 1 : 0, md: p.meltdown > t ? 1 : 0, hoe: p.hoe || 0, ho: p.hoeOut ? 1 : 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
+        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? (p.pod ? 4 : 2) : p.air === "bunker" ? 3 : 0, gr: SLOTS.map((k) => (p.gear[k] ? p.gear[k].id : "")), fd: Math.round(p.food), wt: Math.round(p.water), rad: Math.round(p.rad), dr: p.drunk > 5 ? 1 : 0, cg: p.cg ? 1 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", imm: Math.max(0, Math.round((p.immune || 0) - t)), wm: p.warm ? 1 : 0, il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, cro: crouched(p) ? 1 : 0, spr: p.sprint ? 1 : 0, sli: p.slide > 0 ? 1 : 0, wr: p.wr > 0 ? (p.wn[0] * Math.sin(p.a) - p.wn[1] * Math.cos(p.a) > 0 ? 1 : -1) : 0, sta: Math.round(p.stam ?? 100), out: p.out ? 1 : 0, pk: p.st.pk, ks: p.streak || 0, ss: r(p.stress || 0), br: Math.ceil(p.breath ?? 15), sw: p.swim ? 1 : 0, lo: p.love, ro: [p.dating || "", p.spouse || ""], el: p.elem || "force", els: elemsFor(p).join(","), fz: p.frozen > t ? 1 : 0, dl: p.dlg ? 1 : 0, md: p.meltdown > t ? 1 : 0, hoe: p.hoe || 0, ho: p.hoeOut ? 1 : 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
         nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
         k: p.st.kills, de: p.st.deaths, cr: p.st.crops, tk: p.st.tk, hs: p.st.hs, acc: p.st.shots ? Math.round(p.st.hits / p.st.shots * 100) : 0,
       };
     }),
-    z: zombies.map((z) => [z.id, zCode(z), r(z.x), r(z.y), r((z.hp / z.maxHp) * 100), z.burn || z.fireUntil > t ? 1 : 0, r(z.z), z.wind > t || z.charge > t ? 1 : 0, z.frozen > t ? 1 : 0, z.glow ? 1 : 0, z.armHp > 0 ? 1 : 0]),
+    z: zombies.map((z) => [z.id, zCode(z), r(z.x), r(z.y), r((z.hp / z.maxHp) * 100), z.burn || z.fireUntil > t ? 1 : 0, r(z.z), z.wind > t || z.charge > t ? 1 : 0, z.frozen > t ? 1 : 0, z.glow ? 1 : 0, z.armHp > 0 ? 1 : 0, z.kd > t ? 1 : 0]),
     ball: PITCH && (BALL.x || BALL.y) ? [r(BALL.x), r(BALL.y), r(BALL.z)] : null,
     pr: projs.map((q) => [q.id, q.kind, r(q.x), r(q.y), r(q.z)]),
     fi: [...fires.values()].map((f) => [f.cx, f.cy, r(f.z)]),

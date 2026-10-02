@@ -251,6 +251,15 @@ var R3D = (function () {
     } else if (w.kind === "ledge") {
       tgt.add(at(box(w.w, w.h, hgt, mat(0x6a6a74)), cx, cy, (z0 + z1) / 2));
       tgt.add(at(box(w.w + 2, w.h + 2, 2, mat(0x7dffb0, 0x2a9a60)), cx, cy, z0 + 1));
+    } else if (w.kind === "boost") { // a speed booster: a dark plate with glowing arrows that chase along it
+      const g = new T.Group(); g.add(mesh(new T.BoxGeometry(w.w, 2, w.h), mat(0x2a2a34), 0, 1, 0));
+      const arrows = [];
+      for (let i = 0; i < 3; i++) {
+        const sh = new T.Shape(); sh.moveTo(-6, -14); sh.lineTo(8, 0); sh.lineTo(-6, 14); sh.lineTo(-12, 14); sh.lineTo(2, 0); sh.lineTo(-12, -14);
+        const a = mesh(new T.ShapeGeometry(sh), new T.MeshBasicMaterial({ color: 0xff9a20, transparent: true, side: T.DoubleSide, depthWrite: false }), (i - 1) * 16, 2.3, 0); a.rotation.x = -Math.PI / 2; g.add(a); arrows.push(a);
+      }
+      g.rotation.y = -(w.a || 0); g.userData.arrows = arrows; at(g, cx, cy, 0); tgt.add(g);
+      (level.userData.boosts = level.userData.boosts || []).push(g);
     } else if (w.kind === "pad") {
       const p = mesh(new T.CylinderGeometry(w.w / 2, w.w / 2 + 3, 5, 20), mat(0x40e0ff, 0x1090c0), 0, 2.5, 0);
       const ring = mesh(new T.TorusGeometry(w.w / 2 - 4, 2.5, 6, 24), basic(0xbff8ff, 0.8), 0, 6, 0); ring.rotation.x = Math.PI / 2;
@@ -753,6 +762,7 @@ var R3D = (function () {
       }
     }
     if (level.userData.well) { const s = level.userData.well.userData.slop; s.material.emissiveIntensity = 0.6 + Math.sin(t * 2) * 0.3; level.userData.well.visible = S.g.mode !== "royale"; }
+    for (const bo of level.userData.boosts || []) bo.userData.arrows.forEach((a, i) => { a.material.opacity = 0.35 + 0.65 * Math.max(0, Math.sin(t * 9 - i * 1.2)); });
     for (const pd of level.userData.pads || []) { const k = (t * 1.5) % 1; pd.userData.ring.position.y = 6 + k * 40; pd.userData.ring.material.opacity = 0.8 * (1 - k); }
 
     // plots
@@ -862,7 +872,7 @@ var R3D = (function () {
     // the dead
     const bk = S.g.bk;
     for (const zz of S.z) {
-      const [id, type, zx, zy, zhp, burn, zh, charging, frozen, glow, armd] = zz;
+      const [id, type, zx, zy, zhp, burn, zh, charging, frozen, glow, armd, kd] = zz;
       const e = pooled(`z:${id}:${type}:${type === "b" ? bk : ""}:${glow ? 1 : 0}`, () => zombieMesh(type, bk, glow));
       const px = e.x, py = e.y;
       smoothTo(e, zx, zy, zh || 0, dt);
@@ -880,6 +890,8 @@ var R3D = (function () {
       const fk = e.hitT ? Math.max(0, 1 - (t - e.hitT) / 0.18) : 0;
       if (charging) { e.obj.userData.arms.forEach((a) => { a.rotation.z = 0.5; }); e.obj.rotation.z = -0.25; } else e.obj.rotation.z = fk * 0.32;
       e.obj.scale.set(1 + fk * 0.08, 1 - fk * 0.1, 1 + fk * 0.08);
+      e.kdK = lerp(e.kdK || 0, kd ? 1 : 0, Math.min(1, dt * (kd ? 14 : 4))); // slid into: flat on its back
+      if (e.kdK > 0.01) e.obj.rotation.z = e.kdK * 1.45;
       // armour plates, and the weak spot that glows red (the head; on a charger, its back)
       if (armd && !e.obj.userData.plate) {
         const r = ZR[type] || 15, h = r * 3.7, g = new T.Group(), steel = mat(0x7a828a);
@@ -1000,7 +1012,7 @@ var R3D = (function () {
       e.obj.visible = !(mine && st.fp) && !p.vh;
       const body = e.obj.userData.body;
       body.scale.y = p.go ? 0.72 : p.cro ? 0.7 : 1;
-      body.rotation.z = p.sw ? lerp(body.rotation.z, -1.25, Math.min(1, dt * 6)) : lerp(body.rotation.z, 0, Math.min(1, dt * 8)); // swimming: flat out
+      body.rotation.z = lerp(body.rotation.z, p.sw ? -1.25 : p.sli ? 0.85 : p.spr ? -0.28 : 0, Math.min(1, dt * (p.sw ? 6 : 10))); // swimming: flat out; sprinting leans in; sliding leans back
       body.position.y = p.sw ? 22 : 0;
       const walk = p.sw ? 1 : Math.min(1, e.sp / 120), wt = (e.wt = (e.wt || 0) + dt * (p.sw ? 7 : 4 + e.sp / 30));
       e.obj.userData.legs.forEach((l, i) => { l.rotation.z = Math.sin(wt + i * Math.PI) * 0.7 * walk; });
@@ -1091,6 +1103,7 @@ var R3D = (function () {
     at(cam, c.x, c.y, c.z);
     if (c.look) cam.lookAt(c.look[0], c.look[2], c.look[1]);
     else cam.lookAt(c.x + Math.cos(c.yaw) * Math.cos(c.pitch), c.z + Math.sin(c.pitch), c.y + Math.sin(c.yaw) * Math.cos(c.pitch));
+    if (c.roll) cam.rotateZ(c.roll); // wall-running tilts the world
     updateViewModel(st, t);
     R.render(scene, cam);
   }
@@ -1107,9 +1120,12 @@ var R3D = (function () {
     if (!viewModel) return;
     viewModel.visible = !!(vm && vm.show);
     if (!vm) return;
-    const bob = vm.bob || 0, kick = vm.kick || 0, ads = vm.ads || 0;
-    viewModel.position.set(lerp(7, 0, ads) + Math.cos(bob) * 0.5, lerp(-6.5, -3.6, ads) + Math.abs(Math.sin(bob)) * 0.5 + kick * 0.8, -20 + kick * 3);
-    viewModel.rotation.set(kick * 0.25, 0, 0);
+    const bob = vm.bob || 0, kick = vm.kick || 0, ads = vm.ads || 0, spr = vm.spr || 0, sli = vm.sli || 0, man = vm.man || 0;
+    // reloading: tip the gun over, drop the mag out, slap a new one in and bring it back up
+    const rl = vm.rl || 0, rk = rl > 0 ? Math.sin(Math.min(1, rl) * Math.PI) : 0, slap = rl > 0.45 && rl < 0.6 ? Math.sin((rl - 0.45) / 0.15 * Math.PI) : 0;
+    const low = Math.max(spr, man) * (1 - ads); // sprinting (or climbing) lowers the gun
+    viewModel.position.set(lerp(7, 0, ads) + Math.cos(bob) * 0.5 + low * 2 - sli * 2, lerp(-6.5, -3.6, ads) + Math.abs(Math.sin(bob)) * 0.5 + kick * 0.8 - low * 4 - rk * 3 + slap * 1.2, -20 + kick * 3 + low * 2);
+    viewModel.rotation.set(kick * 0.25 - low * 0.5 - rk * 0.25, low * 0.6, rk * 0.9 + sli * 0.35);
     const fl = viewModel.userData.flash; // a blink of fire at the muzzle
     if (fl) { fl.visible = kick > 0.55 && vm.type !== "sword" && vm.type !== "staff"; if (fl.visible) { fl.rotation.x = Math.random() * 6.3; fl.scale.setScalar(0.7 + Math.random() * 0.6); } }
     if (vm.type === "sword") { const s = vm.swing ?? 1; viewModel.rotation.set(0.2, s < 1 ? 1.2 - s * 2.4 : 0.3, s < 1 ? -0.8 + s * 1.2 : 0.35); }

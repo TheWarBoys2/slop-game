@@ -185,6 +185,8 @@ function handleEvent(e) {
   else if (e.k === "scream") { fx.push({ kind: "shout", t0: t, dur: 1.2, x: e.x, y: e.y, z: e.z, a: 0, full: true, col: 0xff4040 }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 900) sfx("scream"); }
   else if (e.k === "glass") { fx.push({ kind: "boom", t0: t, dur: 0.35, x: e.x, y: e.y, z: e.z, r: 50, col: 0xffa030, c2: "255,160,48" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx("glass"); }
   else if (e.k === "throw") { if (Math.hypot((S?.p.find((p) => p.id === e.id)?.x ?? 1e9) - pred.x, (S?.p.find((p) => p.id === e.id)?.y ?? 1e9) - pred.y) < 600) sfx("throw"); }
+  else if (e.k === "mv") { if (e.id !== me && Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx(e.m === "slide" ? "slide" : e.m === "boost" ? "boost" : e.m === "mantle" || e.m === "wallrun" ? "step" : "whoosh", 0.5); }
+  else if (e.k === "kd") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) { sfx("hit"); sfx("kick", 0.7); } }
   else if (e.k === "pad") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("perfect", 0.6); }
   else if (e.k === "splash") { fx.push({ kind: "boom", t0: t, dur: 0.6, x: e.x, y: e.y, z: -12, r: 40, dust: true, col: 0xbfe8ff, c2: "190,230,255" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("splash"); }
   else if (e.k === "glyph") { fx.push({ kind: "shout", t0: t, dur: 0.9, x: e.x, y: e.y, z: e.z, a: 0, full: true, col: e.g < 0 ? 0xff4040 : 0x60e0ff, c2: e.g < 0 ? "255,64,64" : "96,224,255" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx(e.g < 0 ? "jam" : "perfect"); }
@@ -820,6 +822,10 @@ function sfx(kind, vol = 1, sub) {
     noise(P[0], 0.55 * vol, P[1]); tone("sine", P[2], 35, P[3], P[4] * vol); if (P[5]) noise(P[5], 0.14 * vol, 180);
     if (sub === "staff") tone("sawtooth", 300, 80, 0.2, 0.2 * vol); if (sub === "laser") tone("sawtooth", 1400, 120, 0.5, 0.35 * vol);
   }
+  else if (kind === "whoosh") { noise(0.22, 0.35 * vol, 1200); tone("sine", 220, 520, 0.18, 0.08 * vol); }
+  else if (kind === "slide") noise(0.55, 0.3 * vol, 400);
+  else if (kind === "step") { tone("sine", 120, 60, 0.07, 0.25 * vol); noise(0.05, 0.25 * vol, 900); }
+  else if (kind === "boost") { tone("square", 300, 1400, 0.35, 0.12 * vol); tone("sine", 600, 2400, 0.3, 0.1 * vol); }
   else if (kind === "casing") { tone("triangle", 3300, 2900, 0.05, 0.045); tone("triangle", 2600, 2400, 0.04, 0.03); }
   else if (kind === "hit") tone("square", 220, 120, 0.05, 0.08);
   else if (kind === "hs") { tone("sine", 1760, 1760, 0.18, 0.35); tone("sine", 2640, 2640, 0.12, 0.15); }
@@ -1041,7 +1047,7 @@ function keyMask() {
   const wet = !!(pred.swim || flying());
   if (wet !== lastWet) { lastWet = wet; crouchOn = false; } // getting in the water or a helicopter stands you up
   const down = crouching();
-  return jump | (keys.has("w") ? 1 : 0) | (keys.has("a") ? 2 : 0) | (keys.has("s") ? 4 : 0) | (keys.has("d") ? 8 : 0) | ((down && wet) || (keys.has("c") && flying()) ? 32 : 0) | (down && !wet ? 64 : 0);
+  return jump | (keys.has("w") ? 1 : 0) | (keys.has("a") ? 2 : 0) | (keys.has("s") ? 4 : 0) | (keys.has("d") ? 8 : 0) | ((down && wet) || (keys.has("c") && flying()) ? 32 : 0) | (down && !wet ? 64 : 0) | (keys.has("shift") ? 128 : 0);
 }
 function aimAngle() { if (use3d) return aimYaw; const o = myScr(); return Math.atan2(mouseY - o.y, mouseX - o.x); }
 const aiming = () => adsDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen;
@@ -1112,6 +1118,16 @@ function localDodge() {
   pred.dashCd = t + (mine.cl === "rogue" ? 0.8 : 1.3);
 }
 function collide(e, r) { MV.pushOut(e, r, worldBoxes(), BWc(), BHc()); }
+// ---------------------------------------------------------------- movement feel: sounds and camera moves for parkour
+let landDip = 0, mantleDip = 0, slideCrouch = false, sprintK = 0, slideK = 0, roll = 0;
+function moveFx(ev) {
+  if (ev === "slide") { sfx("slide"); if (!OPTS.crouchHold) slideCrouch = true; }
+  else if (ev === "djump") sfx("whoosh");
+  else if (ev === "walljump") { sfx("whoosh", 1.2); sfx("step"); }
+  else if (ev === "wallrun") sfx("step");
+  else if (ev === "mantle") { sfx("step"); mantleDip = 1; }
+  else if (ev === "boost") sfx("boost");
+}
 function stepPred(dt) {
   const mine = S?.p.find((p) => p.id === me);
   if (!mine || !MAP) return;
@@ -1121,8 +1137,12 @@ function stepPred(dt) {
   let left = Math.min(dt, 0.1);
   while (left > 1e-4) {
     const h = Math.min(left, 1 / 60); left -= h;
-    MV.step(pred, { keys: keyMask(), yaw: use3d ? yaw : aimAngle(), rel: use3d }, h, { sp: mine.sp, boxes: worldBoxes(), W: BWc(), H: BHc(), frozen: !!mine.go || dlgOpen || !!mine.fz || !!mine.cg || mine.air === 3 });
+    const vz0 = pred.vz, gr0 = pred.gr;
+    const ev = MV.step(pred, { keys: keyMask(), yaw: use3d ? yaw : aimAngle(), rel: use3d }, h, { sp: mine.sp, boxes: worldBoxes(), W: BWc(), H: BHc(), frozen: !!mine.go || dlgOpen || !!mine.fz || !!mine.cg || mine.air === 3, canSprint: !mouseDown && !aiming(), stam: mine.sta ?? 100, wrLen: 0.9 + 0.2 * ((mine.sk && mine.sk.fleet) || 0), airJumps: 1 });
+    if (ev) moveFx(ev);
+    if (!gr0 && pred.gr && vz0 < -480) landDip = Math.min(9, -vz0 / 110); // a hard landing dips the camera
   }
+  if (slideCrouch && !(pred.slide > 0)) { slideCrouch = false; crouchOn = false; } // a slide stands you back up
   // gently pull toward the server's opinion (projected forward a little, since it's slightly out of date)
   const s = pred.srv;
   if (s) {
@@ -1481,8 +1501,12 @@ function render3d(mine, t, dt) {
   if (document.pointerLockElement === cv && menusOpen()) document.exitPointerLock();
   adsZoom += ((mine && !mine.d && aiming() ? 1.35 : 1) - adsZoom) * Math.min(1, dt * 10);
   const adsK = Math.max(0, (adsZoom - 1) / 0.35), fp = viewMode === "fp";
-  crouchEye += ((crouching() && !pred.swim && !flying() ? 20 : 0) - crouchEye) * Math.min(1, dt * 12);
-  const eye = { x: pred.x, y: pred.y, z: pred.z + MV.EYE - crouchEye };
+  crouchEye += ((pred.slide > 0 ? 28 : crouching() && !pred.swim && !flying() ? 20 : 0) - crouchEye) * Math.min(1, dt * 12);
+  sprintK += ((pred.sprint && Math.hypot(pred.vx, pred.vy) > 150 ? 1 : 0) - sprintK) * Math.min(1, dt * 8);
+  slideK += ((pred.slide > 0 ? 1 : 0) - slideK) * Math.min(1, dt * 10);
+  roll += ((pred.wr > 0 && pred.wn ? 0.16 * Math.sign(pred.wn[0] * Math.sin(yaw) - pred.wn[1] * Math.cos(yaw)) : slideK * 0.06) - roll) * Math.min(1, dt * 8); // lean away from the wall you're running on
+  landDip -= landDip * Math.min(1, dt * 9); mantleDip -= mantleDip * Math.min(1, dt * 5);
+  const eye = { x: pred.x, y: pred.y, z: pred.z + MV.EYE - crouchEye - landDip };
   let cam, ownView = false;
   watcher = null;
   aimYaw = yaw; aimPitch = pitch;
@@ -1496,7 +1520,7 @@ function render3d(mine, t, dt) {
     const hit = rayWorld([tx, ty, tz], u, L, me);
     const k = Math.max(6, hit - 16);
     const cx = tx + u[0] * k, cy = ty + u[1] * k, lk = MV.lakeAt(MAP.walls, cx, cy);
-    return { x: cx, y: cy, z: Math.max(lk ? lk.z0 + 8 : 8, tz + u[2] * k), yaw, pitch, fov: OPTS.fov - 6 - adsK * 20 };
+    return { x: cx, y: cy, z: Math.max(lk ? lk.z0 + 8 : 8, tz + u[2] * k), yaw, pitch, fov: OPTS.fov - 6 - adsK * 20 + sprintK * 6 + slideK * 6, roll: roll * 0.5 };
   };
   if (!mine) cam = { x: MAP.W / 2, y: MAP.H + 300, z: 900, look: [MAP.W / 2, MAP.H / 2, 0], fov: 60 };
   else if (mine.d || mine.out) {
@@ -1519,7 +1543,8 @@ function render3d(mine, t, dt) {
     watcher = { x: w.x, y: w.y, who: best.who };
   } else if (fp && !mine.vh && !mine.air) {
     const bob = pred.gr ? Math.sin(t * 11) * Math.min(1, Math.hypot(pred.vx, pred.vy) / 200) * 1.6 : 0;
-    cam = scoped ? { x: eye.x, y: eye.y, z: eye.z, yaw: aimYaw, pitch: aimPitch, fov: 14 } : { x: eye.x, y: eye.y, z: eye.z + bob, yaw, pitch, fov: OPTS.fov - adsK * 30 };
+    const bob2 = sprintK > 0.3 && pred.gr ? Math.sin(t * 15) * 1.4 * sprintK : 0; // sprinting bounces more
+    cam = scoped ? { x: eye.x, y: eye.y, z: eye.z, yaw: aimYaw, pitch: aimPitch, fov: 14 } : { x: eye.x, y: eye.y, z: eye.z + bob + bob2, yaw, pitch: pitch - mantleDip * 0.18, fov: OPTS.fov - adsK * 30 + sprintK * 8 + slideK * 10, roll };
     ownView = true;
   } else {
     cam = mine.vh ? third(eye.x, eye.y, eye.z + 30, 220, 0, 50) : third(eye.x, eye.y, eye.z, 120 - adsK * 50, 30, 14);
@@ -1547,7 +1572,7 @@ function render3d(mine, t, dt) {
   // expire effects (the 2D renderer normally does this)
   for (let i = fx.length - 1; i >= 0; i--) if ((t - fx[i].t0) / fx[i].dur >= 1) fx.splice(i, 1);
   const sl = slashT.get(me), moving = Math.hypot(pred.vx, pred.vy) > 30 && pred.gr;
-  const vm = ownView && mine && !mine.d && !scoped ? { type: mine.w, rar: mine.wr, sk: mine.wsk, at: mine.wat, show: true, kick: Math.max(0, 1 - (t - lastShotT) / 0.12), bob: moving ? t * 11 : 0, ads: adsK, swing: sl ? Math.min(1, (t - sl) / 0.25) : 1 } : null;
+  const vm = ownView && mine && !mine.d && !scoped ? { type: mine.w, rar: mine.wr, sk: mine.wsk, at: mine.wat, spr: sprintK, sli: slideK, man: mantleDip, rl: mine.rl > 0 && mine.rt ? 1 - mine.rl / mine.rt : 0, show: true, kick: Math.max(0, 1 - (t - lastShotT) / 0.12), bob: moving ? t * 11 : 0, ads: adsK, swing: sl ? Math.min(1, (t - sl) / 0.25) : 1 } : null;
   R3D.frame({ S, MAP, t, dt, me, pred, aimYaw, aimPitch, fp: ownView, cam, fx, messes, hearthHitT, ghost, vm, slashT, nukeFx, cropKeys: CROP_KEYS, domeR: DOME_R });
   overlay3d(mine, t, dt);
   if (scoped && ownView) { // scope overlay: black outside the lens, fine crosshair inside
@@ -1827,6 +1852,7 @@ function render() {
       text("BUNKER", w.x + w.w / 2, w.y - 6, 12, "#e8e8d0");
       continue;
     }
+    if (w.kind === "boost") { const cx = w.x + w.w / 2, cy = w.y + w.h / 2; ctx.save(); ctx.translate(cx, cy); ctx.fillStyle = "#2a2a34"; ctx.fillRect(-w.w / 2, -w.h / 2, w.w, w.h); ctx.rotate(w.a || 0); for (let i = 0; i < 3; i++) { ctx.strokeStyle = `rgba(255,154,32,${0.35 + 0.65 * Math.max(0, Math.sin(t * 9 - i * 1.2))})`; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo((i - 1) * 16 - 6, -14); ctx.lineTo((i - 1) * 16 + 8, 0); ctx.lineTo((i - 1) * 16 - 6, 14); ctx.stroke(); } ctx.restore(); continue; }
     if (w.kind === "pad") { const cx = w.x + w.w / 2, cy = w.y + w.h / 2, k = (t * 1.5) % 1; ctx.fillStyle = "#1090c0"; ctx.beginPath(); ctx.arc(cx, cy, w.w / 2, 0, 7); ctx.fill(); ctx.strokeStyle = `rgba(190,248,255,${1 - k})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, w.w / 2 * (0.4 + k * 0.8), 0, 7); ctx.stroke(); continue; }
     if (w.kind === "step" || w.kind === "tower" || w.kind === "bridge" || w.kind === "ledge" || w.kind === "crate") {
       const lift = Math.min(18, (w.z1 || 0) / 12);
@@ -2354,6 +2380,10 @@ function drawHud(mine, t) {
   if (mine.spn) text(`🎰 ${mine.spn} spin${mine.spn > 1 ? "s" : ""} at the casino`, 324, VH - 22, 13, "#ffd34d", "right");
   text(`[3] 💣 ${mine.gn ?? 0}   [4] 🔥 ${mine.mo ?? 0}${mine.hoe ? `   [F] ${["", "Hoe", "Steel Hoe", "Golden Hoe"][mine.hoe]}${mine.ho ? " (in hand)" : ""}` : ""}`, VW - 296, VH - 116, 13, "#ffb070", "left");
   if (mine.wm) text("🔥 The Hearth's warmth is healing you", VW / 2, VH - 176, 13, "#ffb070");
+  if ((mine.sta ?? 100) < 100) { // stamina: only shown while it's being used or refilling
+    const k = (mine.sta ?? 100) / 100; ctx.fillStyle = "#0008"; ctx.beginPath(); ctx.roundRect(VW / 2 - 62, VH - 30, 124, 9, 4); ctx.fill();
+    ctx.fillStyle = k < 0.15 ? "#ff7050" : "#9fe0ff"; ctx.beginPath(); ctx.roundRect(VW / 2 - 60, VH - 28, 120 * k, 5, 3); ctx.fill();
+  }
   if (mine.ho) text("🌱 Hoe in hand: click open ground to till · F puts it away", VW / 2, VH - 150, 14, "#c8e0a0");
   if (mine.st > 0) { ctx.fillStyle = "#ffcc00"; for (let i = 0; i < 5; i++) { ctx.globalAlpha = i < mine.st ? 1 : 0.2; star(190 + i * 22, VH - 45, 9); } ctx.globalAlpha = 1; text("WANTED", 290, VH - 45, 11, "#ffcc00", "left"); }
   const sc = mine.sc;
