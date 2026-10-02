@@ -184,8 +184,26 @@ const MEETING = [
   { label: "Ask around about the well", desc: "Somebody remembers something. (A free clue)", deed: ["word", 4], go: (api) => { const c = api.flags.culprit && api.freeClue(); return c ? `Old gossip, new ears. ${c}` : "Everyone talks. Nobody says anything new."; } },
   { label: "Build turrets", desc: "Two turrets by the Hearth.", deed: ["soil", 4], go: (api) => { api.turrets(2); return "Two rattling turrets go up beside the Hearth. Haddock names them both Doris."; } },
 ];
+MEETING.push(
+  { label: "Go hunting tonight", desc: "30% more of the dead tonight, but kills pay double.", deed: ["blood", 4], go: (api) => { api.mods.nightCut *= 1.3; api.mods.nightGold = 2; return "Haddock hands out torches and a speech about glory. Tonight, the dead are worth double. There'll be more of them."; } },
+  { label: "Hold a service", desc: "Everyone's stress wiped clean.", deed: ["word", 4], go: (api) => { api.calm(); return `${CAST.priest} preaches for an hour about patience. Everyone feels much calmer, mostly from the nap.`; } },
+  { label: "Market day", desc: "Three seeds for everyone.", deed: ["soil", 4], go: (api) => { api.seeds(); return "Old Giles sets out his stall and hands out seed packets like sweets. \"Grow something, for heaven's sake.\""; } },
+);
+// meetings that only come up when something's happening, and jump the queue when they do
+const SITUATIONS = [
+  { when: (s) => s.hearth < 0.5, label: "Emergency repairs", desc: "Hearth fully repaired and walled in.", deed: ["soil", 6], go: (api) => { api.repair(); const n = api.wallHearth(); return `Everyone drops what they're doing. The Hearth is patched and ringed with ${n} new wall sections, gates left open.`; } },
+  { when: (s) => s.wanted.length > 0, label: (s) => `Pardon ${s.wantedNames}`, desc: "Their wanted stars are wiped.", deed: ["word", 4], go: (api) => { const w = api.state().wanted; api.pardon(w); return `The town votes to forgive and forget. ${w.map((q) => api.fullName(q)).join(" and ")} walk${w.length > 1 ? "" : "s"} free, smirking.`; } },
+  { when: (s) => s.wanted.length > 0, label: (s) => `Put a bounty on ${s.wantedNames}`, desc: "+2 wanted stars. Collect it if you dare.", deed: ["blood", 4], go: (api) => { const w = api.state().wanted; api.bounty(w); return `Posters go up all over town. ${w.map((q) => api.fullName(q)).join(" and ")} ${w.length > 1 ? "are" : "is"} now worth a lot more dead.`; } },
+  { when: (s) => !!s.rich, label: (s) => `Tax ${s.richName}`, desc: "A quarter of the richest player's gold, shared out.", deed: ["coin", 4], go: (api) => { const r = api.state().rich; if (!r) return "By the time the vote's counted, nobody's rich enough to tax."; const cut = api.taxRich(r); return `${api.fullName(r)} hands over ${cut}g with a face like a slapped turnip. Everyone else gets a share.`; } },
+  { when: (s) => !!s.mayor, label: (s) => `Impeach ${s.mayor}`, desc: "The mayor's effects are undone until the next election.", deed: ["word", 4], go: (api) => { const n = api.impeach(); return n ? `${n} is marched out of the town hall. The chain of office goes in a drawer until the next election.` : "There's nobody to impeach."; } },
+  { when: (s) => s.stressed >= 2, label: "Hold a service", desc: "Everyone's stress wiped clean.", deed: ["word", 4], go: (api) => { api.calm(); return `${CAST.priest} preaches for an hour about patience. Everyone feels much calmer, mostly from the nap.`; } },
+];
 export function townMeeting(day, api) {
-  const opts = MEETING.map((m, i) => [m, (i * 7919 + day * 104729) % 97]).sort((a, b) => a[1] - b[1]).slice(0, 3).map(([m]) => m);
+  const st = api.state ? api.state() : null;
+  const live = st ? SITUATIONS.filter((m) => m.when(st)).map((m) => ({ ...m, label: typeof m.label === "function" ? m.label(st) : m.label })) : [];
+  const picks = live.sort(() => Math.random() - 0.5).slice(0, 2);
+  const rest = MEETING.filter((m) => !picks.some((q) => q.label === m.label)).map((m, i) => [m, (i * 7919 + day * 104729) % 97]).sort((a, b) => a[1] - b[1]).map(([m]) => m);
+  const opts = [...picks, ...rest].slice(0, 3);
   return {
     title: `Town Meeting, Day ${day}`,
     text: `${api.flags.valley} gathers round the Hearth again. ${CAST.mayor} bangs a saucepan for order. One thing gets done today: what's it to be?`,

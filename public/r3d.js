@@ -321,6 +321,17 @@ var R3D = (function () {
     } else if (type === "staff") {
       const shaft = mesh(new T.CylinderGeometry(1.8, 1.8, len, 6), mat(0x8b5a2b), len / 2, 0, 0); shaft.rotation.z = Math.PI / 2; g.add(shaft);
       g.add(mesh(new T.SphereGeometry(4.5, 10, 8), mat(0xff7a2a, 0xff5a10), len, 0, 0));
+    } else if (type === "laser") { // Spartan Laser: a long boxy shoulder cannon with a glowing red emitter and power cells
+      const body = mat(0x9aa0a6), dark = mat(0x2a2d31), glow = mat(0xff2a2a, 0xff1010);
+      g.add(mesh(new T.BoxGeometry(len * 0.75, 7, 6), body, len * 0.35, 1, 0)); // main body
+      g.add(mesh(new T.BoxGeometry(len * 0.5, 3, 7.5), dark, len * 0.5, 5, 0)); // top housing
+      const bar = mesh(new T.CylinderGeometry(2.6, 3.2, len * 0.3, 10), dark, len * 0.85, 1, 0); bar.rotation.z = Math.PI / 2; g.add(bar); // barrel shroud
+      const em = mesh(new T.CylinderGeometry(2, 2, 1.5, 10), glow, len + 0.5, 1, 0); em.rotation.z = Math.PI / 2; g.add(em); // emitter
+      for (let i = 0; i < 3; i++) g.add(mesh(new T.BoxGeometry(2.4, 2, 7.8), glow, len * 0.18 + i * 4, 1, 0)); // power cells
+      const grip = mesh(new T.BoxGeometry(3.5, 8, 3.2), dark, 4, -5, 0); grip.rotation.z = -0.3; g.add(grip);
+      g.add(mesh(new T.BoxGeometry(3, 6, 3), dark, len * 0.55, -4.5, 0)); // front grip
+      g.add(mesh(new T.BoxGeometry(5, 3, 3), dark, len * 0.42, 8, 0)); // sight
+      if (rar > 0) g.add(mesh(new T.BoxGeometry(len * 0.6, 1.2, 6.4), mat(RAR[rar], RAR[rar]), len * 0.35, -2.6, 0));
     } else gunParts(g, type, len, rar);
     return g;
   }
