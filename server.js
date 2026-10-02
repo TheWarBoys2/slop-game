@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { storyEvent, townMeeting, bossKind, BOSSES, ending, valleyName } from "./story.js";
 import { NPCS, QUESTS, CLUES, npcLines } from "./npcs.js";
+import { SUSPECTS, SLOTS as CLUE_FROM, pickCulprit, culpritOf, WRONG } from "./mystery.js";
 import { COSMETICS, FREE_HATS, rollCosmetic, WHEEL, spinWheel, deck, bjValue, pokerScore, handName, compareHands, dealerHolds } from "./casino.js";
 import { LEGENDS, legendOf, legendName, reckoning, legendLines } from "./legend.js";
 import { GIFTS, TASTE, SAYS, RING } from "./romance.js";
@@ -27,7 +28,8 @@ const SNAP_EVERY = 2; // 15 snapshots/sec
 const FAST = !!process.env.SLOP_FAST; // testing only: short phases
 const DAY_LEN = Number(process.env.SLOP_DAY) || (FAST ? 6 : 85);
 const NIGHT_LEN = FAST ? 8 : 100;
-const LAST_NIGHT = 5; // the earliest the final night can come. In the story it waits until the mystery is solved.
+const LAST_NIGHT = 5; // the war reaches the valley around here (the radio, the Dome)
+const UNMASK_AFTER = 7; // nobody solved it by day 8: the culprit cracks and the last night comes anyway
 const ENDLESS_BOSS_EVERY = 5;
 const FOG_NIGHT = process.env.SLOP_FOGNIGHT ? 1 : 0.3; // chance a night (from night 2) is a fog night
 const DINO_FORCE = !!process.env.SLOP_DINO; // every day is Dinosaur Day (for testing)
@@ -1563,7 +1565,7 @@ const storyApi = {
   feast: () => { for (const p of players.values()) if (!p.dead) { p.hp = maxHp(p); p.food = 100; p.water = 100; } },
   turrets: (k) => { for (const [dx, dy] of [[-2, 0.3], [HEARTH.w / GRID + 1, 0.3]].slice(0, k)) placePiece(null, "turret", Math.round((HEARTH.x + dx * GRID) / GRID) * GRID, Math.round((HEARTH.y + dy * GRID) / GRID) * GRID, true); },
   friends: () => Object.values(game.aff).filter((a) => a >= 1).length,
-  freeClue: () => { const id = Object.keys(CLUES).find((c) => !game.clues.has(c)); if (!id) return null; npcApi.clue(id); return CLUES[id]; },
+  freeClue: () => { if (game.mode !== "story") return null; const id = Object.keys(CLUES).find((c) => !game.clues.has(c)); if (!id) return null; npcApi.clue(id); return clueText(id); },
 };
 // The town votes once a day. The ballot opens at dawn, stays open all day (change your mind as often as you like)
 // and is counted at dusk. Story days have their story question; other days get an ordinary town meeting.
@@ -1601,11 +1603,13 @@ const npcApi = {
   clue: (id) => {
     if (game.clues.has(id)) return;
     game.clues.add(id); deed("word", 12);
-    feed(`CLUE ${game.clues.size}/5: ${CLUES[id]}`, "#e0c0ff");
+    feed(`CLUE ${game.clues.size}/5: ${clueText(id)}`, "#e0c0ff");
     events.push({ k: "clue", n: game.clues.size });
-    if (game.clues.size === 4) feed("You know enough. Somebody should have a word with the Mayor.", "#ffd34d");
+    if (game.clues.size === 3 && !solved()) feed("You know enough to accuse someone. Talk to whoever you suspect [E]. Get it wrong and the real culprit gets bolder.", "#ffd34d");
   },
   story: (title, text) => { game.story = { title, pick: "", text, until: now() + 14 }; events.push({ k: "vote" }); },
+  said: (slot) => culpritOf(game.flags).said[slot],
+  label: (slot) => culpritOf(game.flags).label[slot],
   mods: () => game.mods,
   name: fullName,
   deed: (k, n) => deed(k, n),
@@ -1636,13 +1640,63 @@ function openDlg(p, npc) {
   addXp(p, 1);
   sendDlg(p);
 }
+// ---------------------------------------------------------------- the mystery: accuse whoever poisoned the well
+const clueText = (id) => culpritOf(game.flags).clue[id];
+const canAccuse = (npc) => game.mode === "story" && SUSPECTS[npc] && game.clues.size >= 3 && !solved() && !game.flags.wrong[npc];
+function wrongAccuse(p, npc) {
+  game.flags.wrong[npc] = true; game.aff[npc] = (game.aff[npc] || 0) - 2; addLove(p, npc, -15);
+  game.mods.zCount *= 1.15;
+  feed(`${fullName(p)} accused ${SUSPECTS[npc].name} of poisoning the well. They didn't do it. Somewhere, the real culprit is laughing (more of the dead tonight).`, "#ff9090");
+}
+function solveMystery(p, how) {
+  const f = game.flags, C = culpritOf(f);
+  f[how] = true; f.finalAt = game.night + 1; // whatever they raised comes for the Hearth on the very next night
+  if (how === "exposed") { game.mods.bossHp *= 0.65; game.mods.dmg *= 1.05; }
+  if (how === "blackmail") for (const q of players.values()) addGold(q, 200, "Hush money");
+  if (how === "pardoned") for (const q of players.values()) q.pts += 1;
+  const title = { exposed: `${C.name} is Exposed`, blackmail: "A Quiet Arrangement", pardoned: "Mercy" }[how];
+  const what = { exposed: `${fullName(p)} dragged ${C.name} to the Hearth and read out the evidence. Without them feeding it, the final horror will be weaker.`, blackmail: `${fullName(p)} had a quiet word with ${C.name}. Everyone is 200g richer, and nobody knows why.`, pardoned: `${fullName(p)} forgave ${C.name}, who paid for everyone's training. (+1 skill point each)` }[how];
+  game.story = { title, pick: "", text: `${what} ${C.bossLine} It comes ${game.phase === "night" ? "tomorrow night" : "tonight"}.`, until: now() + 20 };
+  events.push({ k: "vote" }); events.push({ k: "banner", text: "MYSTERY SOLVED", sub: `${C.name} poisoned the well. What they raised comes ${game.phase === "night" ? "tomorrow night" : "tonight"}.` });
+  deed("word", 15);
+  if (game.phase === "day") { const day = game.night + 1; game.vote = { day, ev: storyEvent(day, storyApi), votes: new Map(), ends: game.ends }; feed(`Today's town meeting is now: ${game.vote.ev.title}. Press N to vote.`, "#e0c0ff"); }
+}
+// nobody solved it in time: the culprit cracks on their own, and the last night comes anyway
+function unmask() {
+  const f = game.flags, C = culpritOf(f);
+  f.unmasked = true; f.finalAt = game.night + 1;
+  events.push({ k: "banner", text: "THE CULPRIT CRACKS", sub: `${C.name} confessed at the Hearth: they poisoned the well. ${C.bossLine}` });
+  feed(`${C.name} poisoned the well. Nobody caught them; they just couldn't live with it. Tonight is the last night.`, "#ffd34d");
+}
+function accuseNode(p, npc, node) {
+  const C = SUSPECTS[npc], bye = [{ label: "Goodbye.", to: null }];
+  if (node === "~accused") return { text: () => p.dlgSay || "...", opts: bye };
+  if (npc !== game.flags.culprit) return { text: () => WRONG[npc], opts: [{ label: "Back.", to: "start" }, ...bye] };
+  const done = (how, say) => ({ to: "~accused", do: () => { if (solved()) return; solveMystery(p, how); p.dlgSay = say; } });
+  return {
+    text: () => `You lay it out: ${game.clues.size} pieces of evidence. ${C.motive}`,
+    opts: [
+      { label: "Expose them to the whole valley.", ...done("exposed", `The crowd turns on ${C.name}. They're pelted with turnips all the way to the stocks. Out in the dark, something feels weaker.`) },
+      { label: "Blackmail them. 200g each or we talk.", ...done("blackmail", `${C.name} counts out the coins with shaking hands. "This never happened. None of it."`) },
+      { label: "Forgive them. Everyone makes mistakes.", ...done("pardoned", `${C.name} weeps. "I'll make it right. I'll pay for training. I'll pay for everything."`) },
+    ],
+  };
+}
+// the main quest's next step, for the orange "?" and the compass
+function mainQuest() {
+  if (game.mode !== "story" || game.phase === "lobby" || game.phase === "over" || game.flags.finalAt) return [];
+  if (game.clues.size >= 3) return Object.keys(SUSPECTS).filter((id) => !game.flags.wrong[id]);
+  const next = Object.keys(CLUE_FROM).find((id) => !game.clues.has(id));
+  return next ? [CLUE_FROM[next]] : [];
+}
 function sendDlg(p) {
   if (!p.dlg) { p.pe.push({ k: "dlg", close: 1 }); return; }
-  const npc = p.dlg.npc, N = NPCS[npc], node = p.dlg.node === "~snap" ? snapNode(p, npc) : p.dlg.node[0] === "~" ? romanceNode(p, npc, p.dlg.node) : N.nodes[p.dlg.node], c = dlgCtx(p);
+  const npc = p.dlg.npc, N = NPCS[npc], node = p.dlg.node === "~snap" ? snapNode(p, npc) : p.dlg.node.startsWith("~acc") ? accuseNode(p, npc, p.dlg.node) : p.dlg.node[0] === "~" ? romanceNode(p, npc, p.dlg.node) : N.nodes[p.dlg.node], c = dlgCtx(p);
   p.dlgOpts = node.opts.filter((o) => !o.if || o.if(c));
+  if (p.dlg.node === "start" && canAccuse(npc)) p.dlgOpts.splice(Math.max(0, p.dlgOpts.length - 1), 0, { label: `"I know it was you, ${SUSPECTS[npc].name}."`, to: "~accuse", do: () => { if (npc !== game.flags.culprit) wrongAccuse(p, npc); } });
   if (p.dlg.node === "start" && TASTE[npc]) p.dlgOpts.splice(Math.max(0, p.dlgOpts.length - 1), 0, ...romanceOpts(p, npc)); // before "Goodbye"
   if (p.dlg.node === "start" && OPPONENTS[npc] && game.phase !== "night") p.dlgOpts.splice(Math.max(0, p.dlgOpts.length - 1), 0, { label: "Fancy a game of Slop Snap?", to: "~snap" });
-  p.pe.push({ k: "dlg", npc, name: N.name, role: N.role, text: node.text(c), opts: p.dlgOpts.map((o) => o.label), love: loveOf(p, npc), rel: p.spouse === npc ? "spouse" : p.dating === npc ? "dating" : "" });
+  p.pe.push({ k: "dlg", npc, name: N.name, role: N.role, text: node.text(c), opts: p.dlgOpts.map((o) => typeof o.label === "function" ? o.label(c) : o.label), love: loveOf(p, npc), rel: p.spouse === npc ? "spouse" : p.dating === npc ? "dating" : "" });
 }
 // ---------------------------------------------------------------- gifts and romance
 const loveOf = (p, npc) => (p.love && p.love[npc]) || 0;
@@ -2312,7 +2366,7 @@ function buildTick(t) {
 
 // ---------------------------------------------------------------- royale
 function setupRoyale() {
-  game.night = 0; game.ends = Infinity; game.result = null; game.ending = null;
+  game.night = 0; game.ends = Infinity; game.result = null; game.ending = null; game.cutscene = null;
   game.flags = { valley: VALLEY }; game.mods = freshMods(); game.vote = null; game.story = null; game.bossId = 0;
   game.hearthMax = game.hearth = 1e9;
   zombies = []; crates = []; caches = [];
@@ -2378,8 +2432,8 @@ function beginPlay() {
 }
 function setupStory() {
   game.aff = Object.fromEntries(Object.keys(NPCS).map((k) => [k, 0])); game.clues = new Set();
-  game.night = 0; game.ends = Infinity; game.result = null; game.ending = null;
-  game.flags = { valley: VALLEY }; game.mods = freshMods(); game.vote = null; game.story = null; game.bossId = 0;
+  game.night = 0; game.ends = Infinity; game.result = null; game.ending = null; game.cutscene = null;
+  game.flags = { valley: VALLEY, culprit: SUSPECTS[process.env.SLOP_CULPRIT] ? process.env.SLOP_CULPRIT : pickCulprit(), wrong: {} }; game.mods = freshMods(); game.vote = null; game.story = null; game.bossId = 0;
   const n = Math.max(1, players.size);
   game.hearthMax = game.hearth = 1000 + 300 * n;
   zombies = []; crates = []; caches = [];
@@ -2720,7 +2774,7 @@ function startNight() {
   game.mods.nightCut = 1;
   game.spawnNext = now() + 2;
   // the story's last night only comes once the mystery is solved; until then the waves never stop
-  const final = game.mode === "story" && game.night >= LAST_NIGHT && solved();
+  const final = game.mode === "story" && !!game.flags.finalAt && game.night >= game.flags.finalAt;
   const endlessBoss = game.mode === "endless" && game.night % ENDLESS_BOSS_EVERY === 0;
   game.fog = !final && !endlessBoss && game.night >= 2 && Math.random() < FOG_NIGHT;
   game.dino = !final && !endlessBoss && !!game.dinoDay; game.dinoRex = false; game.dinoDay = false;
@@ -2741,7 +2795,7 @@ function startNight() {
     const b = spawnZombie("boss");
     b.hp = b.maxHp = Math.round(ZTYPES.boss.hp * B.hp * game.mods.bossHp * (0.5 + 0.5 * n));
     game.bossId = b.id;
-    events.push({ k: "banner", text: `CONTRACT: ${B.name}`, sub: "Slay it to save the valley. Reward: 150g each." });
+    events.push({ k: "banner", text: `THE LAST NIGHT: ${B.name}`, sub: `${culpritOf(game.flags).name} raised it. Slay it to save the valley.` });
   } else {
     game.ends = now() + NIGHT_LEN;
     const sub = game.dino ? "Dinosaur night. Only dinosaurs tonight, and one big one. Frost and storm work best." : game.fog ? "FOG NIGHT. You can't see a thing. Listen for the screamers." : game.night === 1 ? "Protect the Hearth. Don't shoot your friends (much)." : game.mode === "story" && game.night >= LAST_NIGHT ? "The dead won't stop until someone solves the mystery. Check your journal [J]." : "They're getting hungrier.";
@@ -2783,10 +2837,11 @@ function startDay() {
   for (const p of players.values()) { p.talked.clear(); cure(p, "The sunrise burns the infection out of you."); }
   for (const z of zombies) if (z.type !== "elite") z.burn = true;
   spawnCrates();
-  const left = LAST_NIGHT - game.night;
+  if (game.mode === "story" && !game.flags.finalAt && game.night >= UNMASK_AFTER) unmask();
   const sub = game.mode === "endless" ? `You survived night ${game.night}. ${ENDLESS_BOSS_EVERY - (game.night % ENDLESS_BOSS_EVERY)} until the next boss. The shops are open.`
-    : solved() ? (left <= 1 ? "The mystery is solved. Tonight is the final night. The shops are open." : `The sun burns the dead. ${left} nights left. The shops are open.`)
-    : left <= 1 ? "The sun burns the dead, but they'll keep coming until the mystery is solved [J]. The shops are open." : `The sun burns the dead. Solve the mystery [J] and survive ${left} more nights. The shops are open.`;
+    : game.flags.finalAt === game.night + 1 ? `Tonight is the last night: ${BOSSES[bossKind(game.flags)].name} comes for the Hearth. Get ready. The shops are open.`
+    : game.clues.size >= 3 ? "You know enough to accuse someone [E]. Until somebody's caught, the dead keep coming. The shops are open."
+    : "The sun burns the dead. Find out who poisoned the well [J], and they'll keep coming until you do. The shops are open.";
   if (game.dinoDay) events.push({ k: "banner", text: `DAY ${game.night + 1}: DINOSAUR DAY`, sub: "The well's coughing up dinosaurs. Nothing else today or tonight. Raptors hunt in threes, so stick together." });
   else events.push({ k: "banner", text: `DAY ${game.night + 1}`, sub });
   const day = game.night + 1;
@@ -2812,6 +2867,7 @@ function endGame(win) {
     game.prev = `Last time, ${VALLEY} survived ${best} nights of the endless dark.`;
   } else {
     game.ending = [...ending(win, game.flags, game.night), ...legendLines(win, lg, game.legend, game.flags, VALLEY, game.deeds), ...(win ? npcLines(game.flags, game.aff) : [])];
+    if (win) { const f = game.flags, C = culpritOf(f), how = f.exposed ? "exposed" : f.blackmail ? "blackmail" : f.pardoned ? "pardoned" : "unmasked"; game.cutscene = { valley: VALLEY, who: C.name, color: C.color, motive: C.motive, boss: BOSSES[bossKind(f)].name, bossLine: C.bossLine, fate: C.fate[how], night: game.night }; }
     game.prev = win ? `Last time, ${legendName(lg, VALLEY)} saved their valley.` : `Last time, ${VALLEY} fell on night ${game.night}.`;
   }
   for (const p of players.values()) p.ready = false;
@@ -3134,7 +3190,7 @@ function snapshot() {
       alive: [...players.values()].filter((p) => !p.out && !p.dead).length,
       zone: game.zone && (!OPEN() || game.phase === "night") ? [r(game.zone.cx), r(game.zone.cy), r(game.zone.r), r(game.zone.tcx), r(game.zone.tcy), r(game.zone.tr), game.zone.t0 > t ? r(game.zone.t0 - t) : -1] : null,
       drop: game.drop && t - game.drop.t0 < game.drop.dur + 3 ? [r(game.drop.x0), r(game.drop.y0), r(game.drop.x1), r(game.drop.y1), +dropPos(t).k.toFixed(3)] : null,
-      clues: [...game.clues].map((c) => CLUES[c]),
+      clues: [...game.clues].map(clueText), mq: mainQuest(),
       ph: game.phase, n: game.night, left: game.ends === Infinity ? -1 : Math.max(0, r(game.ends - t)), hh: r(game.hearth), hm: game.hearthMax, res: game.result, boss: game.bossId, bk: game.bossKind, valley: VALLEY, fog: game.fog ? 1 : 0, solved: solved() ? 1 : 0, dino: game.dino ? 1 : 0, dd: game.dinoDay ? 1 : 0,
       mk: SYMS.map((s) => +game.market.px[s].toFixed(2)), news: game.market.news.map((n) => [n.text, n.up ? 1 : 0]),
       mayor: game.mayor, nuke: game.nuke ? [r(game.nuke.x), r(game.nuke.y), Math.max(0, +(game.nuke.at - t).toFixed(1))] : null, dome: game.dome && game.mode !== "royale" ? [game.dome.have, game.dome.cost] : null, waste: game.waste ? 1 : 0, hot: game.hot.map((h) => [r(h.x), r(h.y), r(h.r), h.lake ? 1 : 0]),
@@ -3171,6 +3227,7 @@ function snapshot() {
     e: events,
     stats: game.phase === "over" ? game.stats : undefined,
     ending: game.phase === "over" ? game.ending : undefined,
+    cut: game.phase === "over" && game.cutscene ? game.cutscene : undefined,
   };
 }
 function broadcastRaw(s) {
@@ -3222,6 +3279,9 @@ function onMessage(ws, raw) {
       if (m.rad !== undefined) p.rad = m.rad;
       if (m.nuke) nukeWarn("Test.");
       if (m.elect) openElection();
+      if (m.clues) for (let i = 0; i < m.clues; i++) storyApi.freeClue();
+      if (m.dusk) game.ends = now() + 0.5;
+      if (m.killBoss) { const b = zombies.find((z) => z.id === game.bossId); if (b) hurtZombie(b, b.hp + 1, p); }
     } break;
     case "item": itemAct(p, m); break;
     case "trade": trade(p, String(m.sym), +m.n || 0); break;

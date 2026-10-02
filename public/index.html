@@ -124,6 +124,14 @@
   .cg-btns { text-align: center; } .cg-over { text-align: center; font-size: 34px; font-weight: bold; margin: 10px 0; color: #ffd34d; } .cg-over.lose { color: #ff6060; } .cg-over.win { color: #7fd34d; }
   .coll { max-height: 60vh; overflow: auto; margin: 8px 0; }
   #overSub p { margin: 6px 0; line-height: 1.4; }
+  #cutscene { position: fixed; inset: 0; z-index: 40; background: #000; color: #eee; display: flex; align-items: center; justify-content: center; cursor: pointer; font-family: Georgia, serif; }
+  #cutscene::before, #cutscene::after { content: ""; position: absolute; left: 0; right: 0; height: 12vh; background: #000; border-color: #222; }
+  #cutscene::before { top: 0; border-bottom: 1px solid #222; } #cutscene::after { bottom: 0; border-top: 1px solid #222; }
+  #cutscene .cs-slide { max-width: min(760px, calc(100% - 48px)); text-align: center; opacity: 0; transition: opacity 1.1s ease; }
+  #cutscene .cs-slide.on { opacity: 1; }
+  #cutscene .cs-big { font-size: clamp(28px, 6vw, 56px); letter-spacing: 2px; margin-bottom: 18px; }
+  #cutscene .cs-txt { font-size: clamp(16px, 2.4vw, 22px); line-height: 1.6; color: #d8d0c0; }
+  #cutscene .cs-skip { position: absolute; bottom: 4vh; right: 24px; z-index: 1; font: 12px Trebuchet MS, sans-serif; color: #777; }
   #lobbyPanel { background: rgba(8, 10, 8, .9); }
   .lp-row { display: flex; justify-content: space-between; padding: 5px 8px; margin: 3px 0; background: #2a3423; border-radius: 6px; font-size: 14px; }
   .lp-row .ok { color: #7dffb0; font-weight: bold; } .lp-row .no { color: #999; }
@@ -262,6 +270,7 @@
 
 <div id="story" class="hidden"></div>
 
+<div id="cutscene" class="hidden"><div class="cs-slide" id="csSlide"></div><div class="cs-skip">Click or Space: next · Esc: skip</div></div>
 <div id="over" class="overlay hidden">
   <div class="panel">
     <h1 id="overTitle"></h1>

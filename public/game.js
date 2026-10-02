@@ -121,7 +121,7 @@ function onSnap(m) {
   for (const e of m.e) handleEvent(e);
   for (const e of m.pe) handlePersonal(e);
   if (m.g.ph === "over" && prevPhase !== "over") showOver();
-  if (m.g.ph !== "over") $("over").classList.add("hidden");
+  if (m.g.ph !== "over") { $("over").classList.add("hidden"); if (cut) endCutscene(); }
   if (m.g.ph === "night" && shopOpen && (SHOPS[shopSid] || {}).hours === "day") toggleShop(false);
   renderStory();
   const mr = m.p.find((p) => p.id === me);
@@ -410,7 +410,7 @@ function drawRadial() {
 // ---------------------------------------------------------------- lobby
 let lobbySig = "";
 const MODE_INFO = {
-  story: ["Story", "Five days to solve the valley's mystery and keep the Hearth burning. Votes, a mayor, a celebrity visit and Dinosaur Day on day 4."],
+  story: ["Story", "Somebody poisoned the well, and it's someone different every game. Find the evidence, accuse them, then survive what they raised. Votes, a mayor, a celebrity visit and Dinosaur Day on day 4."],
   endless: ["Endless", "No story, no end. A boss every fifth night and Dinosaur Day every week. How long can you last?"],
   royale: ["Royale", "Jump from the balloon, loot up, last farmer standing wins. Friendly fire is very much on."],
 };
@@ -873,7 +873,7 @@ function renderJournal() {
   }
   let war = "";
   if (S.g.dome) { const [h, k] = S.g.dome, left = 5 - S.g.n; war = `<h3>The war</h3><div class="jq${h >= k ? " done" : ""}"><b>Raise the Hearth Dome</b> <span>${h}/${k}g</span><small>${h >= k ? "It's up. Stand inside it (near the Hearth) when the siren goes. Each bomb drains it by half, so keep it topped up." : left > 0 ? `The wireless says the bombs come after day 5 (${left} day${left === 1 ? "" : "s"} from now). No Dome, no Hearth. Pay in at the Hearth [E].` : "The bombs can fall any night now. Pay in at the Hearth [E]. If the siren goes before it's full, get to the bunker or the bottom of the lake."}</small></div>`; }
-  $("journalBody").innerHTML = `${war}<h3>Quests</h3>${qs}<h3>Evidence (${S.g.clues.length}/5)</h3>${cl}${lg}`;
+  $("journalBody").innerHTML = `${war}<h3>Quests</h3>${qs}<h3>Who poisoned the well? Evidence (${S.g.clues.length}/5)</h3>${S.g.solved ? `<div class="tag">Solved. Now survive what they raised.</div>` : S.g.clues.length >= 3 ? `<div class="tag" style="color:#ffd34d">You know enough to accuse someone: talk to them [E]. The suspects are Mayor Grubb, Vex and Morwen. Accuse the wrong one and the real culprit gets bolder. Follow the orange ? if you're stuck.</div>` : `<div class="tag">It's someone different every game. Follow the orange ? to whoever knows something.</div>`}${cl}${lg}`;
 }
 setInterval(() => { if (journalOpen) renderJournal(); }, 500);
 
@@ -1170,6 +1170,26 @@ function drawNpcHat(hat, x, y) {
   else if (hat === "helmet") { ctx.fillStyle = "#99a"; ctx.beginPath(); ctx.arc(0, 2, 15, Math.PI, 0); ctx.fill(); ctx.fillStyle = "#c33"; ctx.fillRect(-2, -18, 4, 8); }
   ctx.restore();
 }
+// where the main quest wants you next (server's pick), at the townsfolk's live positions
+function questNpcs() {
+  if (!S || !S.g.mq || !S.g.mq.length || !S.np) return [];
+  return S.g.mq.map((id) => { const n = S.np.find((q) => q[0] === id); return n && { id, x: n[1], y: n[2] }; }).filter(Boolean);
+}
+// a compass strip under the clock: N/E/S/W, the Hearth, the shops and the quest
+function drawCompass(t) {
+  if (!S || !use3d || ["lobby", "over", "intro"].includes(S.g.ph)) return;
+  const W2 = Math.min(420, VW - 460), cx = VW / 2, y = 66, span = Math.PI * 0.75;
+  if (W2 < 160) return;
+  ctx.fillStyle = "#0008"; ctx.beginPath(); ctx.roundRect(cx - W2 / 2, y - 12, W2, 24, 6); ctx.fill();
+  const at = (ang) => { let d = ang - aimYaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return Math.abs(d) > span / 2 ? null : cx + d / (span / 2) * (W2 / 2 - 10); };
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, x = at(a); if (x == null) continue; const lab = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"][i]; text(lab, x, y, lab.length === 1 ? 14 : 10, lab === "N" ? "#ff7060" : "#ddd"); }
+  const mark = (wx, wy, icon, col) => { const x = at(Math.atan2(wy - pred.y, wx - pred.x)); if (x != null) text(icon, x, y + 1, 14, col, "center", false); };
+  if (S.g.mode !== "royale" && MAP.hearth) mark(MAP.hearth.x + MAP.hearth.w / 2, MAP.hearth.y + MAP.hearth.h / 2, "🔥", "#ff8a2a");
+  if (S.g.mode !== "royale") for (const w of MAP.walls) if (w.kind === "shop" && w.sid !== "casino") mark(w.x + w.w / 2, w.y + w.h / 2, w.sid === "armoury" ? "🔫" : "🛒", "#fff");
+  for (const n of questNpcs()) mark(n.x, n.y, "❓", "#ffa020");
+  const boss = S.g.boss && S.z.find((z) => z[0] === S.g.boss); if (boss) mark(boss[2], boss[3], "💀", "#fff");
+  ctx.fillStyle = "#ffd34d"; ctx.fillRect(cx - 1, y - 14, 2, 5);
+}
 function drawMinimap(mine, t) {
   if (!S || S.g.ph === "lobby" && !S.g.zone) return;
   const mw = 190, mh = mw * MAP.H / MAP.W, mx = 12, my = 12, k = mw / MAP.W;
@@ -1189,6 +1209,7 @@ function drawMinimap(mine, t) {
     if (S.g.dome && S.g.dome[0] >= S.g.dome[1]) { ctx.strokeStyle = "#9fe0ffaa"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(mx + (h.x + h.w / 2 - ox) * k, my + (h.y + h.h / 2 - oy) * k, DOME_R * k, 0, 7); ctx.stroke(); }
     for (const w of MAP.walls) if (w.kind === "shop") text(w.sid === "casino" ? "🎰" : w.sid === "armoury" ? "🔫" : "🛒", mx + (w.x + w.w / 2 - ox) * k, my + (w.y + w.h / 2 - oy) * k, 11, "#fff", "center", false);
     const st = MAP.walls.find((w) => w.kind === "stall"); if (st) text("🥕", mx + (st.x + st.w / 2 - ox) * k, my + (st.y + st.h / 2 - oy) * k, 10, "#fff", "center", false);
+    for (const n of questNpcs()) text("?", mx + (n.x - ox) * k, my + (n.y - oy) * k, 14 + Math.sin(t * 4) * 2, "#ffa020");
   }
   ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
   if (S.g.zone) {
@@ -1358,7 +1379,7 @@ function render3d(mine, t, dt) {
   if (t - hurtFlash < 0.3) { const g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VH * 0.8); g.addColorStop(0, "#f000"); g.addColorStop(1, `rgba(200,0,0,${0.5 * (1 - (t - hurtFlash) / 0.3)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
   if (t - fogT < 1.2) { ctx.fillStyle = `rgba(120,40,160,${0.25 * (1 - (t - fogT) / 1.2)})`; ctx.fillRect(0, 0, VW, VH); }
   drawHud(mine, t); drawRadial();
-  drawMinimap(mine, t);
+  drawMinimap(mine, t); drawCompass(t);
   drawCrosshair(mine, t);
   if (mine && document.pointerLockElement !== cv && !menusOpen()) { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 170, VH / 2 + 40, 340, 34, 8); ctx.fill(); text("Click to look around  ·  T switches view", VW / 2, VH / 2 + 57, 15, "#ffd34d"); }
   if (t - viewT < 2) text(`${VIEW_NAME[viewMode]}  (T to switch)`, VW / 2, 150, 20, "#fff");
@@ -1370,6 +1391,8 @@ function overlay3d(mine, t, dt) {
   // labels hide behind walls: a quick line-of-sight check from the camera
   const seen = (x, y, z) => { if (!camNow || camNow.x === undefined) return true; const v = [x - camNow.x, y - camNow.y, z - camNow.z], L = Math.hypot(...v); if (L < 1) return true; return rayWorld([camNow.x, camNow.y, camNow.z], v.map((c) => c / L), L, me, true) >= L - 12; };
   const P = (x, y, z) => { const s = R3D.project(x, y, z); return s && s.d < 1500 && seen(x, y, z) ? s : null; };
+  // the main quest's next step: a big orange ? you can see from anywhere
+  for (const n of questNpcs()) { const s = R3D.project(n.x, n.y, 100); if (!s) continue; const bob = Math.sin(t * 3) * 4; ctx.save(); ctx.shadowColor = "#ff8a00"; ctx.shadowBlur = 18; text("?", s.x, s.y - 16 + bob, 44, "#ffa020"); ctx.restore(); if (s.d > 300) text(`${Math.round(s.d / 10)}m`, s.x, s.y + 14 + bob, 12, "#ffc070"); }
   for (const p of S.p) {
     if (p.d || p.air === 1 || p.air === 3 || p.vh) continue;
     const own = p.id === me;
@@ -1992,7 +2015,7 @@ function drawHud(mine, t) {
   let label = "";
   if (g.ph === "lobby") label = `${(MAP.valley || "").toUpperCase()} — ${S.p.length} farmer${S.p.length === 1 ? "" : "s"} waiting`;
   else if (g.ph === "day") label = `DAY ${g.n + 1}${g.dd ? " · DINOSAUR DAY" : ""}  ·  night falls in ${g.left}s`;
-  else if (g.ph === "night") label = g.left < 0 ? `NIGHT ${g.n}  ·  ${g.mode === "endless" ? "BOSS NIGHT" : "FINAL CONTRACT"}` : `NIGHT ${g.n}${g.mode === "story" && g.n < 5 ? "/5" : ""}${g.fog ? " · FOG" : ""}${g.dino ? " · DINOSAURS" : ""}  ·  dawn in ${g.left}s`;
+  else if (g.ph === "night") label = g.left < 0 ? `NIGHT ${g.n}  ·  ${g.mode === "endless" ? "BOSS NIGHT" : "THE LAST NIGHT"}` : `NIGHT ${g.n}${g.fog ? " · FOG" : ""}${g.dino ? " · DINOSAURS" : ""}  ·  dawn in ${g.left}s`;
   else if (g.ph === "royale") label = `ROYALE · ${g.alive} alive${g.zone && g.zone[6] >= 0 ? ` · fog moves in ${g.zone[6]}s` : g.zone && g.zone[5] < g.zone[2] - 2 ? " · FOG CLOSING" : ""}`;
   else label = g.res === "win" ? "VICTORY" : g.res === "royale" ? "ROYALE OVER" : "DEFEAT";
   if (g.ph === "lobby") label += g.mode === "royale" ? " · Royale" : g.mode === "endless" ? " · Endless" : " · Story";
@@ -2266,8 +2289,38 @@ function drawScores() {
   });
 }
 
+// the ending: who did it, what they raised, what became of them. Then the scoreboard.
+let cut = null;
+function playCutscene(c) {
+  const esc = (x) => String(x).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  const slides = [
+    [`${esc(c.valley).toUpperCase()} · NIGHT ${c.night}`, `${esc(c.boss)} is dead. The sun comes up on the Hearth, still burning.`, "#ffe9a0"],
+    [`It was ${esc(c.who)}.`, esc(c.motive), c.color],
+    [esc(c.boss), esc(c.bossLine), "#ff9070"],
+    ["Afterwards", esc(c.fate), "#cfe0b8"],
+    ["THE END", "...of this valley, anyway.", "#ffd34d"],
+  ];
+  cut = { i: -1, slides, timer: 0 };
+  $("cutscene").classList.remove("hidden");
+  if (document.pointerLockElement) document.exitPointerLock();
+  nextSlide();
+}
+function nextSlide() {
+  if (!cut) return;
+  clearTimeout(cut.timer);
+  cut.i++;
+  if (cut.i >= cut.slides.length) return endCutscene();
+  const [big, txt, col] = cut.slides[cut.i], el = $("csSlide");
+  el.classList.remove("on");
+  setTimeout(() => { if (!cut) return; el.innerHTML = `<div class="cs-big" style="color:${col}">${big}</div><div class="cs-txt">${txt}</div>`; el.classList.add("on"); }, 350);
+  cut.timer = setTimeout(nextSlide, cut.i === 1 ? 9000 : 6000);
+}
+function endCutscene() { if (cut) clearTimeout(cut.timer); cut = null; $("cutscene").classList.add("hidden"); }
+$("cutscene").addEventListener("click", () => nextSlide());
+addEventListener("keydown", (e) => { if (!cut) return; e.stopImmediatePropagation(); if (e.key === "Escape") endCutscene(); else if (e.key === " " || e.key === "Enter") { e.preventDefault(); nextSlide(); } }, true);
 function showOver() {
   const win = S.g.res === "win";
+  if (win && S.cut && S.g.mode === "story") playCutscene(S.cut);
   const royale = S.g.res === "royale";
   const myRow = (S.stats || []).find((r) => r.id === me);
   $("overTitle").textContent = royale ? (myRow && myRow.winner ? "WINNER WINNER CHICKEN DINNER" : `#${myRow ? myRow.place : "?"} · BETTER LUCK NEXT DROP`) : win ? "WINNER WINNER CHICKEN DINNER" : "THE HEARTH HAS FALLEN";

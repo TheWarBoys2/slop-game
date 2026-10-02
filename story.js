@@ -3,6 +3,7 @@
 // `api` is provided by the server: { players, mods, flags, crate, hearthMax, heal, gold, stars, points, killPlayer, eliteNow, fullName, legend, teamkills, ... }
 // A choice's `deed` feeds the legend (see legend.js), so how you vote shapes what the valley thinks of you too.
 import { trialEvent, legendChoice } from "./legend.js";
+import { culpritOf } from "./mystery.js";
 
 const CAST = {
   mayor: "Mayor Grubb",
@@ -20,6 +21,7 @@ export function valleyName(rng) {
 export function storyEvent(day, api) {
   const f = api.flags;
   const V = f.valley;
+  if (f.finalAt === day) return lastDay(api); // the mystery's solved (or the culprit cracked): tonight is the last night
   if (day === 1) return {
     title: "The Well",
     text: `Three weeks ago, black slop began bubbling up from the old well in the middle of ${V}. Since then, the dead won't stay buried. ${CAST.mayor} has called a town meeting, and everyone is looking at you. (In the corner, Sergeant Haddock's wireless mutters about a war nobody here asked for.)`,
@@ -88,7 +90,7 @@ export function storyEvent(day, api) {
       title: "The Drowned Mayor",
       text: `The man from your dreams walks out of the woods, dripping. It's the old mayor, ${CAST.mayor}'s grandfather, dead forty years. "Let me back into my well," he gurgles, "and I'll keep the others quiet."`,
       choices: [
-        { label: "Let him in", desc: "He'll be waiting on the last night. You'll be faster.", deed: ["word", 5], go: () => { f.drowned = "let"; api.mods.speed *= 1.15; return "He climbs into the well and sinks without a ripple. Your legs feel light. You have a feeling you'll see him again."; } },
+        { label: "Let him in", desc: "He'll keep the others quiet. You'll be faster.", deed: ["word", 5], go: () => { f.drowned = "let"; api.mods.speed *= 1.15; return "He climbs into the well and sinks without a ripple. Your legs feel light. Whatever's keeping him down there, it isn't you."; } },
         { label: "Put him down now", desc: "Fight him in daylight for a Mythic reward.", deed: ["blood", 8], go: () => { f.drowned = "killed"; api.eliteNow(); return "He screams, and the scream is a drain unclogging. KILL HIM before nightfall. He carries something Mythic."; } },
       ],
     };
@@ -105,32 +107,42 @@ export function storyEvent(day, api) {
       text: `A letter nailed to the Hearth: "I have hired the dead. They work for cheap. Pay me back, 150 each, or tonight gets expensive. — V."`,
       choices: [
         { label: "Pay him back", desc: "-150g each. Stars cleared.", deed: ["coin", 5], go: () => { f.revenge = "paid"; api.gold(-150); api.stars(0); return "You leave the gold in a sack by the road. By morning it's gone, and so are your bounties."; } },
-        { label: "Tell him to get lost", desc: "Tonight is 30% busier. He's building something.", deed: ["blood", 6], go: () => { f.revenge = "defied"; api.mods.zCount *= 1.3; api.mods.bossHp *= 1.3; return "You write something rude on the back of the letter and nail it to a zombie. Out in the hills, a furnace starts glowing."; } },
+        { label: "Tell him to get lost", desc: "Tonight is 30% busier, and whatever comes last will be tougher.", deed: ["blood", 6], go: () => { f.revenge = "defied"; api.mods.zCount *= 1.3; api.mods.bossHp *= 1.3; return "You write something rude on the back of the letter and nail it to a zombie. Vex is very good at revenge."; } },
       ],
     };
   }
-  if (day === 5) {
-    const boss = bossKind(f);
-    const who = { leshen: "THE SLOP LESHEN, the rotten god under the well", drowned: "THE DROWNED MAYOR, risen with his whole council", golem: "VEX'S BRASS GOLEM, steam pouring from its joints" }[boss];
-    return {
-      title: "The Last Day",
-      text: `The birds have gone quiet. Tonight ${who} is coming for the Hearth. Haddock's wireless plays nothing but a long, flat tone, which he says means the bombs come tonight too. ${api.dome()[0] >= api.dome()[1] ? "At least the Dome is up." : `The Dome stands at ${api.dome()[0]} of ${api.dome()[1]} gold.`} You have one day to prepare. What's the plan?`,
-      choices: [
-        { label: "Fortify the Hearth", desc: "+400 Hearth health.", deed: ["soil", 8], go: () => { f.prep = "fort"; api.hearthMax(400); api.repair(); return "Everyone hauls stone until sundown. The Hearth has never looked so smug."; } },
-        { label: "Arm up", desc: "A Legendary crate for everyone.", deed: ["blood", 5], go: () => { f.prep = "arms"; for (const p of api.players()) api.crate(3, p); return "You empty the town armoury. Legendary crates for everyone."; } },
-        ...(api.dome()[0] < api.dome()[1] ? [{ label: "Finish the Dome", desc: "Everyone empties their pockets into it (up to 250g each).", deed: ["soil", 8], go: () => { f.prep = "dome"; const got = api.fundDome(250); const [h, c] = api.dome(); return h >= c ? `Every coin in ${V} goes into the Dome (${got}g). The pylons sing, and a pale blue bubble closes over the Hearth. Just in time.` : `You raise ${got}g between you. The Dome stands at ${h} of ${c}. It's not enough yet. Find the rest before dark.`; } }] : []),
-        { label: "Throw a feast", desc: "Full heal, +1 skill point, +10% damage.", deed: ["soil", 5], go: () => { f.prep = "feast"; api.heal(); api.points(1); api.mods.dmg *= 1.1; return "Turnip stew for everyone. Somebody sings. For one evening, it's a nice place to live."; } },
-        ...[legendChoice(api.legend(), api)].filter(Boolean),
-      ],
-    };
-  }
+  if (day === 5) return {
+    title: "The Wireless",
+    text: `Haddock's wireless plays nothing but a long, flat tone, which he says means the war has started. The bombs can fall on ${V} any night from now. ${api.dome()[0] >= api.dome()[1] ? "At least the Dome is up." : `The Dome stands at ${api.dome()[0]} of ${api.dome()[1]} gold.`} And whoever poisoned the well is still walking around town.`,
+    choices: [
+      ...(api.dome()[0] < api.dome()[1] ? [{ label: "Finish the Dome", desc: "Everyone empties their pockets into it (up to 250g each).", deed: ["soil", 8], go: () => { const got = api.fundDome(250); const [h, c] = api.dome(); return h >= c ? `Every coin in ${V} goes into the Dome (${got}g). The pylons sing, and a pale blue bubble closes over the Hearth.` : `You raise ${got}g between you. The Dome stands at ${h} of ${c}. Find the rest before the siren.`; } }] : []),
+      { label: "Ask around about the well", desc: "Somebody remembers something. (A free clue)", deed: ["word", 6], go: () => { const c = api.freeClue(); return c ? `Old gossip, new ears. ${c}` : "Everyone's told you everything they know. You just have to say it to the right face."; } },
+      { label: "Fortify the Hearth", desc: "+300 Hearth health, fully repaired.", deed: ["soil", 6], go: () => { api.hearthMax(300); api.repair(); return "Sandbags, stone, and a sign saying KEEP OUT. The Hearth has never looked so smug."; } },
+    ],
+  };
   return null;
 }
 
+// the last day: whoever poisoned the well raised something, and it comes tonight
+function lastDay(api) {
+  const f = api.flags, V = f.valley, C = culpritOf(f), boss = bossKind(f);
+  const who = { leshen: "THE SLOP LESHEN, the rotten god under the well", drowned: "THE DROWNED MAYOR, risen with his whole council", golem: "VEX'S BRASS GOLEM, steam pouring from its joints" }[boss];
+  return {
+    title: "The Last Day",
+    text: `${C.name} poisoned the well, and everyone knows it now. ${C.bossLine} Tonight ${who} is coming for the Hearth. ${api.dome()[0] >= api.dome()[1] ? "At least the Dome is up." : `The Dome stands at ${api.dome()[0]} of ${api.dome()[1]} gold.`} You have one day to prepare. What's the plan?`,
+    choices: [
+      { label: "Fortify the Hearth", desc: "+400 Hearth health.", deed: ["soil", 8], go: () => { f.prep = "fort"; api.hearthMax(400); api.repair(); return "Everyone hauls stone until sundown. The Hearth has never looked so smug."; } },
+      { label: "Arm up", desc: "A Legendary crate for everyone.", deed: ["blood", 5], go: () => { f.prep = "arms"; for (const p of api.players()) api.crate(3, p); return "You empty the town armoury. Legendary crates for everyone."; } },
+      ...(api.dome()[0] < api.dome()[1] ? [{ label: "Finish the Dome", desc: "Everyone empties their pockets into it (up to 250g each).", deed: ["soil", 8], go: () => { f.prep = "dome"; const got = api.fundDome(250); const [h, c] = api.dome(); return h >= c ? `Every coin in ${V} goes into the Dome (${got}g). The pylons sing, and a pale blue bubble closes over the Hearth. Just in time.` : `You raise ${got}g between you. The Dome stands at ${h} of ${c}. It's not enough yet. Find the rest before dark.`; } }] : []),
+      { label: "Throw a feast", desc: "Full heal, +1 skill point, +10% damage.", deed: ["soil", 5], go: () => { f.prep = "feast"; api.heal(); api.points(1); api.mods.dmg *= 1.1; return "Turnip stew for everyone. Somebody sings. For one evening, it's a nice place to live."; } },
+      ...[legendChoice(api.legend(), api)].filter(Boolean),
+    ],
+  };
+}
+
+// the last night's horror is whatever the culprit raised, so the fight is the payoff for solving it
 export function bossKind(f) {
-  if (f.path === "drink" && f.drowned === "let") return "drowned";
-  if (f.path === "sell") return "golem";
-  return "leshen";
+  return culpritOf(f).boss;
 }
 
 export const BOSSES = {
@@ -153,7 +165,7 @@ export function ending(win, f, night) {
   if (f.path === "seal" && f.ally === "church") lines.push(f.tithe === "stolen" ? "Brother Aldous preaches a sermon about thieves every Sunday. Nobody says anything. The Hearth burns on." : "The Hearth-Church rings its bells for a week. Brother Aldous takes full credit. The well stays sealed, for now.");
   else if (f.path === "seal") lines.push(f.price === "paid" ? "Morwen moves into the mayor's house. Nobody objects. Nobody dares. Sometimes you see the heir you gave her, waving from the reeds." : "Morwen was never seen again, but every spring the reeds grow in the shape of a rude gesture.");
   else if (f.path === "drink") lines.push(f.drowned === "let" ? "The drowned mayor sinks back into his well for good. The water tastes wonderful now. Nobody asks why." : "You burned the old mayor and salted the well. You still dream of him, but now he's just waving.");
-  else lines.push(f.vex === "robbed" ? (f.revenge === "defied" ? "The golem lies in pieces. You sell the pieces. To Vex. He pays double, out of respect." : "Vex calls it even and opens a shop in the next valley. He still has your picture behind the counter.") : `Vex opens a chain of General Stores across the kingdom with your faces on the sign. You get no royalties.${f.insured ? " The insurance was fake, obviously." : ""}`);
+  else lines.push(f.vex === "robbed" ? (f.revenge === "defied" ? "Vex's revenge never quite came off. He sells postcards of the battle anyway, and pays you a royalty, out of respect." : "Vex calls it even and opens a shop in the next valley. He still has your picture behind the counter.") : `Vex opens a chain of General Stores across the kingdom with your faces on the sign. You get no royalties.${f.insured ? " The insurance was fake, obviously." : ""}`);
   if (f.champion) lines.push(`${f.championName} is remembered as the Champion of ${V}. The statue's nose falls off within a year.`);
   else if (f.champion === 0) lines.push(`${V} never crowns a champion. The collective gets a very long plaque instead.`);
   if (f.domeHeld) lines.push("The Dome held when the bombs came. Grubb charges a shilling to see the scorch marks, and calls it the Heritage Centre.");
@@ -169,6 +181,7 @@ const MEETING = [
   { label: "Open the armoury", desc: "A rare weapon crate for everyone.", deed: ["blood", 4], go: (api) => { for (const p of api.players()) api.crate(1 + (Math.random() < 0.25 ? 1 : 0), p); return "Haddock unlocks the cage with a sigh. Crates at everyone's feet."; } },
   { label: "Hold a feast", desc: "Everyone healed, fed and watered.", deed: ["word", 4], go: (api) => { api.feast(); return "Turnip stew for everyone. Somebody brought a fiddle. For one evening, nobody mentions the dead."; } },
   { label: "Call a curfew", desc: "20% fewer of the dead tonight.", deed: ["word", 4], go: (api) => { api.mods.nightCut *= 0.8; return "Shutters down, lamps out, nobody out after dark. The dead find less to come for."; } },
+  { label: "Ask around about the well", desc: "Somebody remembers something. (A free clue)", deed: ["word", 4], go: (api) => { const c = api.flags.culprit && api.freeClue(); return c ? `Old gossip, new ears. ${c}` : "Everyone talks. Nobody says anything new."; } },
   { label: "Build turrets", desc: "Two turrets by the Hearth.", deed: ["soil", 4], go: (api) => { api.turrets(2); return "Two rattling turrets go up beside the Hearth. Haddock names them both Doris."; } },
 ];
 export function townMeeting(day, api) {
