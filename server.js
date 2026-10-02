@@ -555,12 +555,13 @@ function makePlayer(ws, msg) {
     cards: STARTER.reduce((a, id) => { a[id] = (a[id] || 0) + 1; return a; }, {}), deck: [], // your Slop Snap collection stays with you between games
   };
   resetProgress(p);
+  if (game.phase === "lobby") p.rolled = p.trait; // a random trait is rolled once, when you join, so the name in the lobby is the name you play as
   resetLoadout(p, true);
   return p;
 }
 function resetProgress(p) {
   p.lvl = 1; p.xp = 0; p.pts = 0; p.sk = { ...(BACKGROUNDS[p.bg].sk || {}) };
-  p.gen = 1; p.lineage = []; p.trait = p.chosenTrait || pick(TRAIT_KEYS); p.champion = false; p.heat = 0; p.dead = false;
+  p.gen = 1; p.lineage = []; p.trait = p.chosenTrait || p.rolled || pick(TRAIT_KEYS); p.rolled = null; p.champion = false; p.heat = 0; p.dead = false;
   p.st = { kills: 0, deaths: 0, dmg: 0, crops: 0, tk: 0, gold: 0, bounty: 0, shots: 0, hits: 0, hs: 0, perfect: 0, cases: 0, shoutHits: 0, repairs: 0, pk: 0 };
   p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.pod = false; p.veh = 0; p.spins = 0; p.casino = null; p.spinning = false;
   p.bl = 0; p.bw = 0; p.going = 0; p.goKind = ""; p.inf = null; p.soggy = 0; p.ads = false;
@@ -1339,7 +1340,7 @@ function buy(p, item) {
   if (item === "enhance") return enhance(p);
   if (item === "hoe" && p.hoe >= 3) return toast(p, "Your Golden Hoe is as good as hoes get.", "#bbb");
   const cost = price(p, item === "hoe" ? HOE_COST[p.hoe] : it.cost);
-  if (p.gold < cost) return toast(p, `Need ${cost}g`, "#f88");
+  if (p.gold < cost) return toast(p, `${it.name} costs ${cost}g. You have ${p.gold}g.`, "#f88");
   if (item === "repair" && game.hearth >= game.hearthMax) return toast(p, "Hearth is already at full health", "#bbb");
   if (CALL_IN[item] && p.called && now() < p.called) return toast(p, "Haddock's still on the radio about your last one. Give it a moment.", "#f88");
   p.gold -= cost;
