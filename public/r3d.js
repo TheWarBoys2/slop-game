@@ -305,7 +305,7 @@ var R3D = (function () {
   }
 
   // ---------------------------------------------------------------- models
-  const WEAPON_LEN = { pistol: 18, smg: 24, shotgun: 30, rifle: 34, sniper: 44, staff: 40, ak: 32, sword: 44, rocket: 42 };
+  const WEAPON_LEN = { laser: 46, pistol: 18, smg: 24, shotgun: 30, rifle: 34, sniper: 44, staff: 40, ak: 32, sword: 44, rocket: 42 };
   const RAR = [0xd8d8d8, 0x4da6ff, 0xc070ff, 0xffc030, 0xff4b4b];
   function weaponMesh(type, rar) {
     const g = new T.Group(), len = WEAPON_LEN[type] || 24;
@@ -793,7 +793,7 @@ var R3D = (function () {
     // the dead
     const bk = S.g.bk;
     for (const zz of S.z) {
-      const [id, type, zx, zy, , burn, zh, charging, frozen, glow] = zz;
+      const [id, type, zx, zy, , burn, zh, charging, frozen, glow, armd] = zz;
       const e = pooled(`z:${id}:${type}:${type === "b" ? bk : ""}:${glow ? 1 : 0}`, () => zombieMesh(type, bk, glow));
       const px = e.x, py = e.y;
       smoothTo(e, zx, zy, zh || 0, dt);
@@ -807,6 +807,16 @@ var R3D = (function () {
       const fr = e.obj.userData.fire; fr.visible = !!burn; if (burn) { fr.scale.set(1, 0.8 + Math.sin(t * 20 + id) * 0.2, 1); fr.rotation.y = t * 3; }
       if (e.obj.userData.wings) e.obj.userData.wings.forEach((w, i) => { w.rotation.x = (i ? 1 : -1) * Math.sin(t * 14 + id) * 0.7; });
       if (charging) { e.obj.userData.arms.forEach((a) => { a.rotation.z = 0.5; }); e.obj.rotation.z = -0.25; } else e.obj.rotation.z = 0;
+      // armour plates, and the weak spot that glows red (the head; on a charger, its back)
+      if (armd && !e.obj.userData.plate) {
+        const r = ZR[type] || 15, h = r * 3.7, g = new T.Group(), steel = mat(0x7a828a);
+        g.add(mesh(new T.BoxGeometry(r * 1.5, h * 0.35, r * 1.7), steel, 0, h * 0.5, 0));
+        g.add(mesh(new T.BoxGeometry(r * 1.1, h * 0.12, r * 1.9), steel, 0, h * 0.72, 0));
+        const weak = mesh(new T.SphereGeometry(r * 0.38, 10, 8), new T.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.85, depthWrite: false }), type === "c" ? -r * 0.9 : 0, type === "c" ? h * 0.55 : h * 0.92, 0);
+        g.add(weak); g.userData.weak = weak;
+        e.obj.add(g); e.obj.userData.plate = g;
+      }
+      if (e.obj.userData.plate) { const pl = e.obj.userData.plate; pl.visible = !!armd; if (armd) pl.userData.weak.scale.setScalar(0.85 + Math.sin(t * 8 + id) * 0.2); }
     }
     // grenades, molotovs and rockets in flight
     for (const [id, kind, x, y, z] of S.pr || []) {
@@ -930,6 +940,10 @@ var R3D = (function () {
       arm.rotation.z = p.w === "sword" && sk < 1 ? pitch + 1.4 - sk * 2.6 : pitch;
       arm.rotation.y = p.w === "sword" && sk < 1 ? (sk - 0.5) * 1.6 : 0;
       // parachute
+      if (p.air === 4) {
+        if (!e.pod) { e.pod = new T.Group(); const shell = mesh(new T.CylinderGeometry(18, 24, 70, 10), mat(0x2a2a2a)); shell.position.y = 30; const tip = mesh(new T.ConeGeometry(24, 30, 10), mat(p.c)); tip.position.y = -20; tip.rotation.x = Math.PI; const fire = mesh(new T.ConeGeometry(30, 120, 10), new T.MeshBasicMaterial({ color: 0xff7a20, transparent: true, opacity: 0.6, depthWrite: false })); fire.position.y = 140; e.pod.add(shell, tip, fire); e.obj.add(e.pod); }
+        e.pod.visible = !mine; e.obj.userData.arm.visible = false; e.podOn = true; // your own pod would fill the camera; everyone else sees it come in
+      } else if (e.podOn) { e.podOn = false; e.pod.visible = false; e.obj.userData.arm.visible = true; }
       if (p.air === 2) {
         if (!e.chute) { e.chute = mesh(new T.SphereGeometry(40, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(p.c)); e.chute.position.y = 90; e.obj.add(e.chute); }
         e.chute.visible = true;
