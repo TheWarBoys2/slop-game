@@ -126,7 +126,7 @@ function damageWall(w, dmg) {
   WALLS = WALLS.filter((o) => o !== w && !(w.kind === "house" && o.hid === w.id));
   events.push({ k: "collapse", x: Math.round(w.x + w.w / 2), y: Math.round(w.y + w.h / 2), w: Math.round(w.w), h: Math.round(w.h), z: w.z1 || 40, kind: w.kind });
   if (w.kind === "house") WALLS.push({ id: wallId++, x: w.x + 10, y: w.y + 10, w: w.w - 20, h: w.h - 20, kind: "rubble", roof: w.roof, z0: 0, z1: 22 });
-  if (w.kind === "crate" && Math.random() < 0.15) crates.push({ id: nextId++, x: w.x + w.w / 2, y: w.y + w.h / 2, w: newWeapon(pick(LOOT_TYPES), lootRarity(game.night)) });
+  if (w.kind === "crate" && Math.random() < 0.15) crates.push({ id: nextId++, x: w.x + w.w / 2, y: w.y + w.h / 2, w: newWeapon(lootType(), lootRarity(game.night)) });
   mapVer++; mapDirty = true;
 }
 // the distance from a point to a box, in 3D
@@ -344,10 +344,12 @@ const WEAPONS = {
   ak:      { name: "AK-Maybe",   dmg: 26,  rate: 9,   spread: 0.09,  range: 820,  pellets: 1, mag: 30, reload: 2.2, bloom: 0.18, gamble: true }, // every shot re-rolls the ammo count
   sword:   { name: "Slop Sword", dmg: 70,  rate: 1.8, spread: 0,     range: 92,   pellets: 1, mag: 1,  reload: 0,   bloom: 0, melee: true, arc: 1.1 }, // no ammo, lunges, hits harder falling
   rocket:  { name: "Rocket Launcher", dmg: 120, rate: 1.1, spread: 0.01, range: 1600, pellets: 1, mag: 1, reload: 1.3, bloom: 0, proj: "rocket", boom: 125 }, // aim at your feet and jump
+  laser:   { name: "Spartan Laser", dmg: 650, rate: 0.5, spread: 0, range: 2400, pellets: 1, mag: 4, reload: 4.0, bloom: 0, pierce: true, charge: 1.2 }, // hold to charge, then it cuts through everything in a line. Everything.
 };
 const MYTHIC = {
-  smg: "The Hive", shotgun: "Farmer's Wrath", rifle: "Kingmaker", sniper: "The Last Word", staff: "Morwen's Spite", pistol: "Grubb's Gavel", ak: "Lady Luck", sword: "Excalibutt", rocket: "The Moon Unit",
+  smg: "The Hive", shotgun: "Farmer's Wrath", rifle: "Kingmaker", sniper: "The Last Word", staff: "Morwen's Spite", pistol: "Grubb's Gavel", ak: "Lady Luck", sword: "Excalibutt", rocket: "The Moon Unit", laser: "The Final Word",
 };
+const lootType = () => (Math.random() < 0.03 ? "laser" : pick(LOOT_TYPES)); // the Spartan Laser is a rare find
 const LOOT_TYPES = ["smg", "shotgun", "rifle", "sniper", "staff", "smg", "shotgun", "rifle", "sniper", "staff", "ak", "sword", "rocket"]; // the AK is rarer
 const RARITY = ["Common", "Rare", "Epic", "Legendary", "Mythic"];
 const RARITY_MULT = [1, 1.2, 1.4, 1.7, 2.0];
@@ -430,8 +432,11 @@ SHOP.repair.cat = "dome";
 SHOP.flowers.cat = SHOP.trinket.cat = "gift"; // their own tab, so people can find them
 SHOP.dome50 = { name: "Put 50g towards the Hearth Dome", cost: 50, cat: "dome" };
 SHOP.dome250 = { name: "Put 250g towards the Hearth Dome", cost: 250, cat: "dome" };
+// call one in: Haddock radios it through and it lands near you a few seconds later
+const CALL_IN = { call_tractor: ["tractor", 200, "Tractor"], call_buggy: ["buggy", 350, "Slop Buggy"], call_heli: ["heli", 800, "Crop Chopper"], call_gunship: ["gunship", 1800, "Slop Gunship"] };
+for (const [id, [, cost, name]] of Object.entries(CALL_IN)) SHOP[id] = { name: `Call in a ${name} (lands near you)`, cost, cat: "veh" };
 // which counter sells what
-for (const [id, it] of Object.entries(SHOP)) it.shop = ["repair", "dome50", "dome250"].includes(id) ? "hearth" : ["case", "gcase"].includes(id) ? "casino" : it.cat === "arms" || it.cat === "gear" || id === "enhance" ? "armoury" : "general";
+for (const [id, it] of Object.entries(SHOP)) it.shop = ["repair", "dome50", "dome250"].includes(id) ? "hearth" : ["case", "gcase"].includes(id) ? "casino" : it.cat === "arms" || it.cat === "gear" || it.cat === "veh" || id === "enhance" ? "armoury" : "general";
 
 const VEHICLES = {
   tractor: { name: "Tractor",    r: 28, max: 260, acc: 240, turn: 2.2, hp: 700, ram: 1.6 },
@@ -557,7 +562,7 @@ function resetProgress(p) {
   p.lvl = 1; p.xp = 0; p.pts = 0; p.sk = { ...(BACKGROUNDS[p.bg].sk || {}) };
   p.gen = 1; p.lineage = []; p.trait = p.chosenTrait || pick(TRAIT_KEYS); p.champion = false; p.heat = 0; p.dead = false;
   p.st = { kills: 0, deaths: 0, dmg: 0, crops: 0, tk: 0, gold: 0, bounty: 0, shots: 0, hits: 0, hs: 0, perfect: 0, cases: 0, shoutHits: 0, repairs: 0, pk: 0 };
-  p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.veh = 0; p.spins = 0; p.casino = null; p.spinning = false;
+  p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.pod = false; p.veh = 0; p.spins = 0; p.casino = null; p.spinning = false;
   p.bl = 0; p.bw = 0; p.going = 0; p.goKind = ""; p.inf = null; p.soggy = 0; p.ads = false;
   p.hoe = p.cls === "farmer" ? 1 : 0; p.stress = 0; p.meltdown = 0; p.elem = "force";
   p.love = {}; p.dating = null; p.spouse = null; p.gifted = new Set(); p.breath = 15;
@@ -772,25 +777,44 @@ function accident(p, kind) {
 }
 function relieve(p) {
   const t = now();
-  if (p.dead || p.air || p.veh || t < p.going || game.phase === "intro") return;
+  const v = vehOf(p), flying = v && VEHICLES[v.kind].air && (v.z || 0) > 30;
+  if (p.dead || p.air || (p.veh && !flying) || t < p.going || game.phase === "intro") return;
   const kind = p.bw >= p.bl ? "poo" : "pee";
   if (Math.max(p.bl, p.bw) < 25) return toast(p, "You don't need to go. You try anyway. Nothing.", "#bbb");
   p.going = t + (kind === "poo" ? 2.2 : 1.4); p.goKind = kind;
   setTimeout(() => {
     if (p.dead || !players.has(p.id)) return;
     if (kind === "pee") { p.bl = 0; p.warnbl = false; } else { p.bw = 0; p.warnbw = false; }
-    events.push({ k: "mess", x: Math.round(p.x), y: Math.round(p.y), kind });
-    const plot = PLOTS.find((pl) => (pl.stage === 1 || pl.stage === 2) && dist2(pl, p) < 60 * 60);
-    if (plot && kind === "poo") { plot.stage++; plot.prog = 0; deed("soil", 3); toast(p, "Fertilised. The crop grows a whole stage. Nature is disgusting.", "#7fd34d"); }
-    else toast(p, kind === "pee" ? "Ahh. Relief." : "Much better. Don't look behind you.", "#8f8");
+    const v2 = vehOf(p), air = v2 && VEHICLES[v2.kind].air && (v2.z || 0) > 30;
+    events.push({ k: "mess", x: Math.round(p.x), y: Math.round(p.y), kind, ...(air ? { big: 1, drop: Math.round(v2.z) } : {}) });
+    if (air) bombsAway(p, kind);
+    if (fertilise(p, kind, air ? 140 : 90)) return;
+    if (!air) toast(p, kind === "pee" ? "Ahh. Relief." : "Much better. Don't look behind you.", "#8f8");
   }, (p.going - t) * 1000);
+}
+// your business, applied to the farm: poo grows a crop a whole stage and makes it yield one extra; pee waters it
+function fertilise(p, kind, r) {
+  const plots = PLOTS.filter((pl) => (pl.stage === 1 || pl.stage === 2) && dist2(pl, p) < r * r);
+  if (!plots.length) return false;
+  for (const pl of plots) { if (kind === "poo") { pl.stage++; pl.prog = 0; pl.fert = true; } else pl.prog = Math.min(0.99, pl.prog + 0.5); }
+  deed("soil", kind === "poo" ? 3 : 1);
+  toast(p, kind === "poo" ? `Fertilised ${plots.length > 1 ? plots.length + " crops" : "the crop"}: a whole stage of growth, and one extra at harvest. Nature is disgusting.` : `Watered ${plots.length > 1 ? plots.length + " crops" : "the crop"}. They perk right up.`, "#7fd34d");
+  return true;
+}
+// from a helicopter, it lands on whoever is underneath
+function bombsAway(p, kind) {
+  const R = 70; let zs = 0, mates = [];
+  for (const z of zombies) if (z.hp > 0 && dist2(z, p) < (R + z.r) ** 2) { hurtZombie(z, kind === "poo" ? 40 : 15, p); z.stun = Math.max(z.stun || 0, now() + 1.5); zs++; }
+  for (const q of players.values()) if (q !== p && !q.dead && !q.air && !q.veh && dist2(q, p) < R * R) { mates.push(q); toast(q, `${fullName(p)} just ${kind === "poo" ? "pooed" : "peed"} on you from a helicopter.`, "#c8a050"); addStress(q, 15); if (kind === "poo") q.bile = now() + 6; }
+  if (mates.length) { p.heat += 25 * mates.length; feed(`${fullName(p)} ${kind === "poo" ? "pooed" : "peed"} on ${mates.map(fullName).join(" and ")} from a helicopter`, "#c8a050"); }
+  toast(p, mates.length ? "Direct hit. The police would like a word." : zs ? `Bombs away! ${zs} zombie${zs > 1 ? "s" : ""} hit.` : "Bombs away!", "#c8a050");
 }
 
 // ---------------------------------------------------------------- combat
 function hurtZombie(z, dmg, p, kind) {
   if (z.hp <= 0) return;
   z.hp -= dmg;
-  if (p) { p.st.dmg += dmg; p.pe.push({ k: "dmg", x: z.x, y: z.y - z.r, z: Math.round((z.z || 0) + zHeight(z)), v: Math.round(dmg), crit: kind === "crit", hs: kind === "hs" }); }
+  if (p) { p.st.dmg += dmg; p.pe.push({ k: "dmg", x: z.x, y: z.y - z.r, z: Math.round((z.z || 0) + zHeight(z)), v: Math.round(dmg), crit: kind === "crit", hs: kind === "hs", wk: kind === "wk" ? 1 : 0, arm: kind === "arm" ? 1 : 0, kill: z.hp <= 0 ? 1 : 0 }); }
   if (z.hp <= 0) {
     const def = ZTYPES[z.type];
     if (p) deed("blood", z.type === "boss" || z.type === "elite" ? 20 : 0.4);
@@ -799,13 +823,13 @@ function hurtZombie(z, dmg, p, kind) {
       if (!p.kt.has(z.type)) { p.kt.add(z.type); p.st.ztypes = p.kt.size; }
       p.st.kills++;
       addGold(p, def.gold);
-      addXp(p, def.xp + (kind === "hs" ? 4 : 0));
+      addXp(p, def.xp + (kind === "hs" || kind === "wk" ? 4 : 0));
       if (sk(p, "bloodlust")) p.hp = Math.min(maxHp(p), p.hp + 3 * sk(p, "bloodlust"));
     }
     if (z.type === "boomer") bile(z.x, z.y, z.z || 0, 150);
-    if (z.type === "tank" && Math.random() < 0.15) crates.push({ id: nextId++, x: z.x, y: z.y, w: newWeapon(pick(LOOT_TYPES), 1 + (Math.random() < 0.4 ? 1 : 0)) });
+    if (z.type === "tank" && Math.random() < 0.15) crates.push({ id: nextId++, x: z.x, y: z.y, w: newWeapon(lootType(), 1 + (Math.random() < 0.4 ? 1 : 0)) });
     if (z.type === "elite") {
-      crates.push({ id: nextId++, x: z.x, y: z.y, w: newWeapon(pick(LOOT_TYPES), 4) });
+      crates.push({ id: nextId++, x: z.x, y: z.y, w: newWeapon(lootType(), 4) });
       feed(`The Drowned Mayor is dead. He dropped something MYTHIC.`, "#ff4b4b");
     }
     if (z.type === "boss") {
@@ -886,8 +910,24 @@ function respawnHeir(p) {
   p.champion = game.flags.champion === p.id;
   resetLoadout(p, false);
   p.food = Math.max(p.food, 70); p.water = Math.max(p.water, 70); p.rad = 0; p.drunk = 0; p.invDirty = true; // the heir keeps the bag, the gear and the shares
-  toast(p, `${old} is dead. Long live ${fullName(p)}! (Inheritance tax: ${tax}g)`, "#ffd34d");
+  toast(p, `${old} is dead. Long live ${fullName(p)}! (Inheritance tax: ${tax}g) Steer your hellpod with WASD.`, "#ffd34d");
   feed(`${fullName(p)} inherits the farm`, "#c0a0ff");
+  hellpod(p);
+}
+// heirs arrive from orbit: a few seconds to steer, then the pod flattens whatever is underneath
+const POD_LEN = 3.2, POD_R = 110;
+function hellpod(p) {
+  const t = now();
+  p.z = 900; p.vx = p.vy = p.vz = 0; p.gr = false; p.air = "fall"; p.pod = true; p.fallEnd = t + POD_LEN; p.fallDur = POD_LEN;
+  events.push({ k: "podin", id: p.id });
+}
+function podLand(p) {
+  p.pod = false;
+  events.push({ k: "boom", x: p.x, y: p.y, r: POD_R, col: 0xff7a20 }); events.push({ k: "podland", x: p.x, y: p.y });
+  let n = 0;
+  for (const z of zombies) if (z.hp > 0 && dist2(z, p) < (POD_R + z.r) ** 2) { hurtZombie(z, z.type === "boss" ? 300 : 900, p); n++; }
+  for (const q of players.values()) if (q !== p && !q.dead && !q.air && dist2(q, p) < 45 * 45) hurtPlayer(q, 999, p, "landed on by a hellpod");
+  if (n) toast(p, `Hellpod landing: ${n} squashed.`, "#ff9a40");
 }
 
 // ---------------------------------------------------------------- explosions, things you throw, and fire
@@ -1073,7 +1113,7 @@ function shoot(p, w) {
   if (def.proj) { w.nextShot = t + 1 / def.rate; w.ammo--; p.st.shots++; fireRocket(p, w, dmgMult(p, w)); return; }
   w.nextShot = t + 1 / def.rate;
   w.ammo--;
-  if (def.gamble && w.ammo > 0) w.ammo = Math.floor(Math.random() * (w.rarity === 4 ? 150 : 100)); // could be 97, could be 0
+  if (def.gamble && w.ammo > 0 && !w.hot) w.ammo = Math.floor(Math.random() * (w.rarity === 4 ? 150 : 100)); // could be 97, could be 0. A perfect reload steadies it for one mag
   p.st.shots++;
   const myth = w.rarity === 4;
   const mult = dmgMult(p, w);
@@ -1132,7 +1172,11 @@ function shoot(p, w) {
         let tag = "", head;
         if (flat) { const hl = Math.hypot(dx, dy) || 1; head = Math.abs((target.x - mx) * dy / hl - (target.y - my) * dx / hl) < (kind === "z" ? target.r : 16) * 0.38; }
         else { const th = hits.find((h) => h[1] === target)[0], hz = mz + dz * th, tz = target.z || 0, hh = kind === "z" ? zHeight(target) : crouched(target) ? 40 : MV.HGT; head = hz > tz + hh * 0.8; }
-        if (head && w.type !== "shotgun") { dmg *= 1.75 + 0.25 * sk(p, "deadeye"); tag = "hs"; p.st.hs++; }
+        const armoured = kind === "z" && target.armHp > 0;
+        const back = armoured && target.type === "charger" && ((target.fx || 0) * dx + (target.fy || 0) * dy) > 0.3; // shot in the back
+        if (armoured && (head || back)) { dmg *= WEAK_MULT + 0.25 * sk(p, "deadeye"); tag = "wk"; p.st.hs++; }
+        else if (armoured) { target.armHp -= dmg; dmg *= ARM_SOAK; tag = "arm"; if (target.armHp <= 0) { target.armHp = 0; events.push({ k: "armbreak", x: target.x, y: target.y, z: Math.round((target.z || 0) + zHeight(target) * 0.6) }); p.pe.push({ k: "toast", text: "Armour off!", color: "#ffd34d" }); } }
+        else if (head && w.type !== "shotgun") { dmg *= 1.75 + 0.25 * sk(p, "deadeye"); tag = "hs"; p.st.hs++; }
         if (p.cls === "rogue" && Math.random() < 0.25 + (traitOf(p).luck ? 0.1 : 0)) { dmg *= 2; tag = tag || "crit"; }
         if (kind === "z") {
           hurtZombie(target, dmg, p, tag);
@@ -1154,7 +1198,7 @@ function shoot(p, w) {
 // Active reloads (back by popular demand). Press R to reload, then tap R again inside the green window
 // for an instant reload and an empowered mag. Miss the window and you fumble, which costs a little time.
 // guns get dirty as you shoot them, and dirty guns can jam: R clears a jam
-const DIRT = { pistol: 0.15, smg: 0.11, rifle: 0.14, ak: 0.22, shotgun: 0.3, sniper: 0.4, staff: 0, rocket: 0.25, sword: 0 };
+const DIRT = { pistol: 0.15, smg: 0.11, rifle: 0.14, ak: 0.22, shotgun: 0.3, sniper: 0.4, staff: 0, rocket: 0.25, sword: 0, laser: 0 };
 const RL_LO = 0.45, RL_HI = 0.62;
 function startReload(p, w) {
   const def = WEAPONS[w.type];
@@ -1242,10 +1286,11 @@ function interact(p) {
   if (plot.stage === 0) {
     const crop = takeSeed(p);
     if (!crop) return toast(p, "No seeds. Old Giles sells them at the produce stall.", "#f88");
-    plot.stage = 1; plot.prog = 0; plot.crop = crop; plot.rate = (p.cls === "farmer" ? 1.85 : 1) * (1 + 0.25 * sk(p, "green")) * (1 + 0.15 * (p.hoe || 0)) * game.mods.grow; plot.owner = p.id;
+    plot.stage = 1; plot.prog = 0; plot.fert = false; plot.crop = crop; plot.rate = (p.cls === "farmer" ? 1.85 : 1) * (1 + 0.25 * sk(p, "green")) * (1 + 0.15 * (p.hoe || 0)) * game.mods.grow; plot.owner = p.id;
     addXp(p, 2);
   } else if (plot.stage === 3) {
-    const C = CROPS[plot.crop || "turnip"], n = C.yield || 1;
+    const C = CROPS[plot.crop || "turnip"], n = (C.yield || 1) + (plot.fert ? 1 : 0);
+    plot.fert = false;
     plot.stage = C.regrow ? 2 : 0; plot.prog = 0; p.st.crops++; deed("soil", 5);
     let lost = 0; for (let i = 0; i < n; i++) if (!bagAdd(p.bag, plot.crop || "turnip")) lost++;
     p.invDirty = true;
@@ -1296,6 +1341,7 @@ function buy(p, item) {
   const cost = price(p, item === "hoe" ? HOE_COST[p.hoe] : it.cost);
   if (p.gold < cost) return toast(p, `Need ${cost}g`, "#f88");
   if (item === "repair" && game.hearth >= game.hearthMax) return toast(p, "Hearth is already at full health", "#bbb");
+  if (CALL_IN[item] && p.called && now() < p.called) return toast(p, "Haddock's still on the radio about your last one. Give it a moment.", "#f88");
   p.gold -= cost;
   deed("coin", cost / 25 + (item === "case" ? 4 : 0));
   shock(game.market, "VEX", 0.004);
@@ -1304,6 +1350,7 @@ function buy(p, item) {
     p.invDirty = true;
     return toast(p, `Bought ${it.name}. It's in your bag [I].`, "#8f8");
   }
+  if (CALL_IN[item]) return callIn(p, CALL_IN[item][0]);
   if (item === "kevlar") p.armor = 60;
   else if (item === "hoe") { p.hoe++; toast(p, `${p.hoe === 1 ? "Bought" : "Upgraded to"} a ${HOES[p.hoe]}. Press F to take it out, then click open ground to till a plot (${hoeLimit(p.hoe)} max${p.hoe === 3 ? ", two at a time" : ""}).`, "#8f8"); }
   else if (item === "grenade") p.gren = Math.min(9, p.gren + 2);
@@ -1319,12 +1366,30 @@ function buy(p, item) {
   else if (item === "case") {
     const r = Math.random() * 100 - (traitOf(p).luck ? 8 : 0);
     const rarity = r < 0.3 ? 4 : r < 2 ? 3 : r < 10 ? 2 : r < 40 ? 1 : 0;
-    const w = newWeapon(pick(LOOT_TYPES), rarity);
+    const w = newWeapon(lootType(), rarity);
     giveWeapon(p, w);
     p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) }); p.st.cases++;
     if (rarity >= 2) setTimeout(() => feed(`${fullName(p)} unboxed ${RARITY[rarity].toUpperCase()} ${wName(w)}`, ["", "", "#c070ff", "#ffc030", "#ff4b4b"][rarity]), 3200);
   } else if (WEAPONS[item]) giveWeapon(p, newWeapon(item));
   if (item !== "case" && item !== "gcase" && item !== "hoe") toast(p, `Bought ${it.name}`, "#8f8");
+}
+// a bought vehicle drops in near the buyer. Old called-in ones nobody is using get scrapped so the town doesn't fill up
+const CALLED_MAX = 6, CALL_DELAY = 5;
+function callIn(p, kind) {
+  p.called = now() + CALL_DELAY + 1;
+  toast(p, `Haddock radios it in. Your ${VEHICLES[kind].name} lands in ${CALL_DELAY} seconds. Stand back.`, "#8f8");
+  feed(`${fullName(p)} called in a ${VEHICLES[kind].name}`, "#9fd0ff");
+  setTimeout(() => {
+    if (!players.has(p.id) || game.phase === "lobby" || game.phase === "over") return;
+    const called = vehicles.filter((v) => v.called);
+    if (called.length >= CALLED_MAX) { const old = called.find((v) => ![...players.values()].some((q) => q.veh === v.id)); if (old) vehicles = vehicles.filter((v) => v !== old); }
+    let sp = null;
+    for (let i = 0; i < 60 && !sp; i++) { const a = Math.random() * Math.PI * 2, d = 90 + Math.random() * 80, c = { x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d }; const q = { ...c }; collide(q, 40); if (q.x === c.x && q.y === c.y && freeGround(c) && !inHouse(c)) sp = c; }
+    sp = sp || { x: p.x + 60, y: p.y };
+    vehicles.push({ id: nextId++, kind, x: sp.x, y: sp.y, a: rand(0, Math.PI * 2), v: 0, hp: VEHICLES[kind].hp, seats: [0, 0], called: p.id });
+    events.push({ k: "boom", x: sp.x, y: sp.y, r: 60, dust: true }); events.push({ k: "land", x: sp.x, y: sp.y });
+    toast(p, `Your ${VEHICLES[kind].name} has landed. Press E to get in.`, "#8f8");
+  }, CALL_DELAY * 1000);
 }
 function enhance(p) {
   const w = p.weapons[p.active];
@@ -1456,7 +1521,7 @@ function giveCosmetic(p, id, why) {
   if (had) addGold(p, 30);
   else if (c.rarity >= 3) feed(`${fullName(p)} won the ${["", "", "", "LEGENDARY", "MYTHIC"][c.rarity]} ${c.name}${why ? " " + why : ""}`, c.rarity === 4 ? "#ff4b4b" : "#ffc030");
 }
-function casinoCrate(p, rarity, type) { giveWeapon(p, newWeapon(type || pick(LOOT_TYPES), rarity)); p.pe.push({ k: "case", type: p.weapons[p.active].type, rarity, name: wName(p.weapons[p.active]) }); }
+function casinoCrate(p, rarity, type) { giveWeapon(p, newWeapon(type || lootType(), rarity)); p.pe.push({ k: "case", type: p.weapons[p.active].type, rarity, name: wName(p.weapons[p.active]) }); }
 function doSpin(p) {
   shock(game.market, "VEX", 0.005);
   if (p.spinning || p.spins <= 0 || p.casino) return;
@@ -1538,7 +1603,7 @@ const storyApi = {
   get mods() { return game.mods; },
   get flags() { return game.flags; },
   fullName,
-  crate: (rarity, near) => { const at = near ? { x: near.x + rand(-40, 40), y: near.y + rand(-40, 40) } : freeSpot(); collide(at, 20); crates.push({ id: nextId++, ...at, w: newWeapon(pick(LOOT_TYPES), rarity) }); },
+  crate: (rarity, near) => { const at = near ? { x: near.x + rand(-40, 40), y: near.y + rand(-40, 40) } : freeSpot(); collide(at, 20); crates.push({ id: nextId++, ...at, w: newWeapon(lootType(), rarity) }); },
   hearthMax: (n) => { game.hearthMax += n; game.hearth += n; },
   repair: () => { game.hearth = game.hearthMax; },
   heal: () => { for (const p of players.values()) if (!p.dead) p.hp = maxHp(p); },
@@ -1622,11 +1687,11 @@ const npcApi = {
     p.vx = Math.cos(a) * 1100; p.vy = Math.sin(a) * 1100; p.dlg = null;
     hurtPlayer(p, 10, null, "shouted at by a celebrity");
   },
-  crate: (p, rarity, type) => { const at = { x: p.x + rand(-30, 30), y: p.y + 40 }; collide(at, 20); crates.push({ id: nextId++, ...at, w: newWeapon(type || pick(LOOT_TYPES), rarity) }); },
+  crate: (p, rarity, type) => { const at = { x: p.x + rand(-30, 30), y: p.y + 40 }; collide(at, 20); crates.push({ id: nextId++, ...at, w: newWeapon(type || lootType(), rarity) }); },
   blackCase: (p) => {
     const r = Math.random() * 100 - (traitOf(p).luck ? 8 : 0);
     const rarity = r < 8 ? 4 : r < 30 ? 3 : r < 65 ? 2 : 1;
-    const w = newWeapon(pick(LOOT_TYPES), rarity);
+    const w = newWeapon(lootType(), rarity);
     giveWeapon(p, w); p.st.cases++;
     p.pe.push({ k: "case", type: w.type, rarity, name: wName(w) });
     if (rarity >= 3) setTimeout(() => feed(`${fullName(p)} unboxed ${RARITY[rarity].toUpperCase()} ${wName(w)} from Vex's coat`, rarity === 4 ? "#ff4b4b" : "#ffc030"), 3200);
@@ -2149,7 +2214,7 @@ function jump(p) {
   if (p.air !== "plane") return;
   const t = now(), pos = dropPos(t);
   p.x = clamp(pos.x, 40, W - 40); p.y = clamp(pos.y, 40, H - 40);
-  p.air = "fall"; p.fallEnd = t + 2.2;
+  p.air = "fall"; p.pod = false; p.fallEnd = t + 2.2; p.fallDur = 2.2;
 }
 
 // ---------------------------------------------------------------- vehicles
@@ -2182,7 +2247,7 @@ function touchGlyph(p) {
     events.push({ k: "glyph", g: g.g, x: Math.round(g.x + 15), y: Math.round(g.y + 15), z: Math.round(g.z1) });
     if (S2.step < GLYPHS) { toast(p, `The glyph lights up. (${S2.step}/${GLYPHS})`, "#7dd8ff"); return true; }
     S2.open = true;
-    const w = newWeapon(pick(LOOT_TYPES), Math.random() < 0.25 ? 4 : 3);
+    const w = newWeapon(lootType(), Math.random() < 0.25 ? 4 : 3);
     giveWeapon(p, w); addGold(p, 300, "The Sunken Shrine");
     for (const q of players.values()) if (q !== p) addGold(q, 100, "Someone opened the Sunken Shrine");
     addXp(p, 60); deed("word", 6);
@@ -2373,7 +2438,7 @@ function setupRoyale() {
   for (const pl of PLOTS) { pl.stage = 0; pl.prog = 0; }
   for (const p of players.values()) { resetProgress(p); resetLoadout(p, true); p.weapons = [newWeapon("pistol")]; p.active = 0; p.gold = 0; }
   const n = 30 + 6 * players.size;
-  for (let i = 0; i < n; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon(pick(LOOT_TYPES), lootRarity(2)) });
+  for (let i = 0; i < n; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon(lootType(), lootRarity(2)) });
   spawnCaches(4);
   for (let i = 0; i < 18; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon("pistol", lootRarity(1)) });
   spawnVehicles(["tractor", "buggy", "buggy", "heli", ...Array(Math.floor(players.size / 2)).fill("buggy")]);
@@ -2529,14 +2594,14 @@ function finishHack(p, m) {
   addXp(p, 10 * solved); deed("word", 3 * solved);
   addGold(p, 40 * solved, "Hacked a cache");
   p.gren = Math.min(9, p.gren + 1);
-  if (solved >= 2) crates.push({ id: nextId++, x: c.x, y: c.y, w: newWeapon(pick(LOOT_TYPES), solved === 3 ? (Math.random() < 0.3 ? 3 : 2) : 1) });
+  if (solved >= 2) crates.push({ id: nextId++, x: c.x, y: c.y, w: newWeapon(lootType(), solved === 3 ? (Math.random() < 0.3 ? 3 : 2) : 1) });
   if (solved === 3) { p.molo = Math.min(9, p.molo + 2); feed(`${fullName(p)} cracked a Slop-Tech cache wide open.`, "#7dffb0"); }
   toast(p, `ACCESS GRANTED (${solved}/3 daemons). ${solved >= 2 ? "Something good dropped out." : ""}`, "#7dffb0");
 }
 function spawnCrates() { // town gets a trickle; the good stuff is out in the wild
   const n = 1 + Math.floor(players.size / 2);
   spawnCaches(game.mode === "royale" ? 4 : 2);
-  for (let i = 0; i < n; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon(pick(LOOT_TYPES), lootRarity(game.night)) });
+  for (let i = 0; i < n; i++) crates.push({ id: nextId++, ...freeSpot(), w: newWeapon(lootType(), lootRarity(game.night)) });
   for (let i = 0; i < 1; i++) crates.push({ id: nextId++, ...freeSpot(), it: { id: pick(game.waste && Math.random() < 0.4 ? ["gasmask", "hazmat"] : GEAR_KEYS), r: Math.min(3, lootRarity(game.night)) } });
   for (let i = 0; i < 1; i++) crates.push({ id: nextId++, ...freeSpot(), it: { id: pick(game.waste ? ["beans", "ration", "radaway", "iodine", "water"] : ["beans", "ration", "water", "cola", "bandage", "pie", "grog"]), n: 1 + (Math.random() < 0.4 ? 1 : 0) } });
 }
@@ -2557,7 +2622,7 @@ function ensureChunks() {
       WALLS.push(...c.walls); fresh.push(...c.walls);
       for (const l of c.loot) { // something worth walking out here for. Better the further you go.
         const up = (Math.random() < Math.min(0.75, c.far / 7000) ? 1 : 0) + l.good, roll = Math.random();
-        if (roll < 0.5) crates.push({ id: nextId++, x: l.x, y: l.y, w: newWeapon(pick(LOOT_TYPES), Math.min(4, lootRarity(game.night) + up)) });
+        if (roll < 0.5) crates.push({ id: nextId++, x: l.x, y: l.y, w: newWeapon(lootType(), Math.min(4, lootRarity(game.night) + up)) });
         else if (roll < 0.75) crates.push({ id: nextId++, x: l.x, y: l.y, it: { id: pick(GEAR_KEYS), r: Math.min(4, lootRarity(game.night) + up) } });
         else crates.push({ id: nextId++, x: l.x, y: l.y, it: { id: pick(["beans", "ration", "water", "cola", "bandage", "medkit", "pack", "s_pumpkin", "s_melon", "s_corn", "s_strawberry"]), n: 1 + (Math.random() < 0.5 ? 1 : 0) } });
       }
@@ -2884,11 +2949,23 @@ function endGame(win) {
 function nightType(n, fog) {
   const w = { walker: 10, runner: n >= 2 ? 5 : 0, tank: n >= 3 ? 1.2 : 0, charger: n >= 2 ? 1.1 : 0, flyer: n >= 2 ? 1.4 : 0, boomer: n >= 2 ? 1 : 0, screamer: fog ? 1.8 : n >= 3 ? 0.5 : 0 };
   if (n >= 6) { w.tank += 0.6; w.charger += 0.6; w.flyer += 0.6; }
+  if (n >= 8) { w.tank += 0.6; w.charger += 0.6; w.boomer += 0.6; w.screamer += 0.6; w.walker -= 2; } // later nights are about variety, not just bigger numbers
   if (game.dino || game.dinoDay) return "raptor"; // dinosaur day: nothing else
   let r = Math.random() * Object.values(w).reduce((a, b) => a + b, 0);
   for (const [k, v] of Object.entries(w)) { r -= v; if (r <= 0) return k; }
   return "walker";
 }
+// armoured specials: plates soak body shots until they're shot off, and a red glowing weak spot (the head,
+// or a charger's back) takes extra. The deeper into the nights, the more of the horde turns up in plate.
+function armourChance(type, n) {
+  if (game.dino || game.dinoDay) return 0;
+  if (type === "tank" || type === "charger") return n >= 6 ? 1 : n >= 4 ? 0.5 : 0;
+  if (type === "elite" || type === "boss" || type === "rex") return n >= 6 ? 1 : 0;
+  if (type === "walker") return n >= 10 ? 0.4 : n >= 8 ? 0.25 : n >= 6 ? 0.12 : 0;
+  if (type === "boomer" || type === "screamer") return n >= 8 ? 0.3 : 0;
+  return 0;
+}
+const ARM_SOAK = 0.3, WEAK_MULT = 2.6;
 function spawnRaptors(at) { for (let i = 0; i < 3; i++) spawnZombie("raptor", at); }
 function spawnZombie(type, at) { const z = spawnZombie0(type, at); if (game.waste && z) z.glow = true; return z; }
 function spawnZombie0(type, at) {
@@ -2903,6 +2980,8 @@ function spawnZombie0(type, at) {
   const hpScale = (1 + 0.12 * Math.max(0, game.night - 1)) * game.mods.zHp;
   const z = { id: nextId++, type, x, y, z: 0, vz: 0, gr: true, r: def.r, hp: def.hp * hpScale, maxHp: def.hp * hpScale, vx: 0, vy: 0, stun: 0, atk: 0, steer: 0, burn: false, special: now() + 6, charge: 0, arson: ["walker", "runner", "tank"].includes(type) && Math.random() < 0.35 };
   if (type === "flyer") { z.z = 160; z.gr = false; }
+  const ac = armourChance(type, game.night);
+  if (ac && Math.random() < ac) z.armHp = z.maxHp * (type === "boss" || type === "elite" ? 0.25 : 0.4);
   zombies.push(z);
   return z;
 }
@@ -2991,8 +3070,8 @@ function tick() {
       let fx = ((p.keys & 8) ? 1 : 0) - ((p.keys & 2) ? 1 : 0), fy = ((p.keys & 4) ? 1 : 0) - ((p.keys & 1) ? 1 : 0);
       if (fx && fy) { fx *= Math.SQRT1_2; fy *= Math.SQRT1_2; }
       if (OPEN()) { p.x += fx * 420 * dt; p.y += fy * 420 * dt; } else { p.x = clamp(p.x + fx * 420 * dt, 30, W - 30); p.y = clamp(p.y + fy * 420 * dt, 30, H - 30); }
-      p.z = Math.max(0, 700 * clamp((p.fallEnd - t) / 2.2, 0, 1));
-      if (t > p.fallEnd) { p.air = null; collide(p, 16); p.z = MV.floorAt(p.x, p.y, 10, 2000, near(p)).h; p.vz = 0; p.vx = p.vy = 0; p.gr = true; events.push({ k: "land", x: p.x, y: p.y }); }
+      p.z = Math.max(0, (p.pod ? 900 : 700) * clamp((p.fallEnd - t) / (p.fallDur || 2.2), 0, 1));
+      if (t > p.fallEnd) { p.air = null; p.fallDur = 0; collide(p, 16); p.z = MV.floorAt(p.x, p.y, 10, 2000, near(p)).h; p.vz = 0; p.vx = p.vy = 0; p.gr = true; events.push({ k: "land", x: p.x, y: p.y }); if (p.pod) podLand(p); }
       continue;
     }
     if (outsideZone(p) && (game.phase === "night" || game.phase === "royale")) {
@@ -3023,12 +3102,17 @@ function tick() {
     const w = p.weapons[p.active];
     w.bloom = Math.max(0, w.bloom - dt * 2.2);
     reloadTick(p, w, t);
+    if (w.chargeAt && (!p.firing || w.ammo <= 0 || w.reloadUntil)) w.chargeAt = 0; // let go and the charge fizzles
     if (p.hoeOut && (!p.hoe || p.veh || p.swim)) p.hoeOut = false;
     if (p.firing && p.hoeOut && !p.dlg && t >= (p.tillAt || 0)) { p.tillAt = t + 0.5; till(p); } // the hoe's out: clicking digs, it doesn't shoot
     else if (p.firing && !p.dlg && !p.cg && !p.cleaning && !(t < p.going) && !(t < p.meltdown) && !(veh && veh.seats[0] === p.id) && playing && t >= w.nextShot) {
       if (w.reloadUntil) { /* busy reloading */ }
       else if (w.jam) { w.nextShot = t + 0.4; p.pe.push({ k: "click" }); }
+      else if (w.ammo > 0 && WEAPONS[w.type].charge && !(w.chargeAt && t - w.chargeAt >= WEAPONS[w.type].charge)) {
+        if (!w.chargeAt) { w.chargeAt = t; events.push({ k: "lcharge", id: p.id, x: Math.round(p.x), y: Math.round(p.y) }); }
+      }
       else if (w.ammo > 0) {
+        w.chargeAt = 0;
         shoot(p, w);
         w.dirt = Math.min(100, (w.dirt || 0) + (DIRT[w.type] || 0) * (game.phase === "lobby" ? 0 : 1) * (1 - Math.min(0.8, gearSum(p.gear, "dirt"))));
         const jam = w.dirt < 40 ? 0 : Math.min(0.1, ((w.dirt - 40) / 60) ** 2 * 0.1);
@@ -3073,6 +3157,7 @@ function tick() {
       else if (z.wind) { z.wind = 0; z.charge = t + 1.1; z.special = t + 6; }
       if (t < z.charge) { dx = Math.cos(z.chDir); dy = Math.sin(z.chDir); sp = 560; }
     }
+    z.fx = dx; z.fy = dy; // which way it's facing, for shots in the back
     if (z.type === "screamer" && target && bd < 280 * 280) { dx = -dx; dy = -dy; sp *= 0.8; } // keeps its distance
     if (z.type === "raptor" && target && z.gr && t > z.special && bd < 190 * 190 && bd > 50 * 50 && !(t < z.stun)) {
       // pounce
@@ -3203,17 +3288,17 @@ function snapshot() {
       return {
         id: p.id, n: fullName(p), x: r(p.x), y: r(p.y), z: r(p.z), mv: [r(p.vx), r(p.vy), r(p.vz), p.gr ? 1 : 0], pt: p.pt == null ? 0 : +p.pt.toFixed(2), a: +p.a.toFixed(2), hp: r(p.hp), mh: maxHp(p), ar: r(p.armor),
         c: p.color, h: p.hat, ey: p.eyes, cl: p.cls, bg: p.bg, d: p.dead ? 1 : 0, g: p.gold, sd: seedCount(p), st: Math.min(5, Math.floor(p.heat / 40)),
-        w: w.type, wn: wName(w), wr: w.rarity, we: w.enh, am: w.ammo, hot: w.hot ? 1 : 0, sec: p.weapons.length > 1 ? 1 : 0,
+        w: w.type, wn: wName(w), wr: w.rarity, we: w.enh, am: w.ammo, hot: w.hot ? 1 : 0, chg: w.chargeAt ? +Math.min(1, (t - w.chargeAt) / WEAPONS[w.type].charge).toFixed(2) : 0, sec: p.weapons.length > 1 ? 1 : 0,
         rl: w.reloadUntil ? +(w.reloadUntil - t).toFixed(2) : 0, rt: w.reloadUntil ? +(w.reloadUntil - w.reloadStart).toFixed(2) : 0, rtr: w.tried ? 1 : 0,
         jam: w.jam ? 1 : 0, dirt: Math.round(w.dirt || 0), cln: p.cleaning ? 1 : 0,
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
         lv: p.lvl, xp: p.xp, xn: xpNeed(p.lvl), pts: p.pts, sk: p.sk, ch: p.champion ? 1 : 0,
-        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? 2 : p.air === "bunker" ? 3 : 0, gr: SLOTS.map((k) => (p.gear[k] ? p.gear[k].id : "")), fd: Math.round(p.food), wt: Math.round(p.water), rad: Math.round(p.rad), dr: p.drunk > 5 ? 1 : 0, cg: p.cg ? 1 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, cro: crouched(p) ? 1 : 0, out: p.out ? 1 : 0, pk: p.st.pk, ss: r(p.stress || 0), br: Math.ceil(p.breath ?? 15), sw: p.swim ? 1 : 0, lo: p.love, ro: [p.dating || "", p.spouse || ""], el: p.elem || "force", els: elemsFor(p).join(","), fz: p.frozen > t ? 1 : 0, dl: p.dlg ? 1 : 0, md: p.meltdown > t ? 1 : 0, hoe: p.hoe || 0, ho: p.hoeOut ? 1 : 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
+        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? (p.pod ? 4 : 2) : p.air === "bunker" ? 3 : 0, gr: SLOTS.map((k) => (p.gear[k] ? p.gear[k].id : "")), fd: Math.round(p.food), wt: Math.round(p.water), rad: Math.round(p.rad), dr: p.drunk > 5 ? 1 : 0, cg: p.cg ? 1 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, cro: crouched(p) ? 1 : 0, out: p.out ? 1 : 0, pk: p.st.pk, ss: r(p.stress || 0), br: Math.ceil(p.breath ?? 15), sw: p.swim ? 1 : 0, lo: p.love, ro: [p.dating || "", p.spouse || ""], el: p.elem || "force", els: elemsFor(p).join(","), fz: p.frozen > t ? 1 : 0, dl: p.dlg ? 1 : 0, md: p.meltdown > t ? 1 : 0, hoe: p.hoe || 0, ho: p.hoeOut ? 1 : 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
         nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
         k: p.st.kills, de: p.st.deaths, cr: p.st.crops, tk: p.st.tk, hs: p.st.hs, acc: p.st.shots ? Math.round(p.st.hits / p.st.shots * 100) : 0,
       };
     }),
-    z: zombies.map((z) => [z.id, zCode(z), r(z.x), r(z.y), r((z.hp / z.maxHp) * 100), z.burn || z.fireUntil > t ? 1 : 0, r(z.z), z.wind > t || z.charge > t ? 1 : 0, z.frozen > t ? 1 : 0, z.glow ? 1 : 0]),
+    z: zombies.map((z) => [z.id, zCode(z), r(z.x), r(z.y), r((z.hp / z.maxHp) * 100), z.burn || z.fireUntil > t ? 1 : 0, r(z.z), z.wind > t || z.charge > t ? 1 : 0, z.frozen > t ? 1 : 0, z.glow ? 1 : 0, z.armHp > 0 ? 1 : 0]),
     ball: PITCH && (BALL.x || BALL.y) ? [r(BALL.x), r(BALL.y), r(BALL.z)] : null,
     pr: projs.map((q) => [q.id, q.kind, r(q.x), r(q.y), r(q.z)]),
     fi: [...fires.values()].map((f) => [f.cx, f.cy, r(f.z)]),
@@ -3282,6 +3367,15 @@ function onMessage(ws, raw) {
       if (m.clues) for (let i = 0; i < m.clues; i++) storyApi.freeClue();
       if (m.dusk) game.ends = now() + 0.5;
       if (m.killBoss) { const b = zombies.find((z) => z.id === game.bossId); if (b) hurtZombie(b, b.hp + 1, p); }
+      if (m.weapon) giveWeapon(p, newWeapon(m.weapon, m.rarity || 0));
+      if (m.ammo !== undefined) p.weapons[p.active].ammo = m.ammo;
+      if (m.night) game.night = m.night;
+      if (m.spawn) { const z = spawnZombie(m.spawn, { x: p.x + 120, y: p.y }); if (z) { z.x = p.x + 120; z.y = p.y; z.stun = now() + 30; } }
+      if (m.die) killPlayer(p, null, "testing");
+      if (m.clearZ) zombies = [];
+      if (m.bw !== undefined) { p.bw = m.bw; p.bl = m.bl || 0; }
+      if (m.plot) { let best = null, bd = Infinity; for (const pl of PLOTS) { const d = dist2(pl, p); if (d < bd) { bd = d; best = pl; } } if (best) { best.stage = 1; best.prog = 0; best.crop = "turnip"; best.rate = 1; p.x = best.x; p.y = best.y + 10; } }
+      if (m.heli) { const v = vehicles.find((q) => VEHICLES[q.kind].air); if (v) { v.x = p.x; v.y = p.y; v.z = 150; v.seats[0] = p.id; p.veh = v.id; } }
     } break;
     case "item": itemAct(p, m); break;
     case "trade": trade(p, String(m.sym), +m.n || 0); break;
