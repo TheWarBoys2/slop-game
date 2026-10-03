@@ -138,6 +138,8 @@ function onSnap(m) {
   if (m.g.ph !== "day" && m.g.ph !== "night" && m.g.ph !== "lobby" && dlgOpen) showDlg({ close: 1 });
   // the dialogue box and the server must agree; if they don't for a moment, the box closes (and you're never left frozen)
   if (mr && dlgOpen !== !!mr.dl) { if (!dlgMismatch) dlgMismatch = T(); else if (T() - dlgMismatch > 0.6) { dlgMismatch = 0; if (dlgOpen) showDlg({ close: 1 }); else send({ t: "dlg", i: -1 }); } } else dlgMismatch = 0;
+  // same for the card table: if the server has no match for us (new round, reconnect), close it rather than trap the screen
+  if (mr && cgState && !mr.cg) { if (!cgMismatch) cgMismatch = T(); else if (T() - cgMismatch > 0.6) { cgMismatch = 0; cgState = null; toggleCards(false); } } else cgMismatch = 0;
   const canMode = joined && hostId === me && (m.g.ph === "lobby" || m.g.ph === "over");
   for (const el of document.querySelectorAll(".modeBtns")) el.classList.toggle("hidden", !canMode);
   for (const b of document.querySelectorAll(".modeBtns button")) b.classList.toggle("sel", b.dataset.m === m.g.mode);
@@ -183,7 +185,7 @@ function handleEvent(e) {
   else if (e.k === "shame") { shameT = t; shameWho = e; sfx("shame"); shake = Math.max(shake, 10); sayShame(e.who); }
   else if (e.k === "bile") { fx.push({ kind: "boom", t0: t, dur: 0.7, x: e.x, y: e.y, z: e.z, r: e.r * 0.7, col: 0x9fd040, c2: "159,208,64" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("bile"); }
   else if (e.k === "scream") { fx.push({ kind: "shout", t0: t, dur: 1.2, x: e.x, y: e.y, z: e.z, a: 0, full: true, col: 0xff4040 }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 900) sfx("scream"); }
-  else if (e.k === "glass") { fx.push({ kind: "boom", t0: t, dur: 0.35, x: e.x, y: e.y, z: e.z, r: 50, col: 0xffa030, c2: "255,160,48" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx("glass"); }
+  else if (e.k === "glass" && e.id === undefined) { /* a molotov bottle smashing; a window pane (with an id) is handled below */ fx.push({ kind: "boom", t0: t, dur: 0.35, x: e.x, y: e.y, z: e.z, r: 50, col: 0xffa030, c2: "255,160,48" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx("glass"); }
   else if (e.k === "throw") { if (Math.hypot((S?.p.find((p) => p.id === e.id)?.x ?? 1e9) - pred.x, (S?.p.find((p) => p.id === e.id)?.y ?? 1e9) - pred.y) < 600) sfx("throw"); }
   else if (e.k === "mv") { if (e.id !== me && Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx(e.m === "slide" ? "slide" : e.m === "boost" ? "boost" : e.m === "mantle" || e.m === "wallrun" ? "step" : "whoosh", 0.5); }
   else if (e.k === "kd") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) { sfx("hit"); sfx("kick", 0.7); } }
@@ -346,7 +348,7 @@ addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   if (k === "tab") { e.preventDefault(); showScores = true; return; }
   if (k === "enter") { openChat(); e.preventDefault(); return; }
-  if (S && S.g.ph === "lobby") { if (k === "f") send({ t: "ready" }); else if (k === "o") toggleOptions(); else if (k === "escape" && optsOpen) toggleOptions(false); return; } // the lobby is a screen, not a playground
+  if (S && S.g.ph === "lobby") { if (k === "f") send({ t: "ready" }); else if (k === "o") toggleOptions(); else if (k === "escape") { if (optsOpen) toggleOptions(false); else closeScreens(); } return; } // the lobby is a screen, not a playground
   if (cardsOpen && k === "escape") { if (cgState && !cgState.v.over) return; toggleCards(false); if (cgState) send({ t: "cg", a: "quit" }); return; }
   if (cardsOpen && cgState) return; // mid-match: the table has your full attention
   if (k === "b") { if (shopOpen) toggleShop(false); else pushLim(toasts, { text: "Shops are places now: Vex's store and Haddock's armoury are just south of the Hearth, the casino's on your map. Walk up and press E.", color: "#ffd34d", t: T() }, 4); return; }
@@ -999,7 +1001,7 @@ let dlgOpen = false;
 const hearts = (v) => { const n = Math.max(0, Math.min(5, Math.floor(v / 20))); return "♥".repeat(n) + "♡".repeat(5 - n); };
 const myLove = (id) => { const mine = S?.p.find((p) => p.id === me); return (mine && mine.lo && mine.lo[id]) || 0; };
 const GLYPH_CH = ["☀", "☾", "★", "◆"];
-let dlgMismatch = 0;
+let dlgMismatch = 0, cgMismatch = 0;
 function showDlg(e) {
   const box = $("dlg");
   if (e.close) { dlgOpen = false; box.classList.add("hidden"); hush(); return; }

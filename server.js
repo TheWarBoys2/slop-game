@@ -55,11 +55,13 @@ const UAV_STREAK = 10, UAV_LEN = 30; // kills without dying, and how long the UA
 const HEARTH_HEAL = 3, HEARTH_HEAL_R = 190; // hp per second, and how close you need to be
 const ANTIDOTE_IMMUNE = 90; // seconds an antidote keeps you from being reinfected
 const FORCE_SYM = process.env.SLOP_SYM || ""; // testing only
-const INTRO_LEN = { story: FAST ? 3 : 25, royale: FAST ? 2 : 10 };
+const INTRO_LEN = { story: FAST ? 3 : 25, royale: FAST ? 2 : 10, endless: FAST ? 3 : 25 };
 const COUNTDOWN = FAST ? 1 : 4;
 
 // ---------------------------------------------------------------- helpers
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+// client strings index these tables, so "constructor" or "__proto__" mustn't find Object's own props
+const own = (o, k) => (typeof k === "string" && Object.hasOwn(o, k) ? o[k] : undefined);
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[(Math.random() * arr.length) | 0];
 const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
@@ -576,7 +578,7 @@ let events = [];
 let vehicles = [];
 let builds = [];
 const freshMods = () => ({ hearthRegen: 0, zHp: 1, zCount: 1, dmg: 1, shoutCd: 1, speed: 1, hpBonus: 0, taxFree: false, nightCut: 1, nightGold: 1, bossHp: 1, discount: 0, grow: 1, hunger: 1, fee: FEE });
-const freshDeeds = () => ({ blood: 0, soil: 0, coin: 0, word: 0 });
+const freshDeeds = () => ({ blood: 0, soil: 0, coin: 0, word: 0, tk: 0 });
 const game = { mode: "story", countdown: 0, skip: new Set(), deeds: freshDeeds(), legend: null, prev: null, pendingVote: null, zone: null, drop: null, aff: {}, clues: new Set(), phase: "lobby", night: 0, ends: 0, hearth: 1000, hearthMax: 1000, result: null, spawnLeft: 0, spawnNext: 0, bossId: 0, bossKind: "leshen", stats: null, flags: { valley: VALLEY }, mods: freshMods(), vote: null, story: null, ending: null,
   market: newMarket(), mayor: null, elec: null, nuke: null, waste: false, hot: [], posadAt: 0, tip: null, cameo: "chef" };
 gameReady = true;
@@ -594,9 +596,9 @@ function fullName(p) { return `${p.base}${p.gen > 1 ? " " + ROMAN[Math.min(p.gen
 function xpNeed(lvl) { return 50 + 30 * (lvl - 1); }
 
 function makePlayer(ws, msg) {
-  const cls = CLASSES[msg.cls] ? msg.cls : "fighter";
-  const bg = BACKGROUNDS[msg.bg] ? msg.bg : "soldier";
-  const chosen = TRAITS[msg.trait] ? msg.trait : null;
+  const cls = own(CLASSES, msg.cls) ? msg.cls : "fighter";
+  const bg = own(BACKGROUNDS, msg.bg) ? msg.bg : "soldier";
+  const chosen = own(TRAITS, msg.trait) ? msg.trait : null;
   const p = {
     id: nextId++, ws, base: String(msg.name || "Peasant").replace(/[<>]/g, "").slice(0, 16) || "Peasant",
     color: /^#[0-9a-f]{6}$/i.test(msg.color) ? msg.color : "#e0b050", hat: String(msg.hat || "none").slice(0, 10),
@@ -616,12 +618,13 @@ function resetProgress(p) {
   p.lvl = 1; p.xp = 0; p.pts = 0; p.sk = { ...(BACKGROUNDS[p.bg].sk || {}) };
   p.gen = 1; p.lineage = []; p.trait = p.chosenTrait || p.rolled || pick(TRAIT_KEYS); p.rolled = null; p.champion = false; p.heat = 0; p.dead = false;
   p.st = { kills: 0, deaths: 0, dmg: 0, crops: 0, tk: 0, gold: 0, bounty: 0, shots: 0, hits: 0, hs: 0, perfect: 0, cases: 0, shoutHits: 0, repairs: 0, pk: 0 };
-  p.q = {}; p.flags = {}; p.bonusHp = 0; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.pod = false; p.veh = 0; p.spins = 0; p.casino = null; p.spinning = false;
+  p.q = {}; p.flags = {}; p.bonusHp = 0; p.hearthBonus = false; p.shoutMult = 1; p.discount = 0; p.dlg = null; p.talked = new Set(); p.out = false; p.place = 0; p.air = null; p.pod = false; p.veh = 0; p.spins = 0; p.casino = null; p.spinning = false;
   p.bl = 0; p.bw = 0; p.going = 0; p.goKind = ""; p.inf = null; p.immune = 0; p.streak = 0; p.stam = 100; p.soggy = 0; p.ads = false;
   p.hoe = p.cls === "farmer" ? 1 : 0; p.stress = 0; p.meltdown = 0; p.elem = "force";
   p.love = {}; p.dating = null; p.spouse = null; p.gifted = new Set(); p.breath = 15;
   p.bag = [{ id: "bread", n: 2 }, { id: "water", n: 2 }, { id: "bandage", n: 1 }]; p.gear = {};
-  p.food = 85; p.water = 85; p.rad = 0; p.drunk = 0; p.fizz = 0; p.iodine = 0; p.shares = {}; p.basis = {}; p.cg = null; p.kt = new Set();
+  p.food = 85; p.water = 85; p.rad = 0; p.drunk = 0; p.fizz = 0; p.iodine = 0; p.shares = {}; p.basis = {}; if (p.cg) p.pe.push({ k: "cg", close: 1 }); p.cg = null; p.kt = new Set();
+  if (p.fix) endFix(p, "reset"); p.hack = null;
   p.st.ateGrown = 0; p.st.ztypes = 0; p.st.sharesBought = 0; p.st.cardWins = 0; p.invDirty = true;
 }
 function resetLoadout(p, fresh) {
@@ -1437,7 +1440,7 @@ function giveWeapon(p, w) {
 function buy(p, item) {
   if (game.mode === "royale") return toast(p, "No shops in the Royale. Loot it or lose it.", "#f88");
   if (p.dead) return;
-  const it = SHOP[item]; if (!it) return;
+  const it = own(SHOP, item); if (!it) return;
   if (!nearShop(p, it.shop)) return toast(p, `You'll have to go to ${SHOPS[it.shop].name} for that.`, "#f88");
   if (!shopIsOpen(it.shop)) return toast(p, SHOPS[it.shop].shut || "Shut.", "#f88");
   if (item.startsWith("dome")) return fundDome(p, it.cost);
@@ -1448,11 +1451,11 @@ function buy(p, item) {
   if (p.gold < cost) return toast(p, `${it.name} costs ${cost}g. You have ${p.gold}g.`, "#f88");
   if (item === "repair" && game.hearth >= game.hearthMax) return toast(p, "Hearth is already at full health", "#bbb");
   if (CALL_IN[item] && p.called && now() < p.called) return toast(p, "Haddock's still on the radio about your last one. Give it a moment.", "#f88");
+  if ((ITEMS[item] || GEAR[item]) && !bagAdd(p.bag, item)) return toast(p, "Your bag is full. Use or drop something first [I].", "#f88");
   p.gold -= cost;
   deed("coin", cost / 25 + (item === "case" ? 4 : 0));
   shock(game.market, "VEX", 0.004);
   if (ITEMS[item] || GEAR[item]) {
-    if (!bagAdd(p.bag, item)) { p.gold += cost; return toast(p, "Your bag is full. Use or drop something first [I].", "#f88"); }
     p.invDirty = true;
     return toast(p, `Bought ${it.name}. It's in your bag [I].`, "#8f8");
   }
@@ -1531,7 +1534,7 @@ function enhance(p) {
   }
 }
 function learn(p, s) {
-  const def = SKILLS[s];
+  const def = own(SKILLS, s);
   if (!def || p.pts <= 0 || sk(p, s) >= def.max) return;
   p.pts--; p.sk[s] = sk(p, s) + 1;
   if (s === "tough") p.hp += 20;
@@ -1688,9 +1691,9 @@ function giveCosmetic(p, id, why) {
 }
 function casinoCrate(p, rarity, type) { giveWeapon(p, newWeapon(type || lootType(), rarity)); p.pe.push({ k: "case", type: p.weapons[p.active].type, rarity, name: wName(p.weapons[p.active]) }); }
 function doSpin(p) {
-  shock(game.market, "VEX", 0.005);
   if (p.spinning || p.spins <= 0 || p.casino) return;
   if (!nearShop(p, "casino")) return toast(p, "The wheel's at the Golden Slop.", "#f88");
+  shock(game.market, "VEX", 0.005);
   p.spins--; p.spinning = true; p.spunTotal++;
   const i = process.env.SLOP_WHEEL ? WHEEL.findIndex((w) => w.id === process.env.SLOP_WHEEL) : spinWheel(), seg = WHEEL[i]; // SLOP_WHEEL: testing only
   p.pe.push({ k: "wheel", seg: i });
@@ -1756,8 +1759,8 @@ function casinoAct(p, m) {
   sendCasino(p);
 }
 function equip(p, slot, id) {
-  if (slot === "hat" && (FREE_HATS.includes(id) || (COSMETICS[id]?.slot === "hat" && p.cos.has(id)))) p.hat = id;
-  else if ((slot === "trail" || slot === "title") && (id === "" || (COSMETICS[id]?.slot === slot && p.cos.has(id)))) p[slot] = id;
+  if (slot === "hat" && (FREE_HATS.includes(id) || (own(COSMETICS, id)?.slot === "hat" && p.cos.has(id)))) p.hat = id;
+  else if ((slot === "trail" || slot === "title") && (id === "" || (own(COSMETICS, id)?.slot === slot && p.cos.has(id)))) p[slot] = id;
 }
 
 // ---------------------------------------------------------------- story
@@ -2027,11 +2030,11 @@ function sendCards(p) {
 }
 function cardAct(p, m) {
   const G = p.cg;
-  if (m.a === "deck") { p.deck = (Array.isArray(m.ids) ? m.ids : []).filter((id) => CARDS[id]).slice(0, DECK_SIZE); p.invDirty = true; return; }
-  if (!G) return;
+  if (m.a === "deck") { p.deck = (Array.isArray(m.ids) ? m.ids : []).filter((id) => own(CARDS, id)).slice(0, DECK_SIZE); p.invDirty = true; return; }
+  if (!G) { if (m.a === "quit") sendCards(p); return; } // tells a stale card screen to close
   if (m.a === "quit" || G.M.over) { if (!G.M.over) { toast(p, `You fold. ${NPCS[G.npc].name} keeps the ${G.stake}g.`, "#bbb"); } p.cg = null; return sendCards(p); }
   if (m.a !== "play") return;
-  const plays = (Array.isArray(m.plays) ? m.plays : []).slice(0, 8).map((x) => [x[0] | 0, x[1] | 0]);
+  const plays = (Array.isArray(m.plays) ? m.plays : []).slice(0, 8).map((x) => (Array.isArray(x) ? [x[0] | 0, x[1] | 0] : [-1, -1]));
   const err = cgStage(G.M, 0, plays);
   if (err) { toast(p, err, "#f88"); return sendCards(p); }
   cgStage(G.M, 1, aiPlays(G.M, 1));
@@ -2075,7 +2078,7 @@ function stallAct(p, m) {
   const k = KEEPERS.find((q) => q.sid === "produce");
   if (!stallOpen(k)) return toast(p, "The stall's shut for the night.", "#bbb");
   if (m.a === "buy") {
-    const id = String(m.id); if (!CROPS[id]) return;
+    const id = String(m.id); if (!own(CROPS, id)) return;
     const cost = seedPrice(p, id);
     if (p.gold < cost) return toast(p, `That's ${cost}g. You've got ${p.gold}g.`, "#f88");
     if (!bagAdd(p.bag, "s_" + id, SEED_PACK)) return toast(p, "Your bag is full.", "#f88");
@@ -2086,7 +2089,7 @@ function stallAct(p, m) {
     const ids = m.id === "*" ? CROP_KEYS : [String(m.id)];
     let got = 0, n = 0;
     for (const id of ids) {
-      if (!CROPS[id]) continue;
+      if (!own(CROPS, id)) continue;
       const have = bagCount(p.bag, id), take = m.id === "*" ? have : Math.min(have, Math.max(1, m.n | 0));
       if (!take) continue;
       const each = cropPrice(p, id);
@@ -2141,7 +2144,7 @@ function equipGear(p, i) {
 }
 function itemAct(p, m) {
   if (m.a === "use") return useItem(p, m.i | 0);
-  if (m.a === "unequip") { const g = p.gear[m.slot]; if (!g) return; if (!bagAdd(p.bag, g.id, 1, g.r)) return toast(p, "Your bag is full.", "#f88"); delete p.gear[m.slot]; p.invDirty = true; return; }
+  if (m.a === "unequip") { const g = own(p.gear, m.slot); if (!g) return; if (!bagAdd(p.bag, g.id, 1, g.r)) return toast(p, "Your bag is full.", "#f88"); delete p.gear[m.slot]; p.invDirty = true; return; }
   if (m.a === "drop") { // leave it on the ground in a crate, for anyone to pick up
     const it = p.bag[m.i | 0]; if (!it || p.dead || p.air) return;
     p.bag.splice(m.i | 0, 1); p.invDirty = true;
@@ -2286,7 +2289,7 @@ function nukeBlast() {
 
 // ---------------------------------------------------------------- the stock exchange
 function trade(p, sym, n) {
-  if (!STOCKS[sym] || !n || game.mode === "royale" || p.dead) return;
+  if (!own(STOCKS, sym) || !n || game.mode === "royale" || p.dead) return;
   n = Math.trunc(clamp(n, -1000, 1000));
   const px = game.market.px[sym], fee = game.mods.fee;
   if (n > 0) {
@@ -2329,7 +2332,7 @@ function resolveElection() {
 function applyMayor(id, sign) {
   for (const [k, v] of Object.entries(CANDIDATES[id].mods || {})) {
     if (k === "fee") game.mods.fee = sign > 0 ? v : FEE;
-    else if (k === "discount" || k === "hearthRegen") game.mods[k] += sign * v;
+    else if (k === "discount" || k === "hearthRegen") game.mods[k] = Math.max(0, game.mods[k] + sign * v); // a story choice may have zeroed it since; never drain the Hearth
     else game.mods[k] = sign > 0 ? game.mods[k] * v : game.mods[k] / v;
   }
 }
@@ -2365,12 +2368,12 @@ function pickDlg(p, i) {
   if (!p.dlg) return;
   const o = p.dlgOpts && p.dlgOpts[i];
   if (!o) { p.dlg = null; sendDlg(p); return; }
-  const c = dlgCtx(p);
+  const c = dlgCtx(p), npc = p.dlg.npc;
   const doneBefore = Object.values(p.q).filter((x) => x.done).length;
   const msg = o.do ? o.do(c) : undefined;
   deed("word", 10 * (Object.values(p.q).filter((x) => x.done).length - doneBefore));
   if (msg) toast(p, msg, "#e0c0ff");
-  p.dlg = o.to ? { npc: p.dlg.npc, node: o.to } : null;
+  p.dlg = o.to && p.dlg ? { npc, node: o.to } : null; // an option can end the talk itself (losing the arm-wrestle)
   sendDlg(p);
 }
 function questReady(p) {
@@ -2579,7 +2582,7 @@ function vehicleTick(t, dt) {
 // ---------------------------------------------------------------- base building
 function rectHitsCircle(b, c, r) { const cx = clamp(c.x, b.x, b.x + b.w), cy = clamp(c.y, b.y, b.y + b.h); return (c.x - cx) ** 2 + (c.y - cy) ** 2 < r * r; }
 function placePiece(p, kind, x, y, free) {
-  const def = PIECES[kind];
+  const def = own(PIECES, kind);
   if (!def) return false;
   const fail = (msg) => { if (p) toast(p, msg, "#f88"); return false; };
   x = Math.round(x / GRID) * GRID; y = Math.round(y / GRID) * GRID;
@@ -2640,6 +2643,7 @@ function setupRoyale() {
   game.night = 0; game.ends = Infinity; game.result = null; game.ending = null; game.cutscene = null;
   game.flags = { valley: VALLEY }; game.mods = freshMods(); game.vote = null; game.story = null; game.bossId = 0;
   game.hearthMax = game.hearth = 1e9;
+  game.mayor = null; game.uav = 0; game.elec = null; game.nuke = null; game.waste = false; game.hot = []; game.fog = false; game.royaleN = players.size; // nothing carries over from a story game (fallout, a ticking nuke)
   zombies = []; crates = []; caches = [];
   for (const pl of PLOTS) { pl.stage = 0; pl.prog = 0; }
   for (const p of players.values()) { resetProgress(p); resetLoadout(p, true); p.weapons = [newWeapon("pistol")]; p.active = 0; p.gold = 0; }
@@ -2650,7 +2654,7 @@ function setupRoyale() {
   spawnVehicles(["tractor", "buggy", "buggy", "heli", ...Array(Math.floor(players.size / 2)).fill("buggy")]);
 }
 function endRoyale() {
-  game.phase = "over"; game.result = "royale";
+  game.phase = "over"; game.result = "royale"; game.elec = null; game.nuke = null;
   for (const z of zombies) z.burn = true;
   const winner = [...players.values()].find((p) => !p.out);
   if (winner) winner.place = 1;
@@ -2764,6 +2768,7 @@ function startHack(p, c) {
     used.add(row + "," + col); path.push(g[row][col]);
   }
   const seqs = [path.slice(0, 2), path.slice(1, 4), path.slice(2, 6)];
+  if (p.hack) { const old = caches.find((q) => q.id === p.hack.cache); if (old && old.busy === p.id) old.busy = 0; }
   c.busy = p.id;
   p.hack = { cache: c.id, g, seqs, buf: 7, until: t + 30 };
   p.pe.push({ k: "hack", g, seqs, buf: 7, time: 30 });
@@ -3128,7 +3133,7 @@ function startDay() {
   if (game.mode === "story" && day === game.cameoDay) cameoArrive();
 }
 function endGame(win) {
-  game.phase = "over"; game.result = win ? "win" : "lose"; game.vote = null;
+  game.phase = "over"; game.result = win ? "win" : "lose"; game.vote = null; game.elec = null; game.nuke = null;
   for (const z of zombies) z.burn = true;
   game.flags.clueCount = game.clues.size;
   const lg = legendOf(game.deeds);
@@ -3234,7 +3239,7 @@ function tick() {
       if ([...players.values()].some((p) => !p.dead && dist2(p, z) < 500 * 500)) z.hp = 0;
     }
     const left = [...players.values()].filter((p) => !p.out);
-    if ((players.size > 1 && left.length <= 1) || left.length === 0) endRoyale();
+    if (((game.royaleN || players.size) > 1 && left.length <= 1) || left.length === 0) endRoyale(); // the last one standing wins even if the rest quit
   }
   if (tickN % 30 === 0) for (const p of players.values()) for (const [id, qs] of Object.entries(p.q)) {
     if (!qs.done && !qs.told && npcApi.progress(p, id) >= QUESTS[id].goal) { qs.told = true; toast(p, `Quest complete: ${QUESTS[id].title}. Go and see ${NPCS[QUESTS[id].npc].name}.`, "#e0c0ff"); }
@@ -3287,7 +3292,8 @@ function tick() {
       if (p.dead) continue;
     }
     if (p.dlg) { const n = NPC_POS.find((q) => q.id === p.dlg.npc); if (!n || dist2(n, p) > 150 * 150) { p.dlg = null; sendDlg(p); } }
-    if (p.cg && !NPC_POS.some((q) => q.id === p.cg.npc)) { toast(p, "Your opponent has left. The game's off; you get your stake back.", "#bbb"); p.gold += p.cg.stake; p.cg = null; sendCards(p); }
+    if (!Number.isFinite(p.gold)) p.gold = 0; // backstop: NaN gold would make every price check pass
+    if (p.cg && !NPC_POS.some((q) => q.id === p.cg.npc)) { toast(p, "Your opponent has left. The game's off; you get your stake back.", "#bbb"); if (!p.cg.M.over) p.gold += p.cg.stake; p.cg = null; sendCards(p); }
     if (playing) {
       needs(p, dt, t); stress(p, dt, t);
       if (p.inf) { if (t > p.inf.until) cure(p, "The infection passes. You feel almost normal."); else if (t > p.inf.next) nextSymptom(p); }
@@ -3510,7 +3516,7 @@ function snapshot() {
         jam: w.jam ? 1 : 0, dirt: Math.round(w.dirt || 0), cln: p.cleaning ? 1 : 0,
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
         lv: p.lvl, xp: p.xp, xn: xpNeed(p.lvl), pts: p.pts, sk: p.sk, ch: p.champion ? 1 : 0,
-        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? (p.pod ? 4 : 2) : p.air === "bunker" ? 3 : 0, gr: SLOTS.map((k) => (p.gear[k] ? p.gear[k].id : "")), fd: Math.round(p.food), wt: Math.round(p.water), rad: Math.round(p.rad), dr: p.drunk > 5 ? 1 : 0, cg: p.cg ? 1 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", imm: Math.max(0, Math.round((p.immune || 0) - t)), wm: p.warm ? 1 : 0, il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, cro: crouched(p) ? 1 : 0, spr: p.sprint ? 1 : 0, sli: p.slide > 0 ? 1 : 0, wr: p.wr > 0 ? (p.wn[0] * Math.sin(p.a) - p.wn[1] * Math.cos(p.a) > 0 ? 1 : -1) : 0, sta: Math.round(p.stam ?? 100), out: p.out ? 1 : 0, pk: p.st.pk, ks: p.streak || 0, ss: r(p.stress || 0), br: Math.ceil(p.breath ?? 15), sw: p.swim ? 1 : 0, lo: p.love, ro: [p.dating || "", p.spouse || ""], el: p.elem || "force", els: elemsFor(p).join(","), fz: p.frozen > t ? 1 : 0, dl: p.dlg ? 1 : 0, md: p.meltdown > t ? 1 : 0, hoe: p.hoe || 0, ho: p.hoeOut ? 1 : 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
+        air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? (p.pod ? 4 : 2) : p.air === "bunker" ? 3 : 0, gr: SLOTS.map((k) => (p.gear[k] ? p.gear[k].id : "")), fd: Math.round(p.food), wt: Math.round(p.water), rad: Math.round(p.rad), dr: p.drunk > 5 ? 1 : 0, cg: p.cg ? 1 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", imm: Math.max(0, Math.round((p.immune || 0) - t)), wm: p.warm ? 1 : 0, il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, cro: crouched(p) ? 1 : 0, sprt: p.sprint ? 1 : 0, sli: p.slide > 0 ? 1 : 0, wrs: p.wr > 0 ? (p.wn[0] * Math.sin(p.a) - p.wn[1] * Math.cos(p.a) > 0 ? 1 : -1) : 0, sta: Math.round(p.stam ?? 100), out: p.out ? 1 : 0, pk: p.st.pk, ks: p.streak || 0, ss: r(p.stress || 0), br: Math.ceil(p.breath ?? 15), sw: p.swim ? 1 : 0, lo: p.love, ro: [p.dating || "", p.spouse || ""], el: p.elem || "force", els: elemsFor(p).join(","), fz: p.frozen > t ? 1 : 0, dl: p.dlg ? 1 : 0, md: p.meltdown > t ? 1 : 0, hoe: p.hoe || 0, ho: p.hoeOut ? 1 : 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
         nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
         k: p.st.kills, de: p.st.deaths, cr: p.st.crops, tk: p.st.tk, hs: p.st.hs, acc: p.st.shots ? Math.round(p.st.hits / p.st.shots * 100) : 0,
       };
@@ -3549,17 +3555,19 @@ function broadcast() {
 
 // ---------------------------------------------------------------- network
 const spectators = new Set();
+let msgErrs = 0, msgErrAt = 0;
 function hostId() { return players.size ? Math.min(...players.keys()) : 0; }
 
 function onMessage(ws, raw) {
   let m; try { m = JSON.parse(raw); } catch { return; }
+  if (!m || typeof m !== "object") return;
   const p = ws.data.pid ? players.get(ws.data.pid) : null;
   if (m.t === "join" && !p) {
     const np = makePlayer(ws, m);
     ws.data.pid = np.id;
     spectators.delete(ws);
     players.set(np.id, np);
-    if (game.phase === "day" || game.phase === "night") { game.hearthMax += 250; game.hearth += 250; }
+    if (game.phase === "day" || game.phase === "night") { game.hearthMax += 250; game.hearth += 250; np.hearthBonus = true; }
     if (game.phase === "royale") { np.dead = true; np.out = true; np.place = 99; toast(np, "A Royale is in progress. You're spectating until the next round.", "#ffd34d"); }
     if (game.phase === "intro") np.air = "wait";
     feed(`Sul sul! ${fullName(np)} the ${BACKGROUNDS[np.bg].name} ${CLASSES[np.cls].name} joined`, "#8f8");
@@ -3568,7 +3576,7 @@ function onMessage(ws, raw) {
   if (!p) return;
   switch (m.t) {
     case "in":
-      p.keys = m.k | 0; p.a = +m.a || 0; p.firing = !!m.f && !p.dead; p.ads = !!m.ads && !p.dead;
+      p.keys = m.k | 0; p.a = Number.isFinite(+m.a) ? +m.a : 0; p.firing = !!m.f && !p.dead; p.ads = !!m.ads && !p.dead;
       p.pt = typeof m.pt === "number" && isFinite(m.pt) ? clamp(m.pt, -1.5, 1.5) : null; p.rel = !!m.rel;
       p.fly = Array.isArray(m.fly) && m.fly.length === 4 ? m.fly.map((x) => clamp(+x || 0, -1, 1)) : null;
       break;
@@ -3621,7 +3629,7 @@ function onMessage(ws, raw) {
     case "ready": if (game.phase === "lobby" || game.phase === "over") { p.ready = m.v === undefined ? !p.ready : !!m.v; feed(`${fullName(p)} is ${p.ready ? "ready" : "not ready"}`, p.ready ? "#8f8" : "#aaa"); } break;
     case "build": if (["day", "night", "royale"].includes(game.phase) && !p.dead && !p.air && !p.veh) placePiece(p, String(m.kind), +m.x || 0, +m.y || 0, false); break;
     case "dlg": pickDlg(p, m.i | 0); break;
-    case "mode": if (p.id === hostId() && game.phase !== "day" && game.phase !== "night" && game.phase !== "royale" && (m.m === "story" || m.m === "royale" || m.m === "endless")) { game.mode = m.m; broadcastRaw(JSON.stringify(mapMsg())); } break;
+    case "mode": if (p.id === hostId() && (game.phase === "lobby" || game.phase === "over") && (m.m === "story" || m.m === "royale" || m.m === "endless")) { game.mode = m.m; broadcastRaw(JSON.stringify(mapMsg())); } break;
     case "shout": doShout(p); break;
     case "elem": cycleElement(p); break;
     case "go": relieve(p); break;
@@ -3687,11 +3695,14 @@ const server = Bun.serve({
       ws.send(JSON.stringify(mapMsg()));
       ws.send(JSON.stringify({ t: "ck", reset: 1, seed: MAP_SEED, walls: WALLS.filter((w) => w.ck), bio: [...CHUNKS].filter(([, c]) => c.kind !== "town").map(([k, c]) => [...k.split(",").map(Number), c.kind]) }));
     },
-    message: onMessage,
+    // one bad message (a stale client, a typo'd field) used to throw out of here and stop the whole server
+    message(ws, raw) { try { onMessage(ws, raw); } catch (err) { console.error(err); if (now() - msgErrAt > 30) { msgErrs = 0; msgErrAt = now(); } if (msgErrs++ < 3) bugLog(`SERVER ERROR (message)\n${String(raw).slice(0, 200)}\n${err && err.stack || err}`); } },
     close(ws) {
       spectators.delete(ws);
       const p = players.get(ws.data.pid);
-      if (p) { if (p.veh) exitVehicle(p); players.delete(p.id); feed(`${fullName(p)} left the valley`, "#aaa"); if (game.vote) game.vote.votes.delete(p.id); }
+      if (p) { if (p.veh) exitVehicle(p);
+        if (p.hearthBonus && (game.phase === "day" || game.phase === "night")) { game.hearthMax -= 250; game.hearth = Math.max(1, Math.min(game.hearthMax, game.hearth - 250)); } // rejoining doesn't heal the Hearth
+        if (p.fix) endFix(p, "left"); players.delete(p.id); feed(`${fullName(p)} left the valley`, "#aaa"); if (game.vote) game.vote.votes.delete(p.id); }
       if (players.size === 0 && game.phase !== "lobby") { game.phase = "lobby"; zombies = []; projs = []; caches = []; fires.clear(); crates = []; vehicles = []; builds = []; WALLS = WALLS.filter((w) => w.kind !== "built"); game.vote = null; game.zone = null; game.drop = null; game.pendingVote = null; }
     },
   },
