@@ -766,8 +766,10 @@ var R3D = (function () {
     e.seen = frameNo;
     return e;
   }
+  // free the GPU buffers of meshes we drop (zombies, fires, crops, swapped guns); they were leaking all game
+  const freeGeo = (o) => o.traverse((c) => { if (c.geometry) c.geometry.dispose(); });
   function sweep() {
-    for (const [k, e] of pools) if (e.seen !== frameNo) { scene.remove(e.obj); pools.delete(k); }
+    for (const [k, e] of pools) if (e.seen !== frameNo) { scene.remove(e.obj); freeGeo(e.obj); pools.delete(k); }
   }
   const lerp = (a, b, k) => a + (b - a) * k;
   function smoothTo(e, x, y, z, dt, snap = 200) {
@@ -1110,14 +1112,14 @@ var R3D = (function () {
       e.obj.visible = !(mine && st.fp) && !p.vh;
       const body = e.obj.userData.body;
       body.scale.y = p.go ? 0.72 : p.cro ? 0.7 : 1;
-      body.rotation.z = lerp(body.rotation.z, p.sw ? -1.25 : p.sli ? 0.85 : p.spr ? -0.28 : 0, Math.min(1, dt * (p.sw ? 6 : 10))); // swimming: flat out; sprinting leans in; sliding leans back
+      body.rotation.z = lerp(body.rotation.z, p.sw ? -1.25 : p.sli ? 0.85 : p.sprt ? -0.28 : 0, Math.min(1, dt * (p.sw ? 6 : 10))); // swimming: flat out; sprinting leans in; sliding leans back
       body.position.y = p.sw ? 22 : 0;
       const walk = p.sw ? 1 : Math.min(1, e.sp / 120), wt = (e.wt = (e.wt || 0) + dt * (p.sw ? 7 : 4 + e.sp / 30));
       e.obj.userData.legs.forEach((l, i) => { l.rotation.z = Math.sin(wt + i * Math.PI) * 0.7 * walk; });
       if (e.obj.userData.hat.userData.spin) e.obj.userData.hat.userData.spin.rotation.y = t * 20;
       // weapon in hand
       const wk = p.w + ":" + p.wr + ":" + (p.wsk || "") + ":" + (p.wat || "");
-      if (e.wk !== wk) { const arm = e.obj.userData.arm; while (arm.children.length > 2) arm.remove(arm.children[2]); const wm = weaponMesh(p.w, p.wr, p.wsk, p.wat); wm.position.set(2, 0, 0); arm.add(wm); e.wk = wk; }
+      if (e.wk !== wk) { const arm = e.obj.userData.arm; while (arm.children.length > 2) { freeGeo(arm.children[2]); arm.remove(arm.children[2]); } const wm = weaponMesh(p.w, p.wr, p.wsk, p.wat); wm.position.set(2, 0, 0); arm.add(wm); e.wk = wk; }
       const arm = e.obj.userData.arm;
       const sl = st.slashT.get(p.id), sk = sl ? Math.min(1, (t - sl) / 0.25) : 1;
       arm.rotation.z = p.w === "sword" && sk < 1 ? pitch + 1.4 - sk * 2.6 : pitch;
@@ -1216,7 +1218,7 @@ var R3D = (function () {
     const vm = st.vm;
     const key = vm ? vm.type + ":" + vm.rar + ":" + (vm.sk || "") + ":" + (vm.at || "") : "";
     if (key !== vmKey) {
-      if (viewModel) cam.remove(viewModel);
+      if (viewModel) { cam.remove(viewModel); freeGeo(viewModel); }
       viewModel = null; vmKey = key;
       if (vm) { viewModel = new T.Group(); const w = weaponMesh(vm.type, vm.rar, vm.sk, vm.at); w.rotation.y = Math.PI / 2; w.scale.setScalar(0.55); viewModel.add(w); viewModel.userData.flash = w.userData.flash; cam.add(viewModel); }
     }
