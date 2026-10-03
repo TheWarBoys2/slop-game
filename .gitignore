@@ -2,3 +2,4 @@
 version.txt
 node_modules/
 bug-reports.txt
+*.log
