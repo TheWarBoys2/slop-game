@@ -86,7 +86,8 @@ $("traits").addEventListener("click", showTrait); showTrait();
 setTimeout(() => { if (!joined) $("name").focus(); }, 0);
 
 // ---------------------------------------------------------------- network
-let WHEEL = [], COSM = {}, FREE_HATS = [], myCos = [];
+let WHEEL = [], COSM = {}, FREE_HATS = [], myCos = [], DUSTR = null;
+const inDustC = () => !!DUSTR && pred.x > DUSTR.x && pred.x < DUSTR.x + DUSTR.w && pred.y > DUSTR.y && pred.y < DUSTR.y + DUSTR.h; // standing on Dust II
 let ws, MAP = null, SHOP = null, SHOPS = {}, DOME_R = 1000, shopSid = "general", ENH_COST = [], ENH_CHANCE = [], PIECES = {}, VEH = {}, LEGENDS = {};
 let CHUNK_WALLS = [], chunkVer = 0, CHUNK_BIO = {}; // the wild past the hedge, sent a chunk at a time as people explore
 const openWorld = () => !S || S.g.mode !== "royale";
@@ -99,7 +100,7 @@ function connect() {
   ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
-    if (m.t === "hello") { WHEEL = m.wheel || []; COSM = m.cosmetics || {}; FREE_HATS = m.freeHats || []; SHOP = m.shop; SHOPS = m.shops || {}; DOME_R = m.domeR || 1000; ENH_COST = m.enhCost; ENH_CHANCE = m.enhChance; PIECES = m.pieces || {}; VEH = m.vehicles || {}; LEGENDS = m.legends || {}; ITEMS = m.items || {}; CROPS = m.crops || {}; CROP_KEYS = Object.keys(CROPS); SEED_PACK = m.seedPack || 3; GEAR = m.gear || {}; CARDS = m.cards || {}; LOCS = m.locs || {}; STOCKS = m.stocks || {}; CANDS = m.cands || {}; renderBuildBar(); if (joined) send({ t: "join", ...choice }); return; }
+    if (m.t === "hello") { WHEEL = m.wheel || []; COSM = m.cosmetics || {}; FREE_HATS = m.freeHats || []; SHOP = m.shop; SHOPS = m.shops || {}; DOME_R = m.domeR || 1000; ENH_COST = m.enhCost; ENH_CHANCE = m.enhChance; PIECES = m.pieces || {}; VEH = m.vehicles || {}; LEGENDS = m.legends || {}; ITEMS = m.items || {}; CROPS = m.crops || {}; CROP_KEYS = Object.keys(CROPS); SEED_PACK = m.seedPack || 3; GEAR = m.gear || {}; CARDS = m.cards || {}; LOCS = m.locs || {}; STOCKS = m.stocks || {}; CANDS = m.cands || {}; DUSTR = m.dust || null; renderBuildBar(); if (joined) send({ t: "join", ...choice }); return; }
     if (m.t === "map") { const fresh = !MAP || MAP.seed !== m.map.seed; if (fresh) { CHUNK_WALLS = []; CHUNK_BIO = {}; } MAP = m.map; MAP.bio = CHUNK_BIO; MAP.walls = MAP.walls.concat(CHUNK_WALLS); MAP.cv = chunkVer; if (fresh) { buildDecor(); disp.clear(); } return; }
     if (m.t === "ck") { if (m.reset) { CHUNK_WALLS = []; for (const k in CHUNK_BIO) delete CHUNK_BIO[k]; } CHUNK_WALLS.push(...m.walls); for (const [cx, cy, kind] of m.bio || []) CHUNK_BIO[cx + "," + cy] = kind; chunkVer++; if (MAP && MAP.seed === m.seed) { MAP.walls = MAP.walls.filter((w) => !w.ck).concat(CHUNK_WALLS); MAP.cv = chunkVer; } return; }
     if (m.t === "s") onSnap(m);
@@ -185,6 +186,16 @@ function handleEvent(e) {
   else if (e.k === "shame") { shameT = t; shameWho = e; sfx("shame"); shake = Math.max(shake, 10); sayShame(e.who); }
   else if (e.k === "bile") { fx.push({ kind: "boom", t0: t, dur: 0.7, x: e.x, y: e.y, z: e.z, r: e.r * 0.7, col: 0x9fd040, c2: "159,208,64" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("bile"); }
   else if (e.k === "scream") { fx.push({ kind: "shout", t0: t, dur: 1.2, x: e.x, y: e.y, z: e.z, a: 0, full: true, col: 0xff4040 }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 900) sfx("scream"); }
+  else if (e.k === "dust") { // Dust II: the radio calls it
+    const near = inDustC() || (DUSTR && Math.hypot(pred.x - (DUSTR.x + DUSTR.w / 2), pred.y - (DUSTR.y + DUSTR.h / 2)) < 2200);
+    if (near) {
+      if (e.text) { banner = { text: e.text, sub: e.sub, t }; sfx("banner"); }
+      const LINE = { go: "Go go go!", move: "Terrorists are moving.", planted: "The bomb has been planted.", ct: "Counter-terrorists win.", t: "Terrorists win." }[e.say];
+      if (LINE) speakNpc("radio", LINE);
+      if (e.say === "planted") sfx("ding", 1, 1);
+    } else if (e.say === "ct" || e.say === "t") pushLim(feed, { text: `Dust II: ${e.text.toLowerCase()}`, color: "#e0c080", t }, 6);
+  }
+  else if (e.k === "ding") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("ding", 1, e.b); }
   else if (e.k === "glass" && e.id === undefined) { /* a molotov bottle smashing; a window pane (with an id) is handled below */ fx.push({ kind: "boom", t0: t, dur: 0.35, x: e.x, y: e.y, z: e.z, r: 50, col: 0xffa030, c2: "255,160,48" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx("glass"); }
   else if (e.k === "throw") { if (Math.hypot((S?.p.find((p) => p.id === e.id)?.x ?? 1e9) - pred.x, (S?.p.find((p) => p.id === e.id)?.y ?? 1e9) - pred.y) < 600) sfx("throw"); }
   else if (e.k === "mv") { if (e.id !== me && Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx(e.m === "slide" ? "slide" : e.m === "boost" ? "boost" : e.m === "mantle" || e.m === "wallrun" ? "step" : "whoosh", 0.5); }
@@ -246,7 +257,8 @@ function handlePersonal(e) {
   else if (e.k === "shop") { const fresh = !shopOpen || shopSid !== e.sid; toggleShop(true, e.sid); if (fresh) speakNpc(SHOP_VOICE[e.sid], SHOP_BLURB[e.sid]); }
   else if (e.k === "pack") { pushLim(toasts, { text: `New card${e.cards.length > 1 ? "s" : ""}: ${e.cards.map((c) => CARDS[c] ? CARDS[c].name : c).join(", ")}  [Y]`, color: "#ffd34d", t }, 4); sfx("perfect"); }
   else if (e.k === "wheel") { wheelAnim = { t0: t, from: wheelAngle, seg: e.seg }; sfx("banner"); toggleCasino(true); }
-  else if (e.k === "casino") { casinoState = e; if (e.game || (e.spins && wantCasino)) { wantCasino = false; toggleCasino(true); } renderCasino(); }
+  else if (e.k === "casino") { casinoState = e; if (e.game || e.open || (e.spins && wantCasino)) { wantCasino = false; toggleCasino(true); } renderCasino(); }
+  else if (e.k === "slots") { sfx("reel"); setTimeout(() => { sfx(e.win >= 30 ? "jackpot" : e.win ? "perfect" : "click"); pushLim(toasts, { text: `[ ${e.r.map((i) => ["🍒", "🍋", "🔔", "💎", "7", "🧟"][i]).join(" | ")} ]  ${e.msg}${e.win ? ` +${e.win}g` : ""}`, color: e.win ? "#ffd34d" : "#bbb", t: T() }, 4); }, 450); }
   else if (e.k === "cos") { myCos = e.list; if (wardOpen) renderWardrobe(); }
   else if (e.k === "fog") fogT = t;
   else if (e.k === "case" && e.spins) { wantCasino = true; caseAnim = { t0: t, type: e.type, rarity: e.rarity, name: e.name, reel: makeReel(e.type, e.rarity, e.name) }; }
@@ -351,7 +363,7 @@ addEventListener("keydown", (e) => {
   if (S && S.g.ph === "lobby") { if (k === "f") send({ t: "ready" }); else if (k === "o") toggleOptions(); else if (k === "escape") { if (optsOpen) toggleOptions(false); else closeScreens(); } return; } // the lobby is a screen, not a playground
   if (cardsOpen && k === "escape") { if (cgState && !cgState.v.over) return; toggleCards(false); if (cgState) send({ t: "cg", a: "quit" }); return; }
   if (cardsOpen && cgState) return; // mid-match: the table has your full attention
-  if (k === "b") { if (shopOpen) toggleShop(false); else pushLim(toasts, { text: "Shops are places now: Vex's store and Haddock's armoury are just south of the Hearth, the casino's on your map. Walk up and press E.", color: "#ffd34d", t: T() }, 4); return; }
+  if (k === "b") { if (shopOpen) toggleShop(false); else if (inDustC() && S && S.g.mode !== "royale") send({ t: "buyzone" }); else pushLim(toasts, { text: "Shops are places now: Vex's store and Haddock's armoury are just south of the Hearth, the casino's on your map. Walk up and press E.", color: "#ffd34d", t: T() }, 4); return; }
   if (k === "i") { toggleInv(); return; }
   if (k === "m") { toggleMarket(); return; }
   if (k === "y") { if (!cgState) toggleCards(); return; }
@@ -863,6 +875,9 @@ function sfx(kind, vol = 1, sub) {
   else if (kind === "shout") { tone("sawtooth", 110, 55, 0.6, 0.35); noise(0.5, 0.3, 200); }
   else if (kind === "lvl") [523, 659, 784, 1046].forEach((f, i) => { const o = actx.createOscillator(); o.type = "triangle"; o.frequency.value = f; const gg = actx.createGain(); gg.gain.setValueAtTime(0, t + i * 0.08); gg.gain.linearRampToValueAtTime(0.25, t + i * 0.08 + 0.01); gg.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.25); o.connect(gg); gg.connect(g); o.start(t + i * 0.08); o.stop(t + i * 0.08 + 0.3); });
   else if (kind === "perfect") { tone("triangle", 880, 1320, 0.15, 0.3); }
+  else if (kind === "ding") { tone("sine", sub ? 1760 : 1320, sub ? 1700 : 1300, 0.35, 0.22 * vol); tone("sine", sub ? 2640 : 1980, 1900, 0.2, 0.06 * vol); } // a steel target; the bull rings higher
+  else if (kind === "reel") { for (let i = 0; i < 6; i++) { const o = actx.createOscillator(), gg = actx.createGain(); o.type = "square"; o.frequency.value = 600 + (i % 3) * 140; gg.gain.setValueAtTime(0.0001, t); gg.gain.setValueAtTime(0.08, t + i * 0.06); gg.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.06 + 0.04); o.connect(gg); gg.connect(g); o.start(t); o.stop(t + 0.5); } }
+  else if (kind === "jackpot") { [523, 659, 784, 1047].forEach((f, i) => { const o = actx.createOscillator(), gg = actx.createGain(); o.type = "triangle"; o.frequency.value = f; gg.gain.setValueAtTime(0.0001, t); gg.gain.setValueAtTime(0.18, t + i * 0.09); gg.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.09 + 0.3); o.connect(gg); gg.connect(g); o.start(t); o.stop(t + 0.8); }); }
   else if (kind === "jam") tone("square", 120, 90, 0.2, 0.2);
   else if (kind === "banner") tone("triangle", 196, 196, 0.8, 0.25);
   else if (kind === "shame") { [0, 0.45, 0.9].forEach((d) => { const o = actx.createOscillator(); o.type = "sine"; o.frequency.value = 330; const o2 = actx.createOscillator(); o2.type = "sine"; o2.frequency.value = 494; const gg = actx.createGain(); gg.gain.setValueAtTime(0.5, t + d); gg.gain.exponentialRampToValueAtTime(0.001, t + d + 1.2); o.connect(gg); o2.connect(gg); gg.connect(g); o.start(t + d); o2.start(t + d); o.stop(t + d + 1.2); o2.stop(t + d + 1.2); }); tone("sawtooth", 90, 60, 1.2, 0.3); }
@@ -897,6 +912,7 @@ function sayShame(who) {
 const VOICES = {
   grubb: [0.7, 0.95, "", /GB/, 0], aldous: [0.5, 0.72, "", /GB|IE/, 1], morwen: [1.4, 0.82, "f", /IE|GB|AU/, 0], vex: [1.35, 1.32, "", /US/, 0],
   pell: [0.3, 0.62, "", /GB|AU/, 2], haddock: [0.6, 1.22, "", /GB/, 3], giles: [0.42, 0.7, "", /AU|GB|IE/, 1], lou: [1.25, 1.2, "f", /US/, 1],
+  radio: [0.9, 1.05, "", /US/, 3], // Dust II's radio voice
   chef: [1.05, 1.45, "", /GB/, 4], bear: [0.8, 1.05, "", /GB/, 5], boulder: [0.2, 0.85, "", /US/, 1], david: [0.85, 0.74, "", /GB/, 6], warren: [0.95, 0.8, "", /US/, 2],
 };
 let voiceList = [];
@@ -1064,7 +1080,7 @@ let padExit = false;
 setInterval(() => {
   if (!joined) return;
   const msg = { t: "in", k: keyMask(), a: aimAngle(), f: mouseDown && !chatting && !shopOpen && !skillsOpen && !building && !casinoOpen && !wardOpen, ads: aiming() ? 1 : 0 };
-  if (use3d) { msg.pt = +aimPitch.toFixed(3); msg.rel = 1; }
+  if (use3d) { msg.pt = +aimPitch.toFixed(3); msg.rel = 1; msg.my = +yaw.toFixed(4); } // walk by the camera, aim by the crosshair (they differ over the shoulder)
   if (piloting()) {
     const fi = flyInput();
     if (fi) {
@@ -1097,8 +1113,9 @@ function flyInput() {
 setInterval(() => {
   if (!shopOpen) return;
   const w = shopWallC(shopSid);
-  if (w && Math.max(Math.abs(pred.x - (w.x + w.w / 2)) - w.w / 2, Math.abs(pred.y - (w.y + w.h / 2)) - w.h / 2) > 150) return toggleShop(false); // walked off
-  if (S && S.g.ph === "night" && (SHOPS[shopSid] || {}).hours === "day") { toggleShop(false); return pushLim(toasts, { text: "Closing time. Out you go.", color: "#f88", t: T() }, 4); }
+  const buyZone = shopSid === "armoury" && inDustC(); // Dust II's buy menu works anywhere on the map, day or night
+  if (!buyZone && w && Math.max(Math.abs(pred.x - (w.x + w.w / 2)) - w.w / 2, Math.abs(pred.y - (w.y + w.h / 2)) - w.h / 2) > 150) return toggleShop(false); // walked off
+  if (!buyZone && S && S.g.ph === "night" && (SHOPS[shopSid] || {}).hours === "day") { toggleShop(false); return pushLim(toasts, { text: "Closing time. Out you go.", color: "#f88", t: T() }, 4); }
   renderShop();
 }, 250);
 
@@ -1317,6 +1334,7 @@ function smooth(key, x, y, dt) {
   d.x += (x - d.x) * k; d.y += (y - d.y) * k; d.seen = frameNo;
   return d;
 }
+const offDuty = (k) => (k.hours === "day" && S.g.ph === "night") || (k.hours === "night" && S.g.ph !== "night"); // shopkeepers go home at night; the club's people only come out then
 function drawHat(hat, x, y, r) {
   ctx.save(); ctx.translate(x, y - r * 0.6);
   if (hat === "crown") { ctx.fillStyle = "#ffd34d"; ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(-10, -12); ctx.lineTo(-5, -6); ctx.lineTo(0, -14); ctx.lineTo(5, -6); ctx.lineTo(10, -12); ctx.lineTo(10, 0); ctx.fill(); }
@@ -1367,7 +1385,8 @@ function drawCompass(t) {
   const placed = []; // icons in the same direction sit side by side instead of on top of each other
   const mark = (wx, wy, icon, col) => { let x = at(Math.atan2(wy - pred.y, wx - pred.x)); if (x == null) return; for (let i = 0; i < 4 && placed.some((px) => Math.abs(px - x) < 15); i++) x += 15; placed.push(x); text(icon, x, y + 1, 14, col, "center", false); };
   if (S.g.mode !== "royale" && MAP.hearth) mark(MAP.hearth.x + MAP.hearth.w / 2, MAP.hearth.y + MAP.hearth.h / 2, "🔥", "#ff8a2a");
-  if (S.g.mode !== "royale") for (const w of MAP.walls) if (w.kind === "shop" && w.sid !== "casino") mark(w.x + w.w / 2, w.y + w.h / 2, w.sid === "armoury" ? "🔫" : "🛒", "#fff");
+  if (S.g.mode !== "royale") for (const w of MAP.walls) if (w.kind === "shop" && w.sid !== "casino") mark(w.x + w.w / 2, w.y + w.h / 2, w.sid === "armoury" ? "🔫" : w.sid === "club" ? "🪩" : "🛒", "#fff");
+  if (S.g.mode !== "royale" && DUSTR) mark(DUSTR.x + DUSTR.w / 2, DUSTR.y + DUSTR.h / 2, "💣", "#e0c080"); // Dust II, out in the desert
   for (const n of questNpcs()) mark(n.x, n.y, "❓", "#ffa020");
   const boss = S.g.boss && S.z.find((z) => z[0] === S.g.boss); if (boss) mark(boss[2], boss[3], "💀", "#fff");
   ctx.fillStyle = "#ffd34d"; ctx.fillRect(cx - 1, y - 14, 2, 5);
@@ -1389,7 +1408,7 @@ function drawMinimap(mine, t) {
   if (S.g.mode !== "royale") {
     const h = MAP.hearth; ctx.fillStyle = "#ff8a2a"; ctx.fillRect(mx + (h.x - ox) * k, my + (h.y - oy) * k, h.w * k, h.h * k);
     if (S.g.dome && S.g.dome[0] >= S.g.dome[1]) { ctx.strokeStyle = "#9fe0ffaa"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(mx + (h.x + h.w / 2 - ox) * k, my + (h.y + h.h / 2 - oy) * k, DOME_R * k, 0, 7); ctx.stroke(); }
-    for (const w of MAP.walls) if (w.kind === "shop") text(w.sid === "casino" ? "🎰" : w.sid === "armoury" ? "🔫" : "🛒", mx + (w.x + w.w / 2 - ox) * k, my + (w.y + w.h / 2 - oy) * k, 11, "#fff", "center", false);
+    for (const w of MAP.walls) if (w.kind === "shop") text(w.sid === "casino" ? "🎰" : w.sid === "armoury" ? "🔫" : w.sid === "club" ? "🪩" : "🛒", mx + (w.x + w.w / 2 - ox) * k, my + (w.y + w.h / 2 - oy) * k, 11, "#fff", "center", false);
     const st = MAP.walls.find((w) => w.kind === "stall"); if (st) text("🥕", mx + (st.x + st.w / 2 - ox) * k, my + (st.y + st.h / 2 - oy) * k, 10, "#fff", "center", false);
     for (const n of questNpcs()) text("?", mx + (n.x - ox) * k, my + (n.y - oy) * k, 14 + Math.sin(t * 4) * 2, "#ffa020");
   }
@@ -1637,7 +1656,7 @@ function overlay3d(mine, t, dt) {
     if (mine && (!mine.nt.includes(n.id) || mine.qr.includes(n.id))) { const q = mine.qr.includes(n.id); text(q ? "?" : "!", s.x, s.y - 20 + Math.sin(t * 4) * 3, 24, q ? "#7dffb0" : "#ffd34d"); }
     if (n.quips && Math.sin(t * 1.3 + n.x) > 0.6) text(n.quips[Math.floor(t / 4.8 + n.x) % n.quips.length], s.x, s.y - 40, 14, "#ff5050");
   }
-  if (MAP.keepers) for (const n of MAP.keepers) { if (n.hours === "day" && S.g.ph === "night") continue; const s = P(n.x, n.y, 72); if (s && s.d < 900) { text(n.name, s.x, s.y, 12, "#ffd34d"); text(n.role, s.x, s.y + 13, 10, "#d8c8a0"); } }
+  if (MAP.keepers) for (const n of MAP.keepers) { if (offDuty(n)) continue; const s = P(n.x, n.y, 72); if (s && s.d < 900) { text(n.name, s.x, s.y, 12, "#ffd34d"); text(n.role, s.x, s.y + 13, 10, "#d8c8a0"); } }
   for (const [, type, zx, zy, hp, , zh] of S.z) {
     if (hp >= 100 || type === "b") continue;
     const r = ZR[type] || 15, s = P(zx, zy, (zh || 0) + r * 3.9);
@@ -1750,7 +1769,7 @@ function render() {
 
   // the shopkeepers (gone home at night)
   if (MAP.keepers) for (const n of MAP.keepers) {
-    if (n.hours === "day" && S.g.ph === "night") continue;
+    if (offDuty(n)) continue;
     ctx.fillStyle = "#0004"; ctx.beginPath(); ctx.ellipse(n.x, n.y + 14, 16, 6, 0, 0, 7); ctx.fill();
     ctx.fillStyle = n.color; ctx.beginPath(); ctx.arc(n.x, n.y, 17, 0, 7); ctx.fill(); ctx.strokeStyle = "#0008"; ctx.lineWidth = 2; ctx.stroke();
     drawEyes("dot", n.x, n.y - 3, t, 0); drawNpcHat(n.hat, n.x, n.y);
@@ -1817,6 +1836,10 @@ function render() {
     if (w.x > vx1 + 60 || w.y > vy1 + 60 || w.x + w.w < vx0 - 60 || w.y + w.h < vy0 - 60) continue; // off screen
     if (w.kind === "ruin") { ctx.fillStyle = "#00000040"; ctx.fillRect(w.x + 4, w.y + 6, w.w, w.h); ctx.fillStyle = "#8a8478"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#a29c90"; for (let i = 0; i < Math.max(w.w, w.h) / 20; i++) ctx.fillRect(w.w > w.h ? w.x + i * 20 + 2 : w.x + 2, w.w > w.h ? w.y + 2 : w.y + i * 20 + 2, w.w > w.h ? 16 : w.w - 4, w.w > w.h ? w.h - 4 : 16); continue; }
     if (w.kind === "hwall") { ctx.fillStyle = "#6b4228"; ctx.fillRect(w.x, w.y, w.w, w.h); continue; }
+    if (w.kind === "dust") { ctx.fillStyle = w.look ? "#6a4a2a" : "#d8bc88"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.strokeStyle = "#a88a58"; ctx.lineWidth = 3; ctx.strokeRect(w.x, w.y, w.w, w.h); continue; }
+    if (w.kind === "dcrate" || w.kind === "radio") { ctx.fillStyle = w.kind === "radio" ? "#4a5a3a" : "#b08a4a"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.strokeStyle = "#7a5a2a"; ctx.lineWidth = 2; ctx.strokeRect(w.x + 1, w.y + 1, w.w - 2, w.h - 2); continue; }
+    if (w.kind === "bsite") { ctx.strokeStyle = "#c03020"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(w.x + w.w / 2, w.y + w.h / 2, 62, 0, 7); ctx.stroke(); text(w.s, w.x + w.w / 2, w.y + w.h / 2 + 12, 34, "#c03020"); continue; }
+    if (w.kind === "swall") { ctx.fillStyle = { plank: "#7a5530", brick: "#5a5a46", casino: "#4a1a50", club: "#18181e" }[w.look] || "#555"; ctx.fillRect(w.x, w.y, w.w, w.h); continue; }
     if (w.kind === "furn") {
       if (w.f === "bed") { ctx.fillStyle = "#5a3a1e"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#e8e0d0"; ctx.fillRect(w.x + 4, w.y + 4, w.w - 8, 18); ctx.fillStyle = ["#a33b2b", "#3b5ea3", "#5d6b3a", "#6b4a8a"][(w.id || 0) % 4]; ctx.fillRect(w.x + 4, w.y + 24, w.w - 8, w.h - 28); }
       else { ctx.fillStyle = "#7a5530"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#94693c"; ctx.fillRect(w.x + 3, w.y + 3, w.w - 6, w.h - 6); ctx.fillStyle = "#e8d84a"; ctx.beginPath(); ctx.arc(w.x + w.w / 2, w.y + w.h / 2, 4, 0, 7); ctx.fill(); }
@@ -1842,23 +1865,17 @@ function render() {
       text(S.g.ph === "night" ? "CLOSED" : "PRODUCE", w.x + w.w / 2, w.y + w.h - 5, 10, S.g.ph === "night" ? "#ff8060" : "#ffe9a0", "center", false);
       continue;
     }
-    if (w.kind === "shop") { // a shopfront: counter facing south, awning, sign
-      const night = S.g.ph === "night", shut = night && w.sid !== "casino";
-      ctx.fillStyle = "#00000040"; ctx.fillRect(w.x + 8, w.y + 10, w.w, w.h);
-      if (w.sid === "casino") {
-        ctx.fillStyle = "#2a1030"; ctx.fillRect(w.x, w.y, w.w, w.h); ctx.fillStyle = "#4a1a50"; ctx.fillRect(w.x + 10, w.y + 10, w.w - 20, w.h - 20);
-        for (let i = 0; i < 26; i++) { const k = i / 26, on = ((t * 6 + i) | 0) % 3 === 0; ctx.fillStyle = on ? "#ffd34d" : "#806020"; const per = 2 * (w.w + w.h), d = k * per; const [lx, ly] = d < w.w ? [w.x + d, w.y] : d < w.w + w.h ? [w.x + w.w, w.y + d - w.w] : d < 2 * w.w + w.h ? [w.x + w.w - (d - w.w - w.h), w.y + w.h] : [w.x, w.y + w.h - (d - 2 * w.w - w.h)]; ctx.beginPath(); ctx.arc(lx, ly, 4, 0, 7); ctx.fill(); }
-        ctx.fillStyle = "#ffd34d"; ctx.beginPath(); ctx.arc(w.x + w.w / 2, w.y + w.h / 2, 26, 0, 7); ctx.fill(); ctx.fillStyle = "#c03050"; for (let i = 0; i < 8; i++) { ctx.beginPath(); ctx.moveTo(w.x + w.w / 2, w.y + w.h / 2); ctx.arc(w.x + w.w / 2, w.y + w.h / 2, 24, i * Math.PI / 4 + t, i * Math.PI / 4 + t + 0.4); ctx.fill(); }
-        ctx.fillStyle = "#3a2a10"; ctx.fillRect(w.x + w.w / 2 - 20, w.y + w.h - 6, 40, 10);
-        text("THE GOLDEN SLOP", w.x + w.w / 2, w.y - 8, 15, "#ffd34d");
-        continue;
-      }
-      const arm = w.sid === "armoury";
-      ctx.fillStyle = arm ? "#4a5236" : "#7a5a32"; ctx.fillRect(w.x, w.y, w.w, w.h);
-      if (arm) { ctx.fillStyle = "#8a7a52"; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.ellipse(w.x + 14 + i * 24, w.y + w.h + 6, 12, 6, 0, 0, 7); ctx.fill(); } ctx.fillStyle = "#2a2a2a"; for (let i = 0; i < 4; i++) ctx.fillRect(w.x + 18 + i * 32, w.y + 10, 22, 5); }
-      else { const ic = ["#d0a040", "#e83a2a", "#7ab0e0", "#f4f0e0", "#8a5a2a"]; for (let i = 0; i < 6; i++) { ctx.fillStyle = ic[i % 5]; ctx.fillRect(w.x + 10 + i * 22, w.y + 10, 14, 18); } }
-      for (let i = 0; i < 8; i++) { ctx.fillStyle = i % 2 ? "#f4f0e0" : arm ? "#5a6a3a" : "#d06a2a"; ctx.fillRect(w.x - 6 + i * (w.w + 12) / 8, w.y - 30, (w.w + 12) / 8, 22); }
-      text(shut ? "CLOSED" : arm ? "ARMOURY" : "VEX'S STORE", w.x + w.w / 2, w.y + w.h - 5, 10, shut ? "#ff8060" : "#ffe9a0", "center", false);
+    if (w.kind === "shop") { // a walk-in shop, from above: its floor and its name. The walls and fittings are their own pieces.
+      const night = S.g.ph === "night", sh = SHOPS[w.sid] || {}, shut = (sh.hours === "day" && night) || (sh.hours === "night" && !night);
+      ctx.fillStyle = { general: "#c8b890", armoury: "#7a7a70", casino: "#6a1a2a", club: night ? `hsl(${(t * 60) % 360},40%,18%)` : "#1a1a20" }[w.sid] || "#888"; ctx.fillRect(w.x, w.y, w.w, w.h);
+      text(shut ? `${sh.name || ""} (CLOSED)` : sh.name || "", w.x + w.w / 2, w.door === "n" ? w.y - 10 : w.y + w.h + 18, 14, shut ? "#ff8060" : "#ffd34d");
+      continue;
+    }
+    if (w.kind === "dance") { for (let i = 0; i < w.w / 20; i++) for (let j = 0; j < w.h / 20; j++) { ctx.fillStyle = S.g.ph === "night" ? `hsl(${(i * 40 + j * 70 + t * 120) % 360},80%,${((i + j + (t * 3 | 0)) % 3) ? 25 : 55}%)` : "#2a2a30"; ctx.fillRect(w.x + i * 20 + 1, w.y + j * 20 + 1, 18, 18); } continue; }
+    if (w.kind === "till" || w.kind === "slot" || w.kind === "ctable" || w.kind === "target") {
+      ctx.fillStyle = { till: "#6b4520", slot: "#c03050", ctable: "#2a7a3a", target: "#f4f0e0" }[w.kind]; ctx.fillRect(w.x, w.y, w.w, w.h);
+      if (w.kind === "slot") { ctx.fillStyle = "#ffd34d"; ctx.fillRect(w.x + 4, w.y + 6, w.w - 8, w.h - 12); }
+      if (w.kind === "target") { ctx.fillStyle = "#e83a2a"; ctx.fillRect(w.x + w.w / 2 - 4, w.y, 8, w.h); }
       continue;
     }
     if (w.kind === "bunker") { // a concrete lump with a hatch and a sign
@@ -2278,6 +2295,14 @@ function drawHud(mine, t) {
   }
   const elite = S.z.find((z) => z[1] === "e");
   if (elite && !g.boss) { const y = slot(28); text("THE DROWNED MAYOR", VW / 2, y + 7, 16, "#6ab0e0"); bar(VW / 2 - 200, y + 18, 400, 10, elite[4] / 100, "#3a7ab0"); }
+  // Dust II: the round, the bomb, the defuse
+  if (g.du && g.du[0] !== "post" && inDustC()) {
+    const [st, site, , , , left, def, nz, wins, losses, planting] = g.du, y = slot(def >= 0 ? 44 : 24);
+    ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 200, y, 400, def >= 0 ? 44 : 24, 8); ctx.fill();
+    const line = st === "buy" ? `BUY TIME  ${Math.ceil(left)}s  ·  B opens the armoury  ·  ${wins}-${losses}` : st === "live" ? `${planting ? "THEY'RE PLANTING!  ·  " : ""}${nz} terrorist${nz === 1 ? "" : "s"} left  ·  the bomb is on its way  ·  ${wins}-${losses}` : `💣 BOMB PLANTED AT ${site}  ·  ${Math.ceil(left)}s`;
+    text(line, VW / 2, y + 12, st === "planted" ? 16 : 14, st === "planted" ? (Math.floor(t * (left < 10 ? 6 : 2)) % 2 ? "#ff4040" : "#ffd34d") : planting ? "#ff8040" : "#e0c080");
+    if (def >= 0) { text("DEFUSING", VW / 2, y + 26, 11, "#9fe0ff"); bar(VW / 2 - 150, y + 32, 300, 8, def, "#4da6ff"); }
+  }
   // the Hearth is being hit and you're nowhere near it
   if (hHit && MAP.hearth && g.ph !== "lobby" && Math.hypot(MAP.hearth.x + MAP.hearth.w / 2 - pred.x, MAP.hearth.y + MAP.hearth.h / 2 - pred.y) > 450) {
     const y = slot(18), hx = MAP.hearth.x + MAP.hearth.w / 2 - pred.x, hy = MAP.hearth.y + MAP.hearth.h / 2 - pred.y;
@@ -2435,8 +2460,20 @@ function drawHud(mine, t) {
     if (!hint) for (const [, x, y, rar, grave] of S.cr) if ((x - pred.x) ** 2 + (y - pred.y) ** 2 < 60 * 60) { hint = [`E  ${grave ? "loot grave" : "open crate"}`, RARITY_COL[rar]]; break; }
     if (!hint) MAP.plots.forEach((pl, i) => { if (!hint && (pl.x - pred.x) ** 2 + (pl.y - pred.y) ** 2 < 48 * 48) { const s = S.pl[i] % 4, cr = CROPS[CROP_KEYS[S.pl[i] >> 2]] || {}; const sel = INV && INV.sel && INV.bag.some((b) => b.id === "s_" + INV.sel) ? CROPS[INV.sel].name.toLowerCase() : "seed"; hint = s === 0 ? [mine.sd ? `E  plant ${sel}` : "No seeds. Old Giles sells them at the produce stall.", "#8f8"] : s === 3 ? [`E  pick the ${(cr.name || "crop").toLowerCase()}`, "#ffd34d"] : [`${cr.name || ""} growing...`, "#aaa"]; } });
     if (!hint && MAP.keepers && g.mode !== "royale") { const st = MAP.walls.find((w) => w.kind === "stall"); if (st && (st.x + st.w / 2 - pred.x) ** 2 + (st.y + st.h / 2 - pred.y) ** 2 < 110 * 110) hint = g.ph === "night" ? ["The stall's shut. Back at dawn.", "#aaa"] : ["E  produce stall: sell crops, buy seeds", "#ffd34d"]; }
-    if (!hint && g.mode !== "royale" && MAP.walls && !(MAP.npcs || []).some((n) => (n.x - pred.x) ** 2 + (n.y - pred.y) ** 2 < 70 * 70)) for (const w of [...MAP.walls.filter((q) => q.kind === "shop"), MAP.hearth]) {
-      if (!w || Math.max(Math.abs(pred.x - (w.x + w.w / 2)) - w.w / 2, Math.abs(pred.y - (w.y + w.h / 2)) - w.h / 2) > 70) continue;
+    if (!hint && g.du && inDustC()) { // Dust II
+      const [st, , bx, by, bz] = g.du;
+      if (st === "planted" && Math.hypot(bx - pred.x, by - pred.y) < 70 && Math.abs(bz - pred.z) < 60) hint = g.du[11] === me ? ["Defusing... stay on the bomb", "#9fe0ff"] : ["E  defuse the bomb (5s)", "#ff6040"];
+      else { const rd = CHUNK_WALLS.find((w) => w.kind === "radio"); if (rd && Math.hypot(rd.x + rd.w / 2 - pred.x, rd.y + rd.h / 2 - pred.y) < 70) hint = st === "post" && g.du[5] > 0 ? [`The radio's cooling down: ${g.du[5]}s`, "#aaa"] : st === "post" || !st ? ["E  the radio: start a round", "#e0c080"] : ["A round's on. Defend the sites!", "#e0c080"]; }
+    }
+    if (!hint && !g.du && inDustC()) { const rd = CHUNK_WALLS.find((w) => w.kind === "radio"); if (rd && Math.hypot(rd.x + rd.w / 2 - pred.x, rd.y + rd.h / 2 - pred.y) < 70) hint = ["E  the radio: start a round", "#e0c080"]; }
+    const boxD = (w) => Math.max(Math.abs(pred.x - (w.x + w.w / 2)) - w.w / 2, Math.abs(pred.y - (w.y + w.h / 2)) - w.h / 2);
+    if (!hint && g.mode !== "royale" && MAP.walls) for (const w of MAP.walls) { // inside the shops: the slots, the tables, the club bar
+      if (!(w.kind === "slot" || w.kind === "ctable" || (w.kind === "till" && w.sid === "club")) || boxD(w) > 40 || Math.abs(pred.z) > 40) continue;
+      hint = w.kind === "slot" ? ["E  pull the slot machine (10g)", "#ffd34d"] : w.kind === "ctable" ? [`E  ${{ wheel: "the wheel", bj: "the blackjack table", pk: "the poker table" }[w.g]}`, "#ffd34d"] : g.ph === "night" ? ["E  buy a drink from Lola (15g)", "#ff9ad0"] : ["The bar opens at dusk.", "#aaa"];
+      break;
+    }
+    if (!hint && g.mode !== "royale" && MAP.walls && !(MAP.npcs || []).some((n) => (n.x - pred.x) ** 2 + (n.y - pred.y) ** 2 < 70 * 70)) for (const w of [...MAP.walls.filter((q) => q.kind === "till" && q.sid !== "club"), MAP.hearth]) {
+      if (!w || boxD(w) > 70 || Math.abs(pred.z) > 40) continue;
       const sid = w.kind === "hearth" ? "hearth" : w.sid, sh = SHOPS[sid] || {};
       hint = sh.hours === "day" && g.ph === "night" ? [`${sh.name} is shut. Back at dawn.`, "#aaa"] : sid === "hearth" ? [`E  the Hearth: repair it${g.dome && g.dome[0] < g.dome[1] ? `, fund the Dome (${g.dome[0]}/${g.dome[1]}g)` : ""}`, "#9fe0ff"] : [`E  ${sh.name}`, "#ffd34d"];
       break;
@@ -3013,7 +3050,7 @@ function renderMarket() {
   }).join("");
   const news = (S.g.news || []).map(([txt, up]) => `<div class="nw" style="color:${up ? "#7fd34d" : "#ff8080"}">${up ? "▲" : "▼"} ${escH(txt)}</div>`).join("") || `<div class="tag">Quiet day on the exchange.</div>`;
   const M = S.g.mayor && CANDS[S.g.mayor];
-  $("marketBody").innerHTML = `<div class="tag">You have ${mine ? mine.g : 0}g. Your shares are worth ${Math.round(worth)}g. Shares pay 1.5% dividends every dawn. Trading fee: ${M && S.g.mayor === "vex" ? "none (Mayor Vex)" : "2%"}.</div>` +
+  $("marketBody").innerHTML = `<div class="tag">You have ${mine ? mine.g : 0}g. Your shares are worth ${Math.round(worth)}g. Shares pay 1.5% dividends every dawn. Trading fee: ${M && S.g.mayor === "vex" ? "none (Mayor Vex)" : "2%"}, plus a 1% spread. Your own orders move the price as they fill, so you can't sell into a rise you bought.</div>` +
     `<table class="mkt">${rows}</table><h3>Valley news</h3>${news}<div class="fine">Prices react to what happens: kills, harvests, hacks, disasters, elections, bombs. <kbd>M</kbd>/<kbd>Esc</kbd> to close.</div>`;
   for (const b of $("marketBody").querySelectorAll("button[data-s]")) b.onclick = () => { send({ t: "trade", sym: b.dataset.s, n: +b.dataset.n }); sfx("click"); };
 }
@@ -3115,6 +3152,7 @@ const MUSIC = {
   cards: { bpm: 92, root: 60, scale: [0, 3, 5, 7, 10], prog: [[0, 3, 7, 10], [5, 8, 12, 15], [3, 7, 10, 14], [7, 10, 14, 17]], lead: "sine", drums: 4, swing: 0.15 },
   nuke: { bpm: 70, root: 45, scale: [0, 1, 6, 7], prog: [[0, 1, 6], [0, 6, 7], [1, 6, 12], [0, 7, 13]], lead: "sawtooth", drums: 2, swing: 0 },
   waste: { bpm: 76, root: 50, scale: [0, 3, 5, 6, 10], prog: [[0, 3, 7], [6, 10, 13], [3, 7, 10], [5, 8, 12]], lead: "triangle", drums: 2, swing: 0 },
+  club: { bpm: 124, root: 57, scale: [0, 3, 5, 7, 10], prog: [[0, 3, 7, 10], [0, 3, 7, 10], [8, 12, 15], [10, 14, 17]], lead: "square", drums: 5, swing: 0 },
   lobby: { bpm: 96, root: 62, scale: [0, 2, 4, 7, 9], prog: [[0, 4, 7], [9, 12, 16], [5, 9, 12], [7, 11, 14]], lead: "triangle", drums: 0, swing: 0 },
 };
 let mus = { bus: null, mood: "", next: 0, step: 0, bar: 0 };
@@ -3125,6 +3163,7 @@ function musicMood() {
   if (g.nuke) return "nuke";
   if (cardsOpen && cgState) return "cards";
   if (casinoOpen) return "casino";
+  if (MAP && MAP.walls && g.mode !== "royale") { const b = MAP.walls.find((w) => w.kind === "shop" && (w.sid === "club" || w.sid === "casino") && pred.x > w.x && pred.x < w.x + w.w && pred.y > w.y && pred.y < w.y + w.h && pred.z < 80); if (b && (b.sid === "casino" || g.ph === "night")) return b.sid; } // inside the casino, or the club on a night out
   if (g.ph === "night" && g.boss) return "boss";
   if (g.ph === "night" || g.ph === "royale") return g.waste ? "waste" : "night";
   if (g.ph === "day") return g.waste ? "waste" : "day";
@@ -3155,10 +3194,11 @@ function musicTick() {
     const st = mus.step % 16, bar = Math.floor(mus.step / 16), ch = M.prog[bar % M.prog.length], t0 = mus.next + (st % 2 ? M.swing * sixteenth : 0), out = mus.bus;
     if (st === 0) for (const n of ch) note(mood === "nuke" || mood === "waste" ? "sawtooth" : "triangle", mf(M.root + n - 12), t0, sixteenth * 15, 0.05, out, 900); // pad
     if (st % 4 === 0 || (M.drums === 3 && st % 2 === 0)) note("sine", mf(M.root + ch[0] - 24 + (st === 8 && Math.random() < 0.5 ? 7 : 0)), t0, sixteenth * 3, 0.22, out); // bass
-    if (M.drums && M.drums !== 4 && (st === 0 || st === 8 || (M.drums === 3 && st % 4 === 0))) drum("k", t0, out, 0.5);
+    if (M.drums && M.drums !== 4 && (st === 0 || st === 8 || (M.drums === 3 && st % 4 === 0) || (M.drums === 5 && st % 4 === 0))) drum("k", t0, out, 0.5);
+    if (M.drums === 5 && st % 4 === 2) drum("h", t0, out, 0.5); // the club: four on the floor, open hats on the off-beat
     if (M.drums === 1 && (st === 4 || st === 12)) drum("s", t0, out, 0.3);
     if (M.drums === 2 && st === 8 && bar % 2) drum("s", t0, out, 0.25);
-    if (M.drums === 3 && (st === 4 || st === 12)) drum("s", t0, out, 0.5);
+    if ((M.drums === 3 || M.drums === 5) && (st === 4 || st === 12)) drum("s", t0, out, 0.5);
     if (M.drums && st % 2 === 0) drum("h", t0, out, M.drums === 4 ? 0.25 : 0.35);
     if (M.drums === 4 && (st === 4 || st === 12)) drum("s", t0, out, 0.15);
     const density = mood === "nuke" ? 0.15 : mood === "night" || mood === "waste" ? 0.3 : 0.45;

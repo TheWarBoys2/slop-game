@@ -1,6 +1,8 @@
 // The wild: everything past the town's hedge, made up one chunk at a time as people walk into it.
 // Each chunk is built from the map seed and its own coordinates, so the same valley always has the same wild.
 
+import { DUST, dustChunk } from "./dust2.js";
+
 export const CS = 1000; // chunk size, in world units
 
 function mulberry(seed) { return () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -14,6 +16,7 @@ export const BIOMES = {
   orchard: { name: "an old orchard", orchard: true, rocks: [0, 2], ruins: 0.1, crates: [0, 1] },
   ruins:   { name: "a ruined hamlet", trees: [3, 7], rocks: [1, 3], ruins: 1, crates: [1, 2] },
   stones:  { name: "the standing stones", trees: [1, 4], rocks: [1, 3], stones: true, crates: [1, 1] },
+  dust:    { name: "Dust II", rocks: [0, 0], crates: [0, 0] }, // a whole Counter-Strike map, out in the desert (dust2.js)
 };
 const BIOME_KEYS = Object.keys(BIOMES);
 export function biomeAt(seed, cx, cy) {
@@ -29,13 +32,17 @@ export function biomeAt(seed, cx, cy) {
 export function makeChunk(seed, cx, cy, town) {
   const rng = mulberry(hash(seed, cx * 31 + 7, cy * 17 + 11));
   const R = (a, b) => a + rng() * (b - a), N = ([a, b]) => Math.floor(R(a, b + 1));
-  const x0 = cx * CS, y0 = cy * CS, kind = biomeAt(seed, cx, cy), B = BIOMES[kind];
-  const walls = [], loot = [];
-  const inTown = (r, pad) => r.x < town.x + town.w + pad && r.x + r.w + pad > town.x && r.y < town.y + town.h + pad && r.y + r.h + pad > town.y;
+  const x0 = cx * CS, y0 = cy * CS;
+  const dustHere = Math.max(0, Math.min(x0 + CS, DUST.x + DUST.w) - Math.max(x0, DUST.x)) * Math.max(0, Math.min(y0 + CS, DUST.y + DUST.h) - Math.max(y0, DUST.y)) > CS * CS / 2;
+  const kind = dustHere ? "dust" : biomeAt(seed, cx, cy), B = BIOMES[kind];
+  const walls = dustChunk(cx, cy, CS), loot = [];
+  const hitR = (r, o, pad) => r.x < o.x + o.w + pad && r.x + r.w + pad > o.x && r.y < o.y + o.h + pad && r.y + r.h + pad > o.y;
+  const inTown = (r, pad) => hitR(r, town, pad) || hitR(r, DUST, pad); // nothing wild grows in town or on Dust II
   const free = (r, pad) => !inTown(r, 140) && r.x > x0 + 10 && r.y > y0 + 10 && r.x + r.w < x0 + CS - 10 && r.y + r.h < y0 + CS - 10 &&
     !walls.some((o) => r.x < o.x + o.w + pad && r.x + r.w + pad > o.x && r.y < o.y + o.h + pad && r.y + r.h + pad > o.y);
   const place = (n, mk, pad) => { for (let i = 0, tries = 0; i < n && tries < n * 30; tries++) { const r = mk(); if (free(r, pad)) { walls.push(r); i++; } } };
   const spot = (pad = 60) => { for (let i = 0; i < 40; i++) { const p = { x: R(x0 + 60, x0 + CS - 60), y: R(y0 + 60, y0 + CS - 60) }; if (free({ x: p.x - 20, y: p.y - 20, w: 40, h: 40 }, pad)) return p; } return null; };
+  if (dustHere) { for (const w of walls) w.ck = `${cx},${cy}`; return { kind, walls, loot: [], far: Math.hypot(x0 + CS / 2 - town.x - town.w / 2, y0 + CS / 2 - town.y - town.h / 2) }; }
   // landmarks first, so they get room
   if (B.stones) { // a ring of tall stones with something left in the middle
     const c = { x: x0 + CS / 2 + R(-120, 120), y: y0 + CS / 2 + R(-120, 120) };

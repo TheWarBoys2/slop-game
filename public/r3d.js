@@ -93,6 +93,7 @@ var R3D = (function () {
     orchard: ["#4f7c38", ["#5a8a40", "#466e32"], "#3d6a2c", ["#d04030", "#e0a030"]],
     ruins:   ["#5e6448", ["#7a7466", "#6a6a5a", "#545a40"], "#4a5236", ["#8a8478", "#6a645a"]],
     stones:  ["#56684a", ["#6a7458", "#4a5a3e"], "#44563a", ["#bfd8ff", "#9aa4ad"]],
+    dust:    ["#c8a870", ["#d4b47c", "#bc9c64", "#c4a46a"], "#b09058", ["#9a8050", "#e0c890"]], // Dust II's sand
   };
   const bioTex = {};
   function bioTexture(kind) {
@@ -213,7 +214,7 @@ var R3D = (function () {
         }
       }
     } else if (w.kind === "furn") {
-      const g = new T.Group(), horiz = w.w >= w.h, rotY = horiz ? 0 : Math.PI / 2, L2 = horiz ? w.w : w.h, D2 = horiz ? w.h : w.w;
+      const g = new T.Group(), horiz = w.w >= w.h, rotY = (horiz ? 0 : Math.PI / 2) + (w.flip ? Math.PI : 0), L2 = horiz ? w.w : w.h, D2 = horiz ? w.h : w.w;
       const slab2 = (col, ht, y0) => g.add(mesh(new T.BoxGeometry(L2, ht, D2), mat(col), 0, y0 + ht / 2, 0));
       if (w.f === "sofa") {
         slab2(0x6a4a6a, 18, 0); g.add(mesh(new T.BoxGeometry(L2, 26, 10), mat(0x7a5a7a), 0, 24, -D2 / 2 + 5));
@@ -245,6 +246,35 @@ var R3D = (function () {
       } else if (w.f === "ac") { // air-conditioning units on an office roof
         slab2(0x8a8e92, hgt - 6, 0); g.add(mesh(new T.CylinderGeometry(D2 * 0.3, D2 * 0.3, 5, 12), mat(0x6a6e72), 0, hgt - 3, 0));
         g.add(mesh(new T.BoxGeometry(L2 * 0.6, 2, 2), mat(0x45484e), 0, hgt, 0));
+      } else if (w.f === "aisle") { // a free-standing shop shelf, stocked both sides
+        slab2(0x8a7a62, 4, 0); for (let i = 0; i < 3; i++) g.add(mesh(new T.BoxGeometry(L2, 2, D2), mat(0xcfd2d8), 0, 14 + i * 18, 0));
+        g.add(mesh(new T.BoxGeometry(L2, hgt, 2), mat(0x9a9aa0), 0, hgt / 2, 0));
+        for (let i = 0; i < Math.floor(L2 / 10); i++) for (let k = 0; k < 3; k++) for (const sd of [-1, 1]) g.add(mesh(new T.BoxGeometry(7, 9, 6), mat([0xd0a040, 0xe83a2a, 0x7ab0e0, 0x40a060, 0xf4f0e0][(i + k * 2 + (sd > 0 ? 1 : 0)) % 5]), -L2 / 2 + 5 + i * 10, 20 + k * 18, sd * D2 / 4));
+      } else if (w.f === "fridge") {
+        slab2(0xdfe6ec, hgt, 0); g.add(mesh(new T.BoxGeometry(L2 - 6, hgt - 10, 1), mat(0xa8d8f0, 0x1a3a4a), 0, hgt / 2, D2 / 2 + 0.6));
+        for (let i = 0; i < 4; i++) g.add(mesh(new T.CylinderGeometry(2.5, 2.5, 10, 6), mat([0xe83a2a, 0x40a060, 0xffd34d, 0x2a6ae8][i]), -L2 / 2 + 12 + i * (L2 - 24) / 3, hgt * 0.6, D2 / 2 - 4));
+      } else if (w.f === "veg") { // crates of veg by the door
+        slab2(0x6b4520, hgt - 6, 0);
+        for (let i = 0; i < Math.floor(L2 / 9); i++) g.add(mesh(new T.SphereGeometry(4, 8, 6), mat([0xb35fd0, 0xe83a2a, 0xff8a20, 0x7ab040][i % 4]), -L2 / 2 + 6 + i * 9, hgt - 3, (i % 2 ? 1 : -1) * D2 / 5));
+      } else if (w.f === "rack") { // a gun rack: a board on the wall with rifles standing in it
+        g.add(mesh(new T.BoxGeometry(L2, hgt, 3), mat(0x5a4028), 0, hgt / 2, -D2 / 2 + 1.5));
+        g.add(mesh(new T.BoxGeometry(L2, 6, D2), mat(0x4a3420), 0, 3, 0));
+        for (let i = 0; i < Math.floor(L2 / 14); i++) { g.add(mesh(new T.BoxGeometry(3, hgt - 16, 4), mat(0x2a2a2a), -L2 / 2 + 8 + i * 14, hgt / 2, 0)); g.add(mesh(new T.BoxGeometry(4, 18, 6), mat(0x6a4a2a), -L2 / 2 + 8 + i * 14, 15, 0)); }
+      } else if (w.f === "ammo") { // stacked ammo boxes
+        for (let i = 0; i < 3; i++) g.add(mesh(new T.BoxGeometry(L2 - 4, 9, D2 - 4), mat(i % 2 ? 0x4a5a3a : 0x5a6a3a), 0, 4.5 + i * 10, 0));
+        g.add(mesh(new T.BoxGeometry(L2 * 0.5, 1, 1), mat(0xffd34d), 0, 30, D2 / 2 - 2));
+      } else if (w.f === "bench") { // the shooting range's counter
+        slab2(0x5a5a52, hgt - 3, 0); g.add(mesh(new T.BoxGeometry(L2 + 2, 3, D2 + 4), mat(0xa87a4a), 0, hgt - 1.5, 0));
+      } else if (w.f === "bar") {
+        slab2(0x4a1a2a, hgt - 4, 0); g.add(mesh(new T.BoxGeometry(L2 + 3, 4, D2 + 3), mat(0xffd34d, 0x403000), 0, hgt - 2, 0));
+        for (let i = 0; i < 5; i++) g.add(mesh(new T.CylinderGeometry(2, 2, 10, 6), mat([0x40c060, 0xc04040, 0xd0a040][i % 3]), -L2 / 2 + 10 + i * (L2 - 20) / 4, hgt + 5, 0));
+      } else if (w.f === "dj") { // the DJ's decks
+        slab2(0x1a1a20, hgt - 4, 0); g.add(mesh(new T.BoxGeometry(L2 + 2, 4, D2 + 2), mat(0x2a2a32), 0, hgt - 2, 0));
+        for (const sx of [-1, 1]) { const d = mesh(new T.CylinderGeometry(9, 9, 2, 16), mat(0x101010)); d.position.set(sx * L2 / 4, hgt + 1, 0); g.add(d); g.add(mesh(new T.CylinderGeometry(3, 3, 2.4, 10), mat(0xff40c0, 0xff40c0), sx * L2 / 4, hgt + 1.2, 0)); }
+        g.add(mesh(new T.BoxGeometry(L2 - 4, 1, D2 - 4), mat(0x40c0ff, 0x2080c0), 0, 2, D2 / 2 + 0.6));
+      } else if (w.f === "speaker") {
+        slab2(0x1a1a1e, hgt, 0);
+        for (const [y, r] of [[hgt * 0.28, 9], [hgt * 0.72, 5]]) { const c = mesh(new T.CylinderGeometry(r, r, 1.5, 14), mat(0x3a3a40)); c.rotation.x = Math.PI / 2; c.position.set(0, y, D2 / 2 + 0.8); g.add(c); }
       } else if (w.f === "bed") {
         g.add(mesh(new T.BoxGeometry(L2, 10, D2), mat(0x6a4024), 0, 5, 0));
         g.add(mesh(new T.BoxGeometry(L2 - 4, 6, D2 - 4), mat(0xf0ead8), 0, 13, 0));
@@ -265,6 +295,93 @@ var R3D = (function () {
       g.add(mesh(new T.SphereGeometry(4, 10, 8), new T.MeshBasicMaterial({ color: 0xfff0c0 }), 0, 0, 0));
       at(g, cx, cy, z0); tgt.add(g);
       (level.userData.bulbs = level.userData.bulbs || []).push([cx, cy, z0]);
+    } else if (w.kind === "swall") { // a shop's walls: planks for Vex, brick for Haddock, purple and gold for the casino, black and neon for the club
+      const WL = { plank: [0x8a6a42, 0x6b4520], brick: [0x6a5a46, 0x4a5236], casino: [0x3a1640, 0xffd34d], club: [0x18181e, 0xff40c0] }[w.look] || [0x888888, 0x666666];
+      const horiz = w.w >= w.h, len = horiz ? w.w : w.h;
+      tgt.add(at(box(w.w, w.h, hgt, mat(WL[0])), cx, cy, (z0 + z1) / 2));
+      if (z0 > 0) tgt.add(at(box(w.w + 4, w.h + 4, 5, mat(WL[1], w.look === "club" ? WL[1] : undefined)), cx, cy, z0 + 2.5)); // door lintel
+      else {
+        tgt.add(at(box(w.w + 2, w.h + 2, 6, mat(WL[1], w.look === "club" || w.look === "casino" ? WL[1] : undefined)), cx, cy, 3)); // skirting (neon in the club)
+        if (w.look === "casino" || w.look === "club") tgt.add(at(box(w.w + 2, w.h + 2, 3, mat(WL[1], WL[1])), cx, cy, z1 - 10)); // a trim near the top
+        if (w.look === "plank") for (let k = 1; k < hgt / 14; k++) tgt.add(at(box(w.w + 1, w.h + 1, 1, mat(WL[1])), cx, cy, k * 14));
+        if (w.look === "brick") for (let k = 1; k < hgt / 10; k++) tgt.add(at(box(w.w + 0.8, w.h + 0.8, 0.8, mat(0x5a4a38)), cx, cy, k * 10));
+        if ((w.look === "plank" || w.look === "brick") && len > 80) for (let k = 1, n = Math.floor(len / 100); k <= n; k++) { // windows
+          const f = k / (n + 1), wx = horiz ? w.x + f * w.w : cx, wy = horiz ? cy : w.y + f * w.h;
+          tgt.add(at(box(horiz ? 34 : w.w + 2, horiz ? w.h + 2 : 34, 26, mat(WL[1])), wx, wy, hgt * 0.55));
+          tgt.add(at(box(horiz ? 30 : w.w + 3, horiz ? w.h + 3 : 30, 22, mat(0xa8d0e8, 0x1a2a3a)), wx, wy, hgt * 0.55));
+        }
+      }
+    } else if (w.kind === "till") { // a shop counter with a till on it; the club's is a bar with bottles behind
+      const club = w.sid === "club", cas = w.sid === "casino";
+      tgt.add(at(box(w.w, w.h, hgt - 4, mat(club ? 0x2a1a2a : cas ? 0x5a1a2a : w.sid === "armoury" ? 0x3a3a32 : 0x6b4520)), cx, cy, (hgt - 4) / 2));
+      tgt.add(at(box(w.w + 4, w.h + 4, 4, mat(club ? 0xff40c0 : cas ? 0xffd34d : 0xa87a4a, club ? 0x802060 : undefined)), cx, cy, hgt - 2));
+      if (!club) { const r = at(box(18, 14, 12, mat(0x3a3a42)), cx + (w.w >= w.h ? w.w / 4 : 0), cy + (w.w >= w.h ? 0 : w.h / 4), hgt + 6); tgt.add(r); tgt.add(at(box(12, 2, 6, mat(0x7dffb0, 0x2a8a50)), r.position.x, r.position.z, hgt + 14)); }
+      else for (let i = 0; i < 6; i++) tgt.add(at(mesh(new T.CylinderGeometry(2.4, 2.4, 12, 6), mat([0x40c060, 0xc04040, 0xd0a040, 0x4080c0][i % 4], 0x101010)), w.x + w.w / 2, w.y + 12 + i * (w.h - 24) / 5, hgt + 6));
+    } else if (w.kind === "slot") { // a one-armed bandit: a cabinet, a lit screen with three reels, a lever
+      const g = new T.Group(), D2 = w.w, L2 = w.h;
+      g.add(mesh(new T.BoxGeometry(D2, hgt, L2), mat(0xc03050), 0, hgt / 2, 0));
+      const scr = mesh(new T.BoxGeometry(2, 16, L2 - 8), mat(0xfff0c0, 0xffd34d), D2 / 2 + 1, hgt * 0.62, 0); g.add(scr);
+      for (let i = 0; i < 3; i++) g.add(mesh(new T.BoxGeometry(1, 10, 5), mat([0xe83a2a, 0x40a0ff, 0xffd34d][i]), D2 / 2 + 2.2, hgt * 0.62, (i - 1) * 7));
+      g.add(mesh(new T.BoxGeometry(D2 + 2, 6, L2 + 2), mat(0xffd34d, 0x806010), 0, hgt + 3, 0));
+      g.add(mesh(new T.CylinderGeometry(1.2, 1.2, 18, 6), mat(0xcfd2d8), 0, hgt * 0.6, L2 / 2 + 3)); g.add(mesh(new T.SphereGeometry(3, 8, 6), mat(0xe83a2a), 0, hgt * 0.6 + 10, L2 / 2 + 3));
+      g.userData.scr = scr; at(g, cx, cy, 0); tgt.add(g); (level.userData.slots = level.userData.slots || []).push(scr);
+    } else if (w.kind === "ctable") { // the casino tables: green felt; the wheel spins
+      const top = mat(w.g === "wheel" ? 0x1a5a2a : 0x2a7a3a);
+      tgt.add(at(box(w.w - 8, w.h - 8, hgt - 6, mat(0x4a2a1a)), cx, cy, (hgt - 6) / 2));
+      tgt.add(at(box(w.w, w.h, 6, top), cx, cy, hgt - 3));
+      tgt.add(at(box(w.w + 2, w.h + 2, 2, mat(0x6a3a1a)), cx, cy, hgt - 6));
+      if (w.g === "wheel") {
+        const wh = new T.Group(); wh.add(mesh(new T.CylinderGeometry(18, 20, 6, 20), mat(0x4a2a1a)));
+        for (let i = 0; i < 12; i++) { const sg = mesh(new T.BoxGeometry(16, 2, 3), mat(i % 2 ? 0xc03050 : 0x1a1a1a)); sg.position.set(Math.cos(i * Math.PI / 6) * 9, 3.5, Math.sin(i * Math.PI / 6) * 9); sg.rotation.y = -i * Math.PI / 6; wh.add(sg); }
+        wh.add(mesh(new T.CylinderGeometry(3, 3, 8, 8), mat(0xffd34d), 0, 4, 0));
+        at(wh, cx - w.w / 4, cy, hgt + 3); tgt.add(wh); (level.userData.spin = level.userData.spin || []).push(wh);
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 4; j++) tgt.add(at(box(8, 8, 0.6, mat((i + j) % 2 ? 0xc03050 : 0x1a1a1a)), cx + 6 + j * 9, cy - 10 + i * 10, hgt + 0.3));
+      } else {
+        for (let i = 0; i < 5; i++) tgt.add(at(box(5, 7, 0.8, mat(0xf4f0e0)), cx - 18 + i * 9, cy + (w.g === "bj" ? 6 : 0), hgt + 0.4)); // cards dealt
+        for (let i = 0; i < 4; i++) tgt.add(at(mesh(new T.CylinderGeometry(3, 3, 2 + i * 2, 10), mat([0xe83a2a, 0x2a6ae8, 0xffd34d, 0x1a1a1a][i])), cx - 24 + i * 16, cy - 12, hgt + 1 + i));
+      }
+    } else if (w.kind === "target") { // a steel target on the range wall
+      tgt.add(at(box(w.w, w.h, hgt, mat(0xd8cfa8)), cx, cy, (z0 + z1) / 2));
+      for (const [r, c] of [[11, 0xe83a2a], [7, 0xf4f0e0], [3, 0xe83a2a]]) { const d = mesh(new T.CylinderGeometry(r, r, 1, 16), mat(c)); d.rotation.x = Math.PI / 2; at(d, cx, w.y - 0.6 - (11 - r) * 0.02, (z0 + z1) / 2); tgt.add(d); }
+      tgt.add(at(box(3, 3, z0, mat(0x5a5a5a)), cx, cy, z0 / 2));
+    } else if (w.kind === "dance") { // the dance floor: a grid of tiles that light up at night
+      const tiles = [], n = Math.floor(w.w / 20), m = Math.floor(w.h / 20);
+      for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) { const tl = at(box(18, 18, 1, new T.MeshLambertMaterial({ color: 0x2a2a30, emissive: 0x000000 })), w.x + 10 + i * 20, w.y + 10 + j * 20, 0.6); tgt.add(tl); tiles.push([tl, i, j]); }
+      const ball = mesh(new T.SphereGeometry(9, 12, 10), mat(0xdfe6ec, 0x6a6a7a), cx, 84, cy); tgt.add(ball);
+      level.userData.dance = { tiles, ball };
+    } else if (w.kind === "shop") { // a walk-in shop's footprint: the floor inside, a sign and an awning over the door
+      const fc = { general: 0xc8b890, armoury: 0x7a7a70, casino: 0x8a1a2a, club: 0x141418 }[w.sid] || 0x888888;
+      const fl = mesh(new T.PlaneGeometry(w.w - 4, w.h - 4), mat(fc), cx, 0.4, cy); fl.rotation.x = -Math.PI / 2; tgt.add(fl);
+      if (w.sid === "general") for (let i = 1; i < w.w / 30; i++) for (let j = 1; j < w.h / 30; j++) if ((i + j) % 2) { const q = mesh(new T.PlaneGeometry(29, 29), mat(0xe8dcc0), w.x + i * 30 - 15, 0.5, w.y + j * 30 - 15); q.rotation.x = -Math.PI / 2; tgt.add(q); }
+      const fy = w.door === "n" ? w.y - 3 : w.y + w.h + 3, out = w.door === "n" ? -1 : 1;
+      const NAME = { general: "VEX'S STORE", armoury: "HADDOCK'S ARMOURY", casino: "THE GOLDEN SLOP", club: "CLUB SLOP" }[w.sid] || "";
+      const SC = { general: [0xf4e0a0, 0x6b4520], armoury: [0xd8d0a0, 0x3a3a32], casino: [0xff5080, 0xffd34d], club: [0x1a1a20, 0xff40c0] }[w.sid];
+      const sign = mesh(new T.BoxGeometry(Math.min(w.w * 0.7, 200), 22, 3), mat(SC[0], w.sid === "casino" ? 0xc02050 : undefined)); at(sign, cx, fy + out * 2, (w.z1 || 100) - 18); tgt.add(sign);
+      for (let i = 0; i < NAME.length; i++) { if (NAME[i] === " ") continue; tgt.add(at(box(6, 1.5, 12, mat(SC[1], w.sid === "club" || w.sid === "casino" ? SC[1] : undefined)), cx - Math.min(w.w * 0.7, 200) * 0.44 + i * (Math.min(w.w * 0.7, 200) * 0.88 / Math.max(1, NAME.length - 1)), fy + out * 4, (w.z1 || 100) - 18)); }
+      if (w.sid === "general" || w.sid === "armoury") for (let i = 0; i < 6; i++) { const sw = 90 / 6; tgt.add(at(box(sw, 26, 3, mat(i % 2 ? 0xf4f0e0 : w.sid === "armoury" ? 0x5a6a3a : 0xd06a2a)), cx - 45 + sw * (i + 0.5), fy + out * 13, 84)); } // a striped awning over the door
+      if (w.sid === "casino") { const wheel = new T.Group(); wheel.add(mesh(new T.CylinderGeometry(30, 30, 4, 16), mat(0xffd34d, 0x604000))); for (let i = 0; i < 8; i++) { const sp = mesh(new T.BoxGeometry(3, 5, 56), mat(i % 2 ? 0xc03050 : 0xf4f0e0)); sp.rotation.y = i * Math.PI / 8; wheel.add(sp); } wheel.rotation.x = Math.PI / 2; at(wheel, cx + 110, fy + out * 4, 60); tgt.add(wheel); (level.userData.spin = level.userData.spin || []).push(wheel); }
+      if (w.sid === "club") { const ring = mesh(new T.TorusGeometry(14, 2, 6, 20), mat(0xff40c0, 0xff40c0)); at(ring, cx - 100, fy + out * 4, 60); tgt.add(ring); }
+    } else if (w.kind === "dust") { // Dust II's sandstone: pale blocks with a darker cap; door frames are timber
+      if (w.look === "door") { tgt.add(at(box(w.w, w.h, hgt, mat(0x6a4a2a)), cx, cy, hgt / 2)); tgt.add(at(box(w.w + 2, w.h + 2, 6, mat(0x4a3018)), cx, cy, z1 - 3)); }
+      else {
+        tgt.add(at(box(w.w, w.h, hgt, mat(0xd8bc88)), cx, cy, hgt / 2));
+        tgt.add(at(box(w.w + 4, w.h + 4, 8, mat(0xb89a68)), cx, cy, z1 - 4));
+        tgt.add(at(box(w.w + 2, w.h + 2, 10, mat(0xa88a58)), cx, cy, 5));
+        for (let k = 1; k < hgt / 30; k++) tgt.add(at(box(w.w + 0.8, w.h + 0.8, 1.2, mat(0xc4a674)), cx, cy, k * 30)); // block courses
+      }
+    } else if (w.kind === "dcrate") { // the crates everyone remembers
+      tgt.add(at(box(w.w, w.h, hgt, mat(0xb08a4a)), cx, cy, (z0 + z1) / 2));
+      for (const [ex, ey] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) tgt.add(at(box(ex ? 3 : w.w + 1, ey ? 3 : w.h + 1, hgt + 1, mat(0x7a5a2a)), cx + ex * (w.w / 2 - 1), cy + ey * (w.h / 2 - 1), (z0 + z1) / 2));
+      tgt.add(at(box(w.w + 1, w.h + 1, 3, mat(0x7a5a2a)), cx, cy, z1 - 1.5)); tgt.add(at(box(w.w + 1, w.h + 1, 3, mat(0x7a5a2a)), cx, cy, z0 + 1.5));
+    } else if (w.kind === "radio") { // the CT radio
+      tgt.add(at(box(w.w, w.h, hgt, mat(0x4a5a3a)), cx, cy, hgt / 2));
+      tgt.add(at(box(w.w * 0.6, 2, 8, mat(0x7dffb0, 0x2a8a50)), cx, w.y - 1, hgt * 0.65));
+      tgt.add(at(mesh(new T.CylinderGeometry(0.8, 0.8, 40, 4), mat(0x2a2a2a)), w.x + 6, cy, hgt + 20));
+      tgt.add(at(mesh(new T.SphereGeometry(2.4, 6, 5), mat(0xff3030, 0xff0000)), w.x + 6, cy, hgt + 41));
+    } else if (w.kind === "bsite") { // a bombsite, painted on the ground
+      const ring = mesh(new T.RingGeometry(58, 66, 32), basic(0xc03020, 0.75)); ring.rotation.x = -Math.PI / 2; at(ring, cx, cy, 0.7); tgt.add(ring);
+      const L = w.s === "A" ? [[-14, 0, 6, 44, 0.32], [14, 0, 6, 44, -0.32], [0, 4, 22, 5, 0]] : [[-10, 0, 6, 44, 0], [3, -10, 22, 6, 0], [3, 10, 22, 6, 0], [3, 0, 18, 5, 0], [14, -6, 6, 14, 0], [14, 8, 6, 16, 0]];
+      for (const [lx, ly, lw, lh, rot] of L) { const m = mesh(new T.PlaneGeometry(lw, lh), basic(0xc03020, 0.85)); m.rotation.x = -Math.PI / 2; m.rotation.z = rot; at(m, cx + lx, cy + ly, 0.8); tgt.add(m); }
     } else if (w.kind === "hole" || w.ns === 1) {
       // a dug-out patch: the only thing to draw is the floor at the bottom. Its walls are "earth" boxes.
       if (w.kind === "hole" && !w.cut) {
@@ -286,10 +403,11 @@ var R3D = (function () {
       tgt.add(at(box(horiz ? w.w : w.w + 1, horiz ? w.h + 1 : w.h, 4, mat(0x7a8290)), cx, cy, z0 + 2));
       tgt.add(at(box(horiz ? w.w : w.w + 1, horiz ? w.h + 1 : w.h, 4, mat(0x7a8290)), cx, cy, z1 - 2));
     } else if (w.kind === "slab") { // a floor, a ceiling, or the turf over a tunnel
-      const SL = { wood: [0x9a6e44, 0x7a5232], carpet: [0x4a5a66, 0x3a4a56], roof: [0x6a6e72, 0x55585c], turf: [0x5a4632, 0x6b4a33], stone: [0x8a8a86, 0x72726e] }[w.look] || [0x8a8a8a, 0x6a6a6a];
+      const SL = { wood: [0x9a6e44, 0x7a5232], carpet: [0x4a5a66, 0x3a4a56], roof: [0x6a6e72, 0x55585c], turf: [0x5a4632, 0x6b4a33], stone: [0x8a8a86, 0x72726e], sandstone: [0xb89a68, 0x9a7c50], gold: [0x3a1640, 0xffd34d], club: [0x18181e, 0xff40c0] }[w.look] || [0x8a8a8a, 0x6a6a6a];
       tgt.add(at(box(w.w, w.h, hgt, mat(SL[0])), cx, cy, (z0 + z1) / 2));
       if (w.look === "wood" || w.look === "carpet") for (let i = 1; i < w.w / 26; i++) tgt.add(at(box(1.2, w.h, 0.6, mat(SL[1])), w.x + i * 26, cy, z1 + 0.3));
       if (w.look === "roof") tgt.add(at(box(w.w - 6, w.h - 6, 1, mat(0x4a4e52)), cx, cy, z1 + 0.6));
+      if (w.look === "gold" || w.look === "club") tgt.add(at(box(w.w + 4, w.h + 4, 4, mat(SL[1], SL[1])), cx, cy, z1 - 2)); // a lit trim round the roof
     } else if (w.kind === "rail") {
       const horiz = w.w >= w.h;
       tgt.add(at(box(w.w, w.h, 4, mat(0x6a6a74)), cx, cy, z1 - 2));
@@ -371,24 +489,6 @@ var R3D = (function () {
       for (const [px, py] of [[w.x, w.y], [w.x + w.w, w.y], [w.x, w.y + w.h], [w.x + w.w, w.y + w.h]]) tgt.add(at(mesh(new T.CylinderGeometry(2, 2, 96, 6), mat(0x6b4520)), px, py, 48));
       for (let i = 0; i < 6; i++) { const sw = (w.w + 16) / 6; tgt.add(at(box(sw, w.h + 30, 3, mat(i % 2 ? 0xf4f0e0 : 0x3a9a4a)), w.x - 8 + sw * (i + 0.5), cy, 98)); }
       const sign = mesh(new T.BoxGeometry(70, 14, 2), mat(0xf4e0a0)); at(sign, cx, w.y + w.h + 16, 86); tgt.add(sign);
-    } else if (w.kind === "shop" && w.sid === "casino") { // the Golden Slop: a purple box, gold trim, a big spinning wheel on the front
-      tgt.add(at(box(w.w, w.h, hgt, mat(0x3a1640)), cx, cy, hgt / 2));
-      tgt.add(at(box(w.w + 8, w.h + 8, 6, mat(0xffd34d, 0x806010)), cx, cy, hgt + 3));
-      tgt.add(at(box(w.w + 2, w.h + 2, 4, mat(0xffd34d, 0x806010)), cx, cy, 2));
-      const wheel = new T.Group(); wheel.add(mesh(new T.CylinderGeometry(34, 34, 4, 16), mat(0xffd34d, 0x604000)));
-      for (let i = 0; i < 8; i++) { const sp = mesh(new T.BoxGeometry(3, 5, 62), mat(i % 2 ? 0xc03050 : 0xf4f0e0)); sp.rotation.y = i * Math.PI / 8; wheel.add(sp); }
-      wheel.rotation.x = Math.PI / 2; at(wheel, cx, w.y + w.h + 3, hgt * 0.62); tgt.add(wheel); (level.userData.spin = level.userData.spin || []).push(wheel);
-      tgt.add(at(box(50, 4, 70, mat(0x1a0a10)), cx, w.y + w.h + 1, 35)); // the door
-      const sign = mesh(new T.BoxGeometry(w.w * 0.8, 3, 26), mat(0xff5080, 0xc02050)); at(sign, cx, w.y + w.h + 2, hgt + 22); tgt.add(sign);
-    } else if (w.kind === "shop") { // a shopfront: the building behind, a counter at the front, a striped awning
-      const arm = w.sid === "armoury", body = mat(arm ? 0x4a5236 : 0x8a6a42);
-      tgt.add(at(box(w.w, w.h * 0.55, hgt + 40, body), cx, w.y + w.h * 0.275, (hgt + 40) / 2));
-      tgt.add(at(box(w.w, w.h * 0.45, 34, mat(arm ? 0x3a3a32 : 0x6b4520)), cx, w.y + w.h * 0.775, 17)); // the counter
-      tgt.add(at(box(w.w + 6, w.h * 0.6, 4, mat(arm ? 0x2a2a26 : 0x5a3a1e)), cx, w.y + w.h * 0.3, hgt + 42));
-      for (let i = 0; i < 8; i++) { const sw = (w.w + 12) / 8; tgt.add(at(box(sw, 30, 3, mat(i % 2 ? 0xf4f0e0 : arm ? 0x5a6a3a : 0xd06a2a)), w.x - 6 + sw * (i + 0.5), w.y + w.h + 6, hgt + 10)); }
-      if (arm) for (let i = 0; i < 6; i++) tgt.add(at(mesh(new T.CapsuleGeometry(6, 14, 3, 6), mat(0x8a7a52)), w.x + 14 + i * 24, w.y + w.h + 8, 6).rotateZ(Math.PI / 2));
-      else for (let i = 0; i < 6; i++) tgt.add(at(box(12, 10, 14, mat([0xd0a040, 0xe83a2a, 0x7ab0e0, 0xf4f0e0, 0x8a5a2a, 0x40a060][i])), w.x + 16 + i * 23, w.y + w.h * 0.775, 41));
-      const sign = mesh(new T.BoxGeometry(90, 3, 18), mat(0xf4e0a0)); at(sign, cx, w.y + w.h * 0.55 + 2, hgt + 22); tgt.add(sign);
     } else if (w.kind === "bunker") { // a squat concrete block with a hatch on top and a yellow sign
       const conc = mat(0x8a8a82), dk = mat(0x5a5a54);
       tgt.add(at(box(w.w, w.h, hgt, conc), cx, cy, hgt / 2));
@@ -848,6 +948,12 @@ var R3D = (function () {
     const hg = level.userData.hearth;
     if (hg) { const fl = 1 + Math.sin(t * 9) * 0.1; hg.userData.flames.forEach((f, i) => f.scale.set(fl, fl * (i ? 1.1 : 1), fl)); hg.children[0].material = mat(hflash ? 0xcc7777 : 0x9a8a70); }
     if (level.userData.spin) for (const w of level.userData.spin) w.rotation.y = t * 0.8;
+    if (level.userData.dance) { // Club Slop at night: the tiles chase each other and the mirror ball turns
+      const D = level.userData.dance, on = S.g.ph === "night", beat = (t * 2.07) | 0;
+      if (D.beat !== beat || D.on !== on) { D.beat = beat; D.on = on; for (const [tl, i, j] of D.tiles) { const lit = on && (i + j + beat) % 3 === 0; tl.material.color.setHex(on ? [0xff40c0, 0x40c0ff, 0xffd34d, 0x7dff70][(i * 3 + j + beat) % 4] : 0x2a2a30); tl.material.emissive.setHex(lit ? tl.material.color.getHex() : on ? 0x101018 : 0x000000); } }
+      D.ball.rotation.y = t * 1.3;
+    }
+    if (level.userData.slots) for (let i = 0; i < level.userData.slots.length; i++) level.userData.slots[i].material = mat(0xfff0c0, ((t * 2 + i * 0.7) | 0) % 2 ? 0xffd34d : 0xff8040);
     // the Hearth Dome: a pylon for each quarter paid, and a shimmering bubble once it's up
     if (S.g.dome && S.g.mode !== "royale" && MAP.hearth) {
       const h = MAP.hearth, hx = h.x + h.w / 2, hy = h.y + h.h / 2, k = S.g.dome[0] / S.g.dome[1], n = Math.min(4, Math.floor(k * 4 + 1e-9));
@@ -880,9 +986,9 @@ var R3D = (function () {
     });
     // shopkeepers, home for the night when it's dark
     if (MAP.keepers) for (const k of MAP.keepers) {
-      if (k.hours === "day" && S.g.ph === "night") continue;
+      if ((k.hours === "day" && S.g.ph === "night") || (k.hours === "night" && S.g.ph !== "night")) continue;
       const e = pooled(`keeper:${k.id}`, () => personMesh(k.color, k.hat, "dot"));
-      at(e.obj, k.x, k.y, 0); e.obj.rotation.y = -Math.PI / 2; // facing the customers, south
+      at(e.obj, k.x, k.y, 0); e.obj.rotation.y = -(k.fa ?? Math.PI / 2); // facing the customers
     }
     // messes
     for (const m of st.messes) {
@@ -1002,6 +1108,18 @@ var R3D = (function () {
         e.obj.add(g); e.obj.userData.plate = g;
       }
       if (e.obj.userData.plate) { const pl = e.obj.userData.plate; pl.visible = !!armd; if (armd) pl.userData.weak.scale.setScalar(0.85 + Math.sin(t * 8 + id) * 0.2); }
+    }
+    // Dust II's bomb: on the carrier's back, dropped where it fell, or planted and blinking
+    if (S.g.du && (S.g.du[0] === "live" || S.g.du[0] === "planted") && S.g.du[2]) {
+      const [st, , bx, by, bz] = S.g.du, e = pooled("dustbomb", () => {
+        const g = new T.Group(); g.add(mesh(new T.BoxGeometry(18, 8, 12), mat(0xc8b890), 0, 4, 0));
+        for (let i = 0; i < 3; i++) g.add(mesh(new T.BoxGeometry(18.4, 2, 2.4), mat(0x3a3a3a), 0, 4, -4 + i * 4));
+        g.add(mesh(new T.BoxGeometry(8, 1.5, 6), mat(0x2a2a2a), 0, 8.6, 0));
+        const led = mesh(new T.SphereGeometry(1.8, 6, 5), new T.MeshBasicMaterial({ color: 0xff2020 }), 5, 10, 0); g.add(led); g.userData.led = led; return g;
+      });
+      at(e.obj, bx, by, bz + (st === "planted" ? 0 : 30));
+      const left = S.g.du[5], rate = st === "planted" ? (left < 10 ? 8 : 2) : 1;
+      e.obj.userData.led.visible = st !== "planted" || Math.floor(t * rate) % 2 === 0;
     }
     // grenades, molotovs and rockets in flight
     for (const [id, kind, x, y, z] of S.pr || []) {

@@ -5,6 +5,7 @@
 export const CD = 120; // how deep the cellars and tunnels go
 export const HS = 110; // one storey of a house
 export const OS = 100; // one storey of an office
+export const SH = 100; // a shop's walls
 const T = 10; // wall thickness
 const TW = 60; // tunnel width
 const snap = (v, g = 10) => Math.round(v / g) * g; // the dug-out parts sit on a 10-unit grid, so the tunnel walls line up exactly
@@ -27,6 +28,17 @@ function minus(a, c) {
   if (cx0 > a.x) out.push({ x: a.x, y: cy0, w: cx0 - a.x, h: cy1 - cy0 });
   if (ax1 > cx1) out.push({ x: cx1, y: cy0, w: ax1 - cx1, h: cy1 - cy0 });
   return out;
+}
+// does the segment a-c pass through the rectangle (grown by pad)? Liang-Barsky clipping
+export function segHitsRect(a, c, r, pad = 0) {
+  const x0 = r.x - pad, y0 = r.y - pad, x1 = r.x + r.w + pad, y1 = r.y + r.h + pad, dx = c.x - a.x, dy = c.y - a.y;
+  let t0 = 0, t1 = 1;
+  for (const [p, q] of [[-dx, a.x - x0], [dx, x1 - a.x], [-dy, a.y - y0], [dy, y1 - a.y]]) {
+    if (p === 0) { if (q < 0) return false; continue; }
+    const t = q / p;
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return t0 < t1;
 }
 const hits = (a, b, pad = 0) => a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
 
@@ -69,6 +81,7 @@ export function finishTown(big, { walls, W, H, lake }) {
   const rooms = [], ports = [], dug = []; // rooms: what tunnels must go round; ports: where a tunnel can start; dug: every hole
   const hole = (r, look, cut) => { const b = push({ ...r, kind: "hole", look, z0: -CD, z1: 0 }); if (cut) b.cut = 1; else dug.push(b); return b; };
   const roof = (r) => push({ ...r, kind: "slab", look: "turf", z0: -8, z1: 0 });
+  for (const b of big.shops || []) rooms.push({ x: b.x - 20, y: b.y - 20, w: b.w + 40, h: b.h + 40 }); // tunnels keep out from under the shops
   // a bare bulb on a wire. Not solid (ns), and r3d hangs a light off the nearest few.
   const bulb = (x, y, z) => push({ x: Math.round(x) - 6, y: Math.round(y) - 6, w: 12, h: 12, kind: "bulb", ns: 1, z0: z - 10, z1: z });
 
@@ -237,17 +250,68 @@ export function finishTown(big, { walls, W, H, lake }) {
     }
   });
 
+  // --- the shops and the club: walk-in buildings with a counter (the "till") you press E at, and something to do inside
+  const spots = {};
+  (big.shops || []).forEach((b) => {
+    const { R, P } = framer(b), { w, h } = b, top = SH, own = { shop: b.sid };
+    const fa = b.door === "n" ? -Math.PI / 2 : Math.PI / 2, spot = (k, lx, ly) => { spots[k] = { ...P(lx, ly, 0), fa }; }; // keepers face the door
+    const look = { general: "plank", armoury: "brick", casino: "casino", club: "club" }[b.sid];
+    const wall = (lx, ly, lw, lh, z0 = 0, z1 = top) => push({ ...R(lx, ly, lw, lh), kind: "swall", look, ...own, noclimb: 1, z0, z1 });
+    const dw = 64, dx0 = w / 2 - dw / 2;
+    wall(0, 0, dx0, T); wall(dx0 + dw, 0, w - dx0 - dw, T); wall(dx0, 0, dw, T, 76, top); // the front, with a wide door
+    wall(0, h - T, w, T); wall(0, T, T, h - 2 * T); wall(w - T, T, T, h - 2 * T);
+    push({ ...R(0, 0, w, h), kind: "slab", look: b.sid === "casino" ? "gold" : b.sid === "club" ? "club" : "roof", ...own, z0: top, z1: top + 8 });
+    const furn = (f, lx, ly, lw, lh, ht, extra) => push({ ...R(lx, ly, lw, lh), kind: "furn", f, ...own, z0: 0, z1: ht, ...extra });
+    const BACK = { flip: b.door === "n" ? 1 : 0 }, FRONT = { flip: b.door === "s" ? 1 : 0 }; // which way a piece against the back or front wall faces
+    // the till: you stand in front of it, the keeper stands behind it (far enough back that E opens the shop, not a chat)
+    const till = (lx, lw) => { push({ ...R(lx, h - T - 78, lw, 44), kind: "till", sid: b.sid, ...own, z0: 0, z1: 34 }); spot(b.sid, lx + lw / 2, h - T - 16); };
+    if (b.sid === "general") { // Vex's: two aisles of shelves, a fridge, veg by the door
+      till(w - 120, 100);
+      furn("aisle", 30, 50, 20, 84, 56); furn("aisle", 64, 50, 20, 84, 56); // two aisles down the left, a clear walk from the door to the till
+      furn("fridge", T + 2, h - T - 24, 84, 24, 72, BACK); furn("veg", w - T - 70, T + 8, 60, 30, 24, FRONT); furn("veg", T + 8, T + 6, 60, 26, 24, FRONT);
+      furn("shelf", w - T - 22, 46, 22, 46, 60);
+    } else if (b.sid === "armoury") { // Haddock's: gun racks, ammo, and a little shooting range at the back
+      till(w - 124, 104);
+      furn("rack", T, 30, 16, 120, 72); furn("rack", 24, T, 76, 16, 72, FRONT);
+      furn("ammo", w - T - 54, T + 8, 46, 34, 30, FRONT); furn("barrels", 36, 80, 36, 36, 34);
+      furn("bench", 26, h - T - 112, 110, 14, 30); // the range: shoot over the bench at the targets on the back wall
+      for (let i = 0; i < 3; i++) push({ ...R(30 + i * 36, h - T - 10, 26, 10), kind: "target", ...own, z0: 26, z1: 62 });
+    } else if (b.sid === "casino") { // the Golden Slop: slots down one wall, the wheel, a blackjack table, a poker table, a bar
+      till(w / 2 - 70, 90);
+      for (let i = 0; i < 4; i++) push({ ...R(T, 34 + i * 38, 28, 30), kind: "slot", ...own, z0: 0, z1: 58 });
+      push({ ...R(w - 120, 34, 92, 60), kind: "ctable", g: "wheel", ...own, z0: 0, z1: 30 });
+      push({ ...R(w - 120, 120, 92, 52), kind: "ctable", g: "bj", ...own, z0: 0, z1: 30 });
+      push({ ...R(100, 50, 90, 56), kind: "ctable", g: "pk", ...own, z0: 0, z1: 30 });
+      furn("bar", T, h - T - 40, 90, 40, 34, BACK); furn("plant", w - T - 30, h - T - 30, 24, 24, 44);
+    } else if (b.sid === "club") { // Club Slop: a dance floor that lights up at night, a DJ, speakers, a bar
+      push({ ...R(60, 40, w - 120, 100), kind: "dance", ns: 1, ...own, z0: 0, z1: 1 });
+      furn("dj", w / 2 - 40, h - T - 62, 80, 28, 34, BACK); spot("dj", w / 2, h - T - 18); furn("speaker", w / 2 - 84, h - T - 36, 34, 30, 64, BACK); furn("speaker", w / 2 + 50, h - T - 36, 34, 30, 64, BACK);
+      push({ ...R(T + 22, 40, 26, 120), kind: "till", sid: "club", ...own, z0: 0, z1: 36 }); spot("club", T + 11, 100); spot("bouncer", w / 2 + 50, -28);
+      furn("sofa", w - T - 30, 40, 28, 80, 24);
+    }
+    for (const lx of [w * 0.3, w * 0.7]) { const c = P(lx, h / 2, 0); bulb(c.x, c.y, top - 12); }
+    // waypoints: one floor, in through the door
+    const sid = nav.structs.length;
+    nav.structs.push({ kind: "shop", x: b.x, y: b.y, w, h, floors: [0] });
+    edge(node(P(w / 2, -34, 0), "O"), node(P(w / 2, 34, 0), sid + ":0"));
+    b.din = P(w / 2, 34, 0); b.dout = P(w / 2, -40, 0);
+  });
+
+  // --- corners: a waypoint just off each corner of every building, for going round it
+  for (const st of nav.structs) for (const [x, y] of [[st.x - 40, st.y - 40], [st.x + st.w + 40, st.y - 40], [st.x - 40, st.y + st.h + 40], [st.x + st.w + 40, st.y + st.h + 40]]) node({ x, y, z: 0 }, "O");
+
   // --- the graph: shortest routes between every pair of waypoints (Floyd-Warshall; there are only a hundred or so)
   const N = nav.nodes.length, D = new Float32Array(N * N).fill(Infinity), NX = new Int16Array(N * N).fill(-1);
   const len = (a, c) => Math.hypot(a.x - c.x, a.y - c.y) + Math.abs(a.z - c.z);
   for (let i = 0; i < N; i++) { D[i * N + i] = 0; NX[i * N + i] = i; }
   for (const [a, c] of nav.edges) { const d = len(nav.nodes[a], nav.nodes[c]); D[a * N + c] = D[c * N + a] = d; NX[a * N + c] = c; NX[c * N + a] = a; }
-  // the open air links every outside waypoint
+  // the open air links outside waypoints that can see each other: not through a building, so the dead go round the corner
   const outside = nav.nodes.map((nd, i) => (nd.r === "O" ? i : -1)).filter((i) => i >= 0);
-  for (const a of outside) for (const c of outside) if (a !== c) { const d = len(nav.nodes[a], nav.nodes[c]); if (d < D[a * N + c]) { D[a * N + c] = d; NX[a * N + c] = c; } }
+  const blocked = (a, c) => nav.structs.some((st) => segHitsRect(a, c, st, -4));
+  for (const a of outside) for (const c of outside) if (a < c && !blocked(nav.nodes[a], nav.nodes[c])) { const d = len(nav.nodes[a], nav.nodes[c]); if (d < D[a * N + c]) { D[a * N + c] = D[c * N + a] = d; NX[a * N + c] = c; NX[c * N + a] = a; } }
   for (let k = 0; k < N; k++) for (let i = 0; i < N; i++) { const dik = D[i * N + k]; if (dik === Infinity) continue; for (let j = 0; j < N; j++) { const d = dik + D[k * N + j]; if (d < D[i * N + j]) { D[i * N + j] = d; NX[i * N + j] = NX[i * N + k]; } } }
   nav.D = D; nav.NX = NX; nav.N = N;
-  return { nav, tunnels: tunnels.length };
+  return { nav, tunnels: tunnels.length, spots };
 }
 
 // which part of the town something is in, for the waypoints: "O" outside, "U" underground, or "<building>:<floor>"

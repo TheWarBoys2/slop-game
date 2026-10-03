@@ -18,7 +18,8 @@ import { ITEMS, GEAR, SLOTS, GEAR_KEYS, BAG_SIZE, gearSum, bagAdd, bagCount, bag
 import { STOCKS, SYMS, FEE, newMarket, shock, marketTick } from "./market.js";
 import { CANDIDATES, ELECT_EVERY, ballot } from "./politics.js";
 import { CS, makeChunk, BIOMES } from "./world.js";
-import { CD, placeBig, finishTown, regionOf } from "./town.js";
+import { DUST, inDust, siteXY, routes as dustRoutes, tSpawn, ctSpawn } from "./dust2.js";
+import { CD, SH, placeBig, finishTown, regionOf, segHitsRect } from "./town.js";
 import { CARDS, LOCS, STARTER, OPPONENTS, DECK_SIZE, newMatch, stage as cgStage, resolveTurn as cgResolve, aiPlays, view as cgView, deckFor, packCard } from "./cards.js";
 
 const MV = new Function(moveJs + "\nreturn MV;")(); // the same movement code the browser predicts with
@@ -81,19 +82,25 @@ for (const baseX of [1330, 1890]) for (let r = 0; r < 3; r++) for (let c = 0; c 
 const BASE_PLOTS = PLOTS.length;
 // the produce stall, by the right-hand field: Old Giles buys what you grow and sells seeds, daytime only
 const STALL = { x: 1950, y: 1440, w: 110, h: 40, kind: "stall", sid: "produce", z0: 0, z1: 34 };
-// the shops: Vex's general store and Haddock's armoury sit just south of the Hearth (open by day), the casino is out in town (always open)
-const STORE = { x: 1300, y: 1440, w: 150, h: 46, kind: "shop", sid: "general", z0: 0, z1: 64 };
-const ARMOURY = { x: 1625, y: 1545, w: 150, h: 46, kind: "shop", sid: "armoury", z0: 0, z1: 64 };
+// the shops: Vex's general store and Haddock's armoury sit just south of the Hearth (open by day), the casino is out in town (always open),
+// and Club Slop is out on the edge of town (open at night). They're walk-in buildings now: the footprint is a non-solid marker (ns),
+// town.js builds the walls, the counter (the "till") and the insides.
+const STORE = { x: 1300, y: 1560, w: 250, h: 180, kind: "shop", ns: 1, sid: "general", door: "n", z0: 0, z1: SH };
+const ARMOURY = { x: 1860, y: 1560, w: 280, h: 200, kind: "shop", ns: 1, sid: "armoury", door: "n", z0: 0, z1: SH };
 const SHOPS = {
   general: { name: "Vex's General Store", keeper: "Vex", hours: "day", shut: "Vex has shut up shop for the night. Back at dawn." },
   armoury: { name: "Haddock's Armoury", keeper: "Sergeant Haddock", hours: "day", shut: "The armoury's locked. Haddock is on night watch, not on the till." },
   casino:  { name: "The Golden Slop", keeper: "Lucky Lou", hours: "always" },
+  club:    { name: "Club Slop", keeper: "Big Tony", hours: "night" },
   hearth:  { name: "The Hearth", hours: "always" },
 };
 let CASINO = null;
-const shopWall = (sid) => sid === "hearth" ? HEARTH : WALLS.find((w) => w.kind === "shop" && w.sid === sid);
+const shopWall = (sid) => sid === "hearth" ? HEARTH : WALLS.find((w) => w.kind === "till" && w.sid === sid); // the counter you stand at
+const shopBld = (sid) => WALLS.find((w) => w.kind === "shop" && w.sid === sid); // the whole building
+let SHOP_SPOTS = {}; // where each keeper stands behind their counter (town.js)
 const shopIsOpen = (sid) => game.mode !== "royale" && (SHOPS[sid].hours !== "day" || game.phase !== "night");
-const nearShop = (p, sid) => { const w = shopWall(sid); return !!w && rectHitsCircle(w, p, sid === "hearth" ? 80 : 84); };
+const inside = (b, e) => !!b && e.x > b.x && e.x < b.x + b.w && e.y > b.y && e.y < b.y + b.h && (e.z || 0) < (b.z1 || 100) - 20;
+const nearShop = (p, sid) => { const w = shopWall(sid); return (!!w && rectHitsCircle(w, p, sid === "hearth" ? 80 : 84)) || (sid === "casino" && inside(shopBld("casino"), p)); }; // anywhere on the casino floor counts
 let KEEPERS = [{ id: "giles", sid: "produce", name: "Old Giles", role: "Produce stall. Buys crops, sells seeds.", color: "#8a6a3a", hat: "flatcap", x: STALL.x + STALL.w / 2, y: STALL.y - 22, hours: "day" }];
 const stallOpen = (k) => k.hours !== "day" || game.phase !== "night";
 const nearStall = (p) => rectHitsCircle(STALL, p, 80);
@@ -121,7 +128,7 @@ const WALL_HP = { house: 1100, fence: 160, crate: 180, tree: 320, rock: 800, hwa
 const WOODEN = new Set(["house", "fence", "crate", "tree", "hwall", "furn"]);
 let wallId = 1, mapVer = 0, mapDirty = false, PITCH = null, LAKE = null, LAKE_SOLID = [], BOOSTS = [];
 const LAKE_D = 260; // how deep the lake is
-const inHouse = (p) => WALLS.some((w) => (w.kind === "house" || w.kind === "office" || w.kind === "hatch") && p.x > w.x && p.x < w.x + w.w && p.y > w.y && p.y < w.y + w.h);
+const inHouse = (p) => WALLS.some((w) => (w.kind === "house" || w.kind === "office" || w.kind === "hatch" || w.kind === "shop") && p.x > w.x && p.x < w.x + w.w && p.y > w.y && p.y < w.y + w.h);
 const BALL = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, last: 0, resetAt: 0 };
 function damageWall(w, dmg) {
   if (w.kind === "built") { const b = builds.find((q) => q === w); if (b) hurtPiece(b, dmg * 0.5); return; }
@@ -196,10 +203,18 @@ function generateMap(seed) {
   place(1, () => ({ x: Math.round(R(300, W - 420)), y: Math.round(R(260, H - 360)), w: 120, h: 90, kind: "bunker", z0: 0, z1: 30 }), 70);
   if (!walls.some((w) => w.kind === "bunker")) walls.push({ x: 1900, y: 1600, w: 120, h: 90, kind: "bunker", z0: 0, z1: 30 });
   // the casino: a big gaudy box with a neon sign, somewhere in town
-  place(1, () => { const x = Math.round(R(200, W - 460)), y = Math.round(R(200, H - 380)); return Math.hypot(x + 130 - 1700, y + 80 - 1300) > 600 ? { x, y, w: 260, h: 160, kind: "shop", sid: "casino", z0: 0, z1: 120 } : { x: 0, y: 0, w: W, h: H }; }, 90);
-  if (!walls.some((w) => w.sid === "casino")) walls.push({ x: 2300, y: 1650, w: 260, h: 160, kind: "shop", sid: "casino", z0: 0, z1: 120 });
+  const shopAt = (x, y, w, h, sid) => ({ x, y, w, h, kind: "shop", ns: 1, sid, door: y + h / 2 < H / 2 ? "s" : "n", z0: 0, z1: SH }); // doors face the middle of town
+  place(1, () => { const x = Math.round(R(200, W - 560)), y = Math.round(R(200, H - 460)); return Math.hypot(x + 180 - 1700, y + 120 - 1300) > 600 ? shopAt(x, y, 360, 240, "casino") : { x: 0, y: 0, w: W, h: H }; }, 90);
+  if (!walls.some((w) => w.sid === "casino")) walls.push(shopAt(2300, 1650, 360, 240, "casino"));
+  // the night club: out on the edge of town, so a night out means leaving the Hearth
+  place(1, () => { const x = Math.round(R(140, W - 440)), y = Math.round(R(140, H - 360)); return Math.hypot(x + 150 - 1700, y + 110 - 1300) > 850 ? shopAt(x, y, 300, 220, "club") : { x: 0, y: 0, w: W, h: H }; }, 100);
+  if (!walls.some((w) => w.sid === "club")) walls.push(shopAt(300, 300, 300, 220, "club"));
+  // keep the ground in front of each shop door clear while the rest of town goes down (taken away again before the town is finished)
+  const apron = () => { for (const s of walls.filter((w) => w.kind === "shop" && !w.apron)) { s.apron = 1; walls.push({ x: s.x + s.w / 2 - 120, y: s.door === "n" ? s.y - 190 : s.y + s.h, w: 240, h: 190, kind: "apron", ns: 1, z0: 0, z1: 1 }); } };
+  apron();
   // the big buildings: office blocks, two-storey houses with cellars, and shelters down into the tunnels (town.js)
   const big = placeBig({ walls, R, rng, overlaps, W, H });
+  apron();
   // verticality first, so the big stuff gets room: watchtowers joined by catwalks, each with a staircase
   const stairs = (tx, ty, tw, th, top, dir) => { // a solid staircase climbing towards one face of a box
     const n = Math.ceil(top / 20), d = 30, wd = 44, out = [];
@@ -264,14 +279,20 @@ function generateMap(seed) {
     if (h.w > 210) fn("sofa", h.x + h.w / 2 - 15, north ? h.y + T + 6 : h.y + h.h - T - 72, 30, 66, 24);
     if (h.h > 150) fn("shelf", h.x + h.w - T - 24, h.y + h.h / 2 + 30, 22, 60, 60);
   }
-  TOWN_NAV = finishTown(big, { walls, W, H, lake: LAKE }).nav; // their insides, the tunnels, and the waypoints
+  for (let i = walls.length - 1; i >= 0; i--) if (walls[i].kind === "apron") walls.splice(i, 1); else if (walls[i].kind === "shop") delete walls[i].apron;
+  big.shops = walls.filter((w) => w.kind === "shop");
+  const town = finishTown(big, { walls, W, H, lake: LAKE }); // their insides, the shops, the tunnels, and the waypoints
+  TOWN_NAV = town.nav; SHOP_SPOTS = town.spots;
   // most things can be blown up (or burnt down)
-  walls.forEach((w, i) => { w.id = i + 1; const hp = WALL_HP[w.kind]; if (hp) w.hp = w.maxHp = hp; });
+  walls.forEach((w, i) => { w.id = i + 1; const hp = WALL_HP[w.kind]; if (hp && !w.shop) w.hp = w.maxHp = hp; }); // shop fittings are bolted down
   for (const w of walls) { if (w.house) { w.hid = w.house.id; delete w.house; } if (w.bld) { w.bid = w.bld.id; delete w.bld; } }
   wallId = walls.length + 1;
   WALLS = walls; mapVer++; CHUNKS.clear(); BOOSTS = walls.filter((w) => w.kind === "boost");
   CASINO = walls.find((w) => w.sid === "casino");
-  KEEPERS = [KEEPERS[0], { id: "lou", sid: "casino", name: "Lucky Lou", role: "The Golden Slop. Cases, the wheel, the tables.", color: "#c03050", hat: "tophat", x: CASINO.x + CASINO.w / 2 + 50, y: CASINO.y + CASINO.h + 22, hours: "always" }];
+  KEEPERS = [KEEPERS[0], { id: "lou", sid: "casino", name: "Lucky Lou", role: "The cashier. Cases and spins. The tables and slots are yours to walk up to.", color: "#c03050", hat: "tophat", x: SHOP_SPOTS.casino.x, y: SHOP_SPOTS.casino.y, fa: SHOP_SPOTS.casino.fa, hours: "always" },
+    { id: "tony", sid: "club", name: "Big Tony", role: "Club Slop's bouncer. Nobody wanted gets in.", color: "#2a2a30", hat: "hood", x: SHOP_SPOTS.bouncer.x, y: SHOP_SPOTS.bouncer.y, fa: SHOP_SPOTS.bouncer.fa, hours: "night" },
+    { id: "lola", sid: "club", name: "Lola", role: "Behind the bar. Drinks are 15g.", color: "#e04080", hat: "flower", x: SHOP_SPOTS.club.x, y: SHOP_SPOTS.club.y, fa: 0, hours: "night" },
+    { id: "dee", sid: "club", name: "DJ Dee", role: "Spinning till dawn.", color: "#c040ff", hat: "party", x: SHOP_SPOTS.dj.x, y: SHOP_SPOTS.dj.y, fa: SHOP_SPOTS.dj.fa, hours: "night" }];
 }
 // ---------------------------------------------------------------- geometry
 // Story and Endless are played in an endless world: the town, and the wild past its hedge. Royale keeps its fence.
@@ -306,7 +327,8 @@ generateMap((Math.random() * 1e9) | 0);
 let NPC_POS = [];
 function placeNpcs() {
   const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
-  NPC_POS = [{ id: "grubb", x: hc.x - 40, y: HEARTH.y - 40 }, { id: "haddock", x: ARMOURY.x + ARMOURY.w / 2, y: ARMOURY.y - 22 }, { id: "vex", x: STORE.x + STORE.w / 2, y: STORE.y - 22 }]; // shopkeepers stand behind their counters
+  const viaShop = (sid) => { const b = shopBld(sid); return b && b.din ? [b.din, b.dout] : []; }; // the way out of the shop, so they don't walk through the walls
+  NPC_POS = [{ id: "grubb", x: hc.x - 40, y: HEARTH.y - 40 }, { id: "haddock", ...SHOP_SPOTS.armoury, via: viaShop("armoury") }, { id: "vex", ...SHOP_SPOTS.general, via: viaShop("general") }]; // shopkeepers stand behind their counters
   for (const id of ["aldous", "pell", "morwen"]) {
     let best = null;
     for (let i = 0; i < 60; i++) {
@@ -335,13 +357,14 @@ function houseDoor(h) {
 function npcRoute(n, home) {
   const h = n.home && WALLS.find((w) => w.id === n.home && w.kind === "house");
   n.wait = now() + rand(0, 3);
-  if (!h) { n.path = [{ x: n.hx, y: n.hy }]; n.atHome = false; return; }
+  const via = n.via || [];
+  if (!h) { n.path = [...[...via].reverse(), { x: n.hx, y: n.hy }]; n.atHome = false; return; }
   const d = houseDoor(h), south = h.door !== "n", spot = { x: n.hx, y: n.hy };
   const behind = south ? spot.y < h.y + h.h / 2 : spot.y > h.y + h.h / 2; // go round the house, not through it
   const corner = { x: spot.x < h.x + h.w / 2 ? h.x - 40 : h.x + h.w + 40, y: d.out.y };
   const outside = behind ? [corner, d.out] : [d.out];
-  if (home && !n.atHome) n.path = [...outside, d.inn, d.mid];
-  else if (!home && n.atHome) n.path = [d.inn, ...outside.reverse(), spot];
+  if (home && !n.atHome) n.path = [...via, ...outside, d.inn, d.mid];
+  else if (!home && n.atHome) n.path = [d.inn, ...outside.reverse(), ...[...via].reverse(), spot];
   else n.path = home ? [] : [spot];
   n.atHome = home;
 }
@@ -677,6 +700,7 @@ const crouched = (p) => !!(p.keys & 64) && p.gr && !p.swim && !p.veh && !p.dead;
 function speedOf(p) {
   let s = 210 * CLASSES[p.cls].speed * (1 + (traitOf(p).speed || 0)) * (1 + 0.06 * sk(p, "fleet")) * game.mods.speed;
   if (inAura(p)) s *= 1.1;
+  if (now() < (p.groove || 0)) s *= 1.08; // danced at Club Slop
   if (p.weapons[p.active]?.type === "sniper") s *= 0.85;
   if (p.ads) s *= 0.6;
   // (crouching halves it inside MV.step, so prediction and the server agree)
@@ -1203,13 +1227,13 @@ function shoot(p, w) {
     const pt = flat ? 0 : p.pt + (Math.random() - 0.5) * 2 * spread * 0.7;
     const dx = Math.cos(a) * Math.cos(pt), dy = Math.sin(a) * Math.cos(pt), dz = Math.sin(pt);
     const o = [mx, my, mz], d = [dx, dy, dz];
-    let wallT = def.range;
-    { const hl = Math.hypot(dx, dy) || 1; for (const wl of wallsAlong(mx, my, dx / hl, dy / hl, def.range)) if (!MV.soft(wl)) wallT = Math.min(wallT, rayBox3(o, d, wl)); }
+    let wallT = def.range, wallW = null;
+    { const hl = Math.hypot(dx, dy) || 1; for (const wl of wallsAlong(mx, my, dx / hl, dy / hl, def.range)) if (!MV.soft(wl)) { const tw = rayBox3(o, d, wl); if (tw < wallT) { wallT = tw; wallW = wl; } } }
     if (dz < -1e-6) { // the ground, or the lake bed if the shot goes into the water, or the floor of a cellar or tunnel
       let tg = mz > 0 ? -mz / dz : 0;
       const gx = mx + dx * tg, gy = my + dy * tg, base = mz > 0 ? MV.baseAt(nearXY(gx, gy), gx, gy) : MV.baseAt(nearXY(mx, my), mx, my);
       if (base < 0) tg = (base - mz) / dz;
-      wallT = Math.min(wallT, Math.max(0, tg));
+      if (Math.max(0, tg) < wallT) { wallT = Math.max(0, tg); wallW = null; }
     }
     const hits = [];
     const cyl = (c, r, z0, z1) => flat ? (() => { const hl = Math.hypot(dx, dy) || 1, th = rayCircle(mx, my, dx / hl, dy / hl, c, r); return th / hl; })() : rayCyl(o, d, c, r, z0, z1);
@@ -1235,6 +1259,7 @@ function shoot(p, w) {
       if (vi >= 0) hits.length = vi + 1; // vehicles stop bullets, even piercing ones
       const list = pierce ? hits : hits.slice(0, 1);
       if (!pierce && hits.length) endT = hits[0][0];
+      if (endT === wallT && wallW && wallW.kind === "target") rangeHit(p, wallW, mz + dz * endT); // Haddock's range
       for (const [, target, kind] of list) {
         anyHit = true;
         let dmg = def.dmg * mult;
@@ -1267,6 +1292,13 @@ function shoot(p, w) {
   }
   if (anyHit) p.st.hits++;
   if (w.ammo <= 0) w.hot = false;
+}
+// the targets on the back wall of Haddock's armoury: a ding, and a streak count for bragging
+function rangeHit(p, w, hz) {
+  const bull = Math.abs(hz - (w.z0 + w.z1) / 2) < 6, t = now();
+  p.rangeN = t - (p.rangeT || 0) < 3 ? (p.rangeN || 0) + 1 : 1; p.rangeT = t;
+  events.push({ k: "ding", x: w.x + w.w / 2, y: w.y + w.h / 2, z: Math.round(hz), b: bull ? 1 : 0 });
+  if (p.rangeN % 10 === 0) toast(p, `${p.rangeN} on target in a row. Haddock nods.`, "#ffd34d");
 }
 // how hard each gun shoves what it hits (per bullet; heavier zombies move less)
 const KNOCK = { pistol: 40, smg: 18, rifle: 40, ak: 34, shotgun: 30, sniper: 220, laser: 320 };
@@ -1377,6 +1409,8 @@ function interact(p) {
     return toast(p, "You cook your vegetables in the Hearth. Hearth stew! It's in your bag.", "#ffb070");
   }
   if (game.mode !== "royale" && nearStall(p)) return openStall(p);
+  if (game.mode !== "royale") { const f = nearFitting(p); if (f) return useFitting(p, f); } // slot machines, the casino tables, the club bar
+  if (game.mode !== "royale" && inDust(p) && dustUse(p)) return; // Dust II: the CT radio starts a round; a planted bomb gets defused
   { const sid = ["general", "armoury", "casino", "hearth"].filter((q) => nearShop(p, q)).sort((a, b) => boxDist(shopWall(a), p.x, p.y, 0) - boxDist(shopWall(b), p.x, p.y, 0))[0]; if (sid) return openShop(p, sid); } // the nearest counter
   if (LAKE && rectHitsCircle(LAKE, p, 40) && p.z < 20) { // fill a bottle at the water's edge
     if (!bagAdd(p.bag, "lakewater")) return toast(p, "Your bag is full.", "#f88");
@@ -1441,8 +1475,9 @@ function buy(p, item) {
   if (game.mode === "royale") return toast(p, "No shops in the Royale. Loot it or lose it.", "#f88");
   if (p.dead) return;
   const it = own(SHOP, item); if (!it) return;
-  if (!nearShop(p, it.shop)) return toast(p, `You'll have to go to ${SHOPS[it.shop].name} for that.`, "#f88");
-  if (!shopIsOpen(it.shop)) return toast(p, SHOPS[it.shop].shut || "Shut.", "#f88");
+  const buyZone = it.shop === "armoury" && inDust(p) && game.mode !== "royale"; // Dust II's buy menu: Haddock's stock, anywhere on the map
+  if (!nearShop(p, it.shop) && !buyZone) return toast(p, `You'll have to go to ${SHOPS[it.shop].name} for that.`, "#f88");
+  if (!shopIsOpen(it.shop) && !buyZone) return toast(p, SHOPS[it.shop].shut || "Shut.", "#f88");
   if (item.startsWith("dome")) return fundDome(p, it.cost);
   if (item === "enhance") return enhance(p);
   if (item.startsWith("att_") || item.startsWith("skin_")) return fitMod(p, item);
@@ -1623,7 +1658,7 @@ function doShout(p) {
 function doDodge(p) {
   const t = now();
   if (p.dead || p.air || p.veh || t < p.dashCd) return;
-  const w = MV.wishDir(p.keys, p.a, p.rel);
+  const w = MV.wishDir(p.keys, p.my ?? p.a, p.rel);
   let dx = w.x, dy = w.y;
   if (!dx && !dy) { dx = Math.cos(p.a); dy = Math.sin(p.a); }
   const spd = Math.max(Math.hypot(p.vx, p.vy), speedOf(p) * 2.7); // works in the air too: an air dash
@@ -1655,18 +1690,28 @@ function navGoal(z, target) {
   const nav = TOWN_NAV;
   if (!nav || !nav.N) return null;
   const zr = regionOf(nav, z), tr = regionOf(nav, target);
-  if (zr === tr) return null; // same floor: walk straight at them
   const pick = (e, region) => {
     let best = -1, bd = Infinity;
-    for (let i = 0; i < nav.N; i++) { const n = nav.nodes[i]; if (n.r !== region) continue; const d = (n.x - e.x) ** 2 + (n.y - e.y) ** 2 + ((n.z - (e.z || 0)) * 2) ** 2; if (d < bd) { bd = d; best = i; } }
+    for (let i = 0; i < nav.N; i++) {
+      const n = nav.nodes[i]; if (n.r !== region) continue;
+      let d = (n.x - e.x) ** 2 + (n.y - e.y) ** 2 + ((n.z - (e.z || 0)) * 2) ** 2;
+      if (region === "O" && d < bd && nav.structs.some((st) => segHitsRect(e, n, st, -4))) d *= 9; // outside, prefer a waypoint you can walk straight to
+      if (d < bd) { bd = d; best = i; }
+    }
     return best;
   };
-  let from = pick(z, zr), to = pick(target, tr);
-  if (from < 0 || to < 0) return null;
-  // already standing on its waypoint: step to the next one along
   const reached = (i) => { const n = nav.nodes[i]; return (n.x - z.x) ** 2 + (n.y - z.y) ** 2 < (z.r + 26) ** 2 && Math.abs(n.z - (z.z || 0)) < 46; };
-  if (reached(from)) { const nx = nav.NX[from * nav.N + to]; if (nx >= 0 && nx !== from) from = nx; }
-  const n = nav.nodes[from];
+  const to = pick(target, tr);
+  if (to < 0) { z.navI = -1; return null; }
+  // stick with the waypoint we're already walking to (half way up a staircase the nearest waypoint is the one at the bottom,
+  // and re-picking by distance used to walk them straight back down); only re-plan when the target's waypoint changes
+  let i = z.navI ?? -1;
+  if (i >= 0 && z.navTo !== to) i = -1;
+  if (i < 0) { if (zr === tr) return null; i = pick(z, zr); if (i < 0) return null; }
+  for (let k = 0; k < 4 && reached(i) && i !== to; k++) { const nx = nav.NX[i * nav.N + to]; if (nx < 0 || nx === i) break; i = nx; }
+  if (i === to && (reached(i) || zr === tr)) { z.navI = -1; return null; } // at their waypoint, or on their floor: go straight for them
+  z.navI = i; z.navTo = to;
+  const n = nav.nodes[i];
   return { x: n.x, y: n.y, z: n.z };
 }
 // speed boosters fling the dead too
@@ -2287,23 +2332,84 @@ function nukeBlast() {
   mapDirty = true;
 }
 
+// ---------------------------------------------------------------- inside the shops: slot machines, the casino tables, the shooting range, Club Slop
+const FITTINGS = new Set(["slot", "ctable"]);
+function nearFitting(p) {
+  let best = null, bd = 46;
+  for (const w of near(p)) {
+    if (!(FITTINGS.has(w.kind) || (w.kind === "till" && w.sid === "club"))) continue;
+    const d = boxDist(w, p.x, p.y, (p.z || 0) + 20);
+    if (d < bd) { bd = d; best = w; }
+  }
+  return best;
+}
+// the one-armed bandits: 10g a pull. Three of a kind pays, a pair pays a little, and three zombies lets one out.
+const REELS = ["🍒", "🍋", "🔔", "💎", "7", "🧟"], SLOT_PAY = { "7": 250, "💎": 100, "🔔": 50, "🍒": 30, "🍋": 20 }, SLOT_COST = 10, SLOT_PAIR = 12;
+function pullSlot(p, m) {
+  const t = now(); if (t < (p.slotAt || 0)) return; p.slotAt = t + 1.4;
+  if (p.gold < SLOT_COST) return toast(p, `The slots take ${SLOT_COST}g a pull.`, "#f88");
+  p.gold -= SLOT_COST; p.invDirty = true;
+  const r = [0, 0, 0].map(() => (Math.random() * REELS.length) | 0), sy = r.map((i) => REELS[i]);
+  let win = 0, msg;
+  if (sy[0] === sy[1] && sy[1] === sy[2]) {
+    if (sy[0] === "🧟") { msg = "Three zombies. Something climbs out of the machine."; { const z = spawnZombie("walker", { x: m.x + m.w + 50, y: m.y + m.h / 2 }); if (z) { z.x = m.x + m.w + 50; z.y = m.y + m.h / 2; } } }
+    else { win = SLOT_PAY[sy[0]]; msg = sy[0] === "7" ? "JACKPOT!" : "Three of a kind!"; if (win >= 100) feed(`${fullName(p)} hit ${sy.join(" ")} on the slots for ${win}g`, "#ffd34d"); }
+  } else if (sy[0] === sy[1] || sy[1] === sy[2] || sy[0] === sy[2]) { const pr = sy[0] === sy[1] || sy[0] === sy[2] ? sy[0] : sy[1]; if (pr !== "🧟") { win = SLOT_PAIR; msg = "A pair."; } else msg = "Two zombies. The machine growls."; }
+  else msg = "Nothing.";
+  if (win) addGold(p, win);
+  p.pe.push({ k: "slots", r, win, msg });
+}
+function useFitting(p, f) {
+  if (f.kind === "slot") return pullSlot(p, f);
+  if (f.kind === "ctable") { if (!p.spins && !p.casino) toast(p, "The tables run on wheel spins. Buy a case from Lou at the cashier and you get spins with it.", "#ffd34d"); sendCasino(p); p.pe[p.pe.length - 1].open = 1; return; }
+  if (f.kind === "till" && f.sid === "club") { // Lola's bar
+    if (game.phase !== "night") return toast(p, "Club Slop opens at dusk.", "#bbb");
+    if (p.gold < 15) return toast(p, "Drinks are 15g.", "#f88");
+    p.gold -= 15; p.drunk = Math.min(90, (p.drunk || 0) + 25); p.stress = Math.max(0, (p.stress || 0) - 20); p.hp = Math.min(maxHp(p), p.hp + 10); p.invDirty = true;
+    return toast(p, pick(["A Slop Sunrise. Your worries feel further away. So does your aim.", "Lola slides you a Hearth Fireball. Warming.", "A pint of something green. You feel brave.", "\"On the house... no, it's 15g.\" Still, it helps."]), "#ff9ad0");
+  }
+}
+// Club Slop at night: dancing melts stress and puts you in the groove; Big Tony keeps wanted players out
+let CLUB = null, CLUB_FLOOR = null, CLUB_VER = -1;
+function clubTick(p, t, dt) {
+  if (game.mode === "royale" || p.dead || game.phase !== "night") { p.danceT = 0; return; }
+  if (CLUB_VER !== mapVer) { CLUB = shopBld("club"); CLUB_FLOOR = WALLS.find((w) => w.kind === "dance"); CLUB_VER = mapVer; }
+  if (!CLUB || !inside(CLUB, p)) { p.danceT = 0; return; }
+  if (p.heat >= 80) { // wanted: back out the door you go
+    const d = CLUB.door === "n" ? -1 : 1, y = d < 0 ? CLUB.y - 50 : CLUB.y + CLUB.h + 50;
+    p.x = CLUB.x + CLUB.w / 2; p.y = y; p.vx = 0; p.vy = 0;
+    if (t > (p.tonyAt || 0)) { p.tonyAt = t + 4; toast(p, "Big Tony: \"Not tonight. You're wanted.\" Lose the heat first.", "#f88"); }
+    return;
+  }
+  if (!CLUB_FLOOR || !rectHitsCircle(CLUB_FLOOR, p, 1) || (p.z || 0) > 30) { p.danceT = 0; return; }
+  p.danceT = (p.danceT || 0) + dt;
+  p.stress = Math.max(0, (p.stress || 0) - 7 * dt);
+  if (p.danceT > 6 && t > (p.groove || 0) - 60) { // topped up while you keep dancing
+    if (t > (p.groove || 0)) toast(p, "You're in the groove: 8% faster for a while.", "#c070ff");
+    p.groove = t + 90;
+  }
+}
+
 // ---------------------------------------------------------------- the stock exchange
+const IMPACT = 0.00015, SPREAD = 0.01; // 1000 shares move the price 15%
 function trade(p, sym, n) {
   if (!own(STOCKS, sym) || !n || game.mode === "royale" || p.dead) return;
   n = Math.trunc(clamp(n, -1000, 1000));
-  const px = game.market.px[sym], fee = game.mods.fee;
+  // your own order moves the price as it fills: you pay the average of the climb (or take the average of the fall), and the price
+  // lands at the end of it straight away, so a big buy can't be sold back into its own rise. Plus a 1% spread each way, even under Vex.
+  const px = game.market.px[sym], fee = game.mods.fee + SPREAD, imp = IMPACT * Math.abs(n);
   if (n > 0) {
-    const cost = Math.ceil(px * n * (1 + fee));
+    const cost = Math.ceil(px * (1 + imp / 2) * n * (1 + fee));
     if (p.gold < cost) return toast(p, `${n} ${sym} would cost ${cost}g.`, "#f88");
     p.gold -= cost; p.shares[sym] = (p.shares[sym] || 0) + n; p.basis[sym] = (p.basis[sym] || 0) + cost; p.st.sharesBought += n;
-    shock(game.market, sym, 0.0015 * n / 10);
+    game.market.px[sym] = px * (1 + imp);
     toast(p, `Bought ${n} ${sym} for ${cost}g`, "#8f8");
   } else {
     const have = p.shares[sym] || 0; n = Math.min(-n, have); if (!n) return;
-    const got = Math.floor(px * n * (1 - fee));
+    const imp2 = Math.min(0.9, IMPACT * n), got = Math.floor(px * (1 - imp2 / 2) * n * (1 - fee));
     p.basis[sym] = (p.basis[sym] || 0) * (1 - n / have);
     p.shares[sym] = have - n; if (!p.shares[sym]) { delete p.shares[sym]; delete p.basis[sym]; }
-    p.gold += got; shock(game.market, sym, -0.0015 * n / 10);
+    p.gold += got; game.market.px[sym] = Math.max(0.5, px * (1 - imp2));
     toast(p, `Sold ${n} ${sym} for ${got}g`, got >= 0 ? "#ffd34d" : "#f88");
   }
   p.invDirty = true;
@@ -2679,7 +2785,7 @@ function startGame() {
   vehicles = []; builds = []; game.zone = null; game.drop = null; game.countdown = 0; game.skip = new Set(); game.pendingVote = null;
   game.deeds = freshDeeds(); game.legend = null;
   if (game.mode === "story") placeNpcs(); else NPC_POS = [];
-  projs = []; fires.clear(); scorched.clear(); game.disaster = null; game.dino = false; game.dinoDay = false; shrineReset();
+  projs = []; fires.clear(); scorched.clear(); game.disaster = null; game.dino = false; game.dinoDay = false; shrineReset(); game.dust = null;
   broadcastRaw(JSON.stringify(mapMsg()));
   if (game.mode === "royale") setupRoyale(); else setupStory();
   for (const p of players.values()) { p.air = "wait"; p.ready = false; p.dlg = null; }
@@ -2699,6 +2805,7 @@ function beginPlay() {
   const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
   // the closing fog ring is Royale's; in Story and Endless the night itself is the pressure
   startDrop(hc);
+  events.push({ k: "feed", text: "Somebody has built all of Dust II out in the desert to the north-east. Follow the 💣 on your compass.", color: "#e0c080" });
   if (game.mode === "endless") { events.push({ k: "banner", text: `ENDLESS: ${VALLEY.toUpperCase()}`, sub: "No story. No end. Keep the Hearth burning as long as you can. A boss comes every fifth night." }); openVote(1); openElection(); return; }
   events.push({ k: "banner", text: `WELCOME TO ${VALLEY.toUpperCase()}`, sub: "SPACE to jump. Talk to the townsfolk [E]. Build defences [C]. Night is coming." });
   if (game.cameoDay === 1) cameoArrive();
@@ -2861,6 +2968,93 @@ function wildTick(t) {
   // the wild doesn't keep the dead nobody is near
   zombies = zombies.filter((z) => !z.wild || z.type === "boss" || live.some((p) => dist2(p, z) < 3200 * 3200));
 }
+// ---------------------------------------------------------------- Dust II: zombie terrorists, a bomb, two sites
+// Press E at the radio in CT spawn. Ten seconds to buy (B opens Haddock's stock anywhere on the map), then the terrorists
+// come out of T spawn and walk the bomb to A or B. Kill the carrier and another picks it up. If it's planted, hold E on it
+// for five seconds to defuse. Win: gold for everyone on the map and a good crate. Lose: a very big bang.
+const DUST_BUY = 10, DUST_PLANT = 3, DUST_FUSE = 40, DUST_DEFUSE = 5, DUST_COOL = 45, DUST_PAY = 120;
+function dustPlayers() { return [...players.values()].filter((q) => !q.dead && inDust(q, 200)); }
+function dustUse(p) {
+  const D = game.dust, t = now();
+  if (D && D.st === "planted" && Math.hypot(p.x - D.bx, p.y - D.by) < 70 && Math.abs((p.z || 0) - D.bz) < 60) { // defuse
+    if (D.def && D.def.pid !== p.id && players.has(D.def.pid)) { toast(p, "Someone's already on the bomb. Cover them.", "#ffd34d"); return true; }
+    if (!D.def) { D.def = { pid: p.id, until: t + DUST_DEFUSE }; toast(p, "Defusing... stay on it.", "#9fe0ff"); }
+    return true;
+  }
+  const radio = near(p).find((w) => w.kind === "radio");
+  if (!radio || boxDist(radio, p.x, p.y, (p.z || 0) + 20) > 60) return false;
+  if (D && D.st !== "post") { toast(p, "A round's already on.", "#bbb"); return true; }
+  if (D && t < D.next) { toast(p, `The radio crackles. Next round in ${Math.ceil(D.next - t)}s.`, "#bbb"); return true; }
+  game.dust = { st: "buy", n: (D ? D.n : 0) + 1, wins: D ? D.wins : 0, losses: D ? D.losses : 0, site: Math.random() < 0.5 ? "A" : "B", ends: t + DUST_BUY, bx: 0, by: 0, bz: 0, carrier: 0, def: null, left: 0, plantAt: 0 };
+  events.push({ k: "dust", say: "go", text: "ROUND START", sub: `Dust II, round ${game.dust.n}. You have ${DUST_BUY}s to buy [B]. The terrorists are bringing a bomb. Defend A and B.` });
+  feed(`${fullName(p)} started a round on Dust II`, "#e0c080");
+  return true;
+}
+function dustSpawn(D) {
+  const n = Math.min(20, 6 + 3 * Math.max(1, dustPlayers().length)), site = siteXY(D.site), rts = dustRoutes(D.site);
+  for (let i = 0; i < n; i++) {
+    const at = tSpawn(), z = spawnZombie(Math.random() < 0.3 ? "runner" : "walker", at);
+    if (!z) continue;
+    z.x = at.x; z.y = at.y; z.dust = 1; z.route = [...rts[i % rts.length], site];
+    if (i === 0) { z.bomb = 1; D.carrier = z.id; D.bx = z.x; D.by = z.y; }
+  }
+  D.left = n;
+}
+function dustEnd(D, ctWin, why) {
+  D.st = "post"; D.next = now() + DUST_COOL; D.def = null; D.carrier = 0; D.plantAt = 0;
+  zombies = zombies.filter((z) => !z.dust);
+  if (ctWin) {
+    D.wins++;
+    for (const q of dustPlayers()) addGold(q, DUST_PAY, "Round won");
+    const c = ctSpawn(); crates.push({ id: nextId++, x: c.x + rand(-40, 40), y: c.y + 30, w: newWeapon(lootType(), Math.min(4, lootRarity(game.night) + 2)) });
+    events.push({ k: "dust", say: "ct", text: "COUNTER-TERRORISTS WIN", sub: `${why} ${DUST_PAY}g each, and there's a crate at CT spawn. ${D.wins}-${D.losses}.` });
+  } else {
+    D.losses++;
+    events.push({ k: "dust", say: "t", text: "TERRORISTS WIN", sub: `${why} ${D.wins}-${D.losses}. The radio's at CT spawn when you want another go.` });
+  }
+}
+function dustTick(t, dt) {
+  const D = game.dust; if (!D || D.st === "post") return;
+  if (D.st !== "buy" && !dustPlayers().length) return dustEnd(D, false, "Everyone left the map.");
+  if (D.st === "buy") { if (t >= D.ends) { D.st = "live"; dustSpawn(D); events.push({ k: "dust", say: "move", text: "", sub: "" }); } return; }
+  const mine = zombies.filter((z) => z.dust && z.hp > 0); D.left = mine.length;
+  if (D.st === "live") {
+    if (!mine.length) return dustEnd(D, true, "Every terrorist is dead.");
+    let c = mine.find((z) => z.bomb);
+    if (!c) { // the carrier's down: the nearest terrorist goes to pick the bomb up
+      c = mine.sort((a, b) => dist2(a, { x: D.bx, y: D.by }) - dist2(b, { x: D.bx, y: D.by }))[0];
+      c.bomb = 1; c.route = [{ x: D.bx, y: D.by }, siteXY(D.site)]; D.carrier = c.id; D.plantAt = 0;
+      events.push({ k: "feed", text: "The bomb carrier is down. Another one's going for the bomb.", color: "#e0c080" });
+    }
+    const site = siteXY(D.site), holding = dist2(c, { x: D.bx, y: D.by }) < 60 * 60;
+    if (holding) { D.bx = c.x; D.by = c.y; D.bz = c.z || 0; }
+    if (holding && dist2(c, site) < 75 * 75) { // planting: it stands still for a moment
+      if (!D.plantAt) { D.plantAt = t + DUST_PLANT; c.stun = t + DUST_PLANT + 0.2; }
+      if (t >= D.plantAt) {
+        D.st = "planted"; D.ends = t + DUST_FUSE; c.bomb = 0; D.carrier = 0; D.plantAt = 0;
+        for (const z of mine) z.route = [{ x: site.x + rand(-140, 140), y: site.y + rand(-140, 140) }]; // and now they guard it
+        events.push({ k: "dust", say: "planted", text: `BOMB PLANTED AT ${D.site}`, sub: `${DUST_FUSE} seconds. Get to it and hold E for ${DUST_DEFUSE}s to defuse.` });
+      }
+    } else D.plantAt = 0;
+  } else if (D.st === "planted") {
+    if (D.def) {
+      const q = players.get(D.def.pid);
+      if (!q || q.dead || Math.hypot(q.x - D.bx, q.y - D.by) > 80) { if (q) toast(q, "You came off the bomb.", "#f88"); D.def = null; }
+      else if (t >= D.def.until) return dustEnd(D, true, `${fullName(q)} defused the bomb.`);
+    }
+    if (t >= D.ends) {
+      events.push({ k: "boom", x: D.bx, y: D.by, z: D.bz + 20, r: 420 });
+      for (const q of players.values()) { const d = Math.hypot(q.x - D.bx, q.y - D.by); if (!q.dead && d < 520) hurtPlayer(q, 260 * (1 - d / 700), null, "blown up on Dust II"); }
+      return dustEnd(D, false, `The bomb went off at ${D.site}.`);
+    }
+  }
+}
+function dustView(t) {
+  const D = game.dust; if (!D) return null;
+  const left = D.st === "buy" || D.st === "planted" ? Math.max(0, +(D.ends - t).toFixed(1)) : D.st === "post" ? Math.max(0, Math.ceil((D.next || 0) - t)) : 0;
+  return [D.st, D.site, Math.round(D.bx), Math.round(D.by), Math.round(D.bz), left, D.def ? +Math.min(1, 1 - (D.def.until - t) / DUST_DEFUSE).toFixed(2) : -1, D.left, D.wins, D.losses, D.plantAt ? 1 : 0, D.def ? D.def.pid : 0];
+}
+
 // ---------------------------------------------------------------- natural disasters
 const DISASTERS = {
   meteor: { name: "METEOR SHOWER", sub: "Get out of the red circles. Or get to the defence console and shoot them down [E].", len: 36, station: "orbital defence console", game: "Orbital Defence" },
@@ -3225,6 +3419,7 @@ function tick() {
   zoneTick(t);
   if (tickN % 10 === 0) ensureChunks();
   if (tickN % 45 === 0) wildTick(t);
+  if (game.phase === "day" || game.phase === "night") dustTick(t, dt);
   if (OPEN() && game.phase === "day" && !game.duskWarned && game.ends - t < 25 && game.zone) { // the fog comes for the wild at night
     game.duskWarned = true;
     const R = STORY_ZONE_R[Math.min(game.night + 1, STORY_ZONE_R.length - 1)];
@@ -3295,14 +3490,14 @@ function tick() {
     if (!Number.isFinite(p.gold)) p.gold = 0; // backstop: NaN gold would make every price check pass
     if (p.cg && !NPC_POS.some((q) => q.id === p.cg.npc)) { toast(p, "Your opponent has left. The game's off; you get your stake back.", "#bbb"); if (!p.cg.M.over) p.gold += p.cg.stake; p.cg = null; sendCards(p); }
     if (playing) {
-      needs(p, dt, t); stress(p, dt, t);
+      needs(p, dt, t); stress(p, dt, t); clubTick(p, t, dt);
       if (p.inf) { if (t > p.inf.until) cure(p, "The infection passes. You feel almost normal."); else if (t > p.inf.next) nextSymptom(p); }
     }
     const veh = vehOf(p);
     if (p.veh && !veh) p.veh = 0;
     if (!veh) {
       if (p.stam === undefined) p.stam = 100;
-      const ev = MV.step(p, { keys: p.keys, yaw: p.a, rel: p.rel }, dt, { sp: speedOf(p), boxes: near(p), W: BW(), H: BH(), frozen: t < p.going || !!p.dlg || !!p.cg || t < p.frozen || game.phase === "lobby", canSprint: !p.firing && !p.ads, stam: p.stam, wrLen: 0.9 + 0.2 * sk(p, "fleet"), airJumps: 1 });
+      const ev = MV.step(p, { keys: p.keys, yaw: p.rel ? (p.my ?? p.a) : p.a, rel: p.rel }, dt, { sp: speedOf(p), boxes: near(p), W: BW(), H: BH(), frozen: t < p.going || !!p.dlg || !!p.cg || t < p.frozen || game.phase === "lobby", canSprint: !p.firing && !p.ads, stam: p.stam, wrLen: 0.9 + 0.2 * sk(p, "fleet"), airJumps: 1 });
       if (ev === "pad") events.push({ k: "pad", x: Math.round(p.x), y: Math.round(p.y) });
       else if (ev) events.push({ k: "mv", id: p.id, m: ev, x: Math.round(p.x), y: Math.round(p.y) }); // so everyone hears the slide, the boost, the wall jump
       moveTick(p, t, dt);
@@ -3359,10 +3554,16 @@ function tick() {
     if (!target && game.mode === "royale") { if (!z.wander || dist2(z, z.wander) < 900 || Math.random() < dt * 0.1) z.wander = freeSpot(20); }
     if (!target && z.wild) { if (!z.wander || dist2(z, z.wander) < 900 || Math.random() < dt * 0.1) z.wander = { x: z.x + rand(-400, 400), y: z.y + rand(-400, 400) }; } // shambling about in the wild
     let goal = target || (game.mode === "royale" || z.wild ? z.wander : hc);
+    if (z.route) { // Dust II's terrorists walk their route to the site; the one with the bomb never stops for you
+      while (z.route.length > 1 && dist2(z, z.route[0]) < 70 * 70) z.route.shift();
+      if (z.bomb || !target || bd > 300 * 300) { goal = z.route[0]; if (z.bomb) target = null; }
+    }
     // indoors and underground: follow the stairs and tunnels instead of scraping at a wall
-    if (target && game.mode !== "royale" && z.type !== "flyer" && (tickN + z.id) % 15 === 0) z.nav = navGoal(z, target);
-    else if (!target) z.nav = null;
-    if (z.nav) { const d2n = (z.nav.x - z.x) ** 2 + (z.nav.y - z.y) ** 2; if (d2n < (z.r + 20) ** 2 && Math.abs(z.nav.z - (z.z || 0)) < 46) z.nav = null; else goal = z.nav; }
+    if (target && game.mode !== "royale" && z.type !== "flyer") {
+      if ((tickN + z.id) % 15 === 0) z.nav = navGoal(z, target);
+      else if (z.nav && (z.nav.x - z.x) ** 2 + (z.nav.y - z.y) ** 2 < (z.r + 20) ** 2 && Math.abs(z.nav.z - (z.z || 0)) < 46) z.nav = navGoal(z, target); // on to the next waypoint straight away
+    } else { z.nav = null; z.navI = -1; }
+    if (z.nav) goal = z.nav;
     let dx = goal.x - z.x, dy = goal.y - z.y;
     const d = Math.hypot(dx, dy) || 1;
     dx /= d; dy /= d;
@@ -3500,6 +3701,7 @@ function snapshot() {
       drop: game.drop && t - game.drop.t0 < game.drop.dur + 3 ? [r(game.drop.x0), r(game.drop.y0), r(game.drop.x1), r(game.drop.y1), +dropPos(t).k.toFixed(3)] : null,
       clues: [...game.clues].map(clueText), mq: mainQuest(),
       ph: game.phase, n: game.night, uav: game.uav && game.uav > t ? Math.ceil(game.uav - t) : 0, left: game.ends === Infinity ? -1 : Math.max(0, r(game.ends - t)), hh: r(game.hearth), hm: game.hearthMax, res: game.result, boss: game.bossId, bk: game.bossKind, valley: VALLEY, fog: game.fog ? 1 : 0, solved: solved() ? 1 : 0, dino: game.dino ? 1 : 0, dd: game.dinoDay ? 1 : 0,
+      du: dustView(t),
       mk: SYMS.map((s) => +game.market.px[s].toFixed(2)), news: game.market.news.map((n) => [n.text, n.up ? 1 : 0]),
       mayor: game.mayor, nuke: game.nuke ? [r(game.nuke.x), r(game.nuke.y), Math.max(0, +(game.nuke.at - t).toFixed(1))] : null, dome: game.dome && game.mode !== "royale" ? [game.dome.have, game.dome.cost] : null, waste: game.waste ? 1 : 0, hot: game.hot.map((h) => [r(h.x), r(h.y), r(h.r), h.lake ? 1 : 0]),
       elec: game.elec ? { c: game.elec.cands, v: Object.fromEntries(game.elec.votes), left: Math.max(0, r(game.elec.ends - t)) } : null,
@@ -3578,6 +3780,7 @@ function onMessage(ws, raw) {
     case "in":
       p.keys = m.k | 0; p.a = Number.isFinite(+m.a) ? +m.a : 0; p.firing = !!m.f && !p.dead; p.ads = !!m.ads && !p.dead;
       p.pt = typeof m.pt === "number" && isFinite(m.pt) ? clamp(m.pt, -1.5, 1.5) : null; p.rel = !!m.rel;
+      p.my = typeof m.my === "number" && isFinite(m.my) ? m.my : null; // the camera's yaw: what WASD walks by in 3D, so the server moves you the way your own prediction did
       p.fly = Array.isArray(m.fly) && m.fly.length === 4 ? m.fly.map((x) => clamp(+x || 0, -1, 1)) : null;
       break;
     case "tp": if (TEST_TP) { // testing only
@@ -3599,7 +3802,7 @@ function onMessage(ws, raw) {
       if (m.ammo !== undefined) p.weapons[p.active].ammo = m.ammo;
       if (m.night) game.night = m.night;
       if (m.spawn) { const z = spawnZombie(m.spawn, { x: p.x + 120, y: p.y }); if (z) { z.x = p.x + 120; z.y = p.y; z.stun = now() + 30; } }
-      if (m.zat) { const z = spawnZombie(m.zat[2] || "walker", { x: m.zat[0], y: m.zat[1] }); if (z) { z.x = m.zat[0]; z.y = m.zat[1]; z.z = 0; } } // testing only: a zombie right there, awake
+      if (m.zat) { const z = spawnZombie(m.zat[2] || "walker", { x: m.zat[0], y: m.zat[1] }); if (z) { z.x = m.zat[0]; z.y = m.zat[1]; z.z = 0; z.arson = false; } } // testing only: a zombie right there, awake
       if (m.die) killPlayer(p, null, "testing");
       if (m.clearZ) zombies = [];
       if (m.infect) infect(p);
@@ -3619,6 +3822,7 @@ function onMessage(ws, raw) {
     case "elect": if (game.elec && Number.isInteger(m.i) && m.i >= 0 && m.i < game.elec.cands.length) game.elec.votes.set(p.id, m.i); break;
     case "cg": cardAct(p, m); break;
     case "stall": stallAct(p, m); break;
+    case "buyzone": if (inDust(p) && game.mode !== "royale" && !p.dead) p.pe.push({ k: "shop", sid: "armoury" }); break; // B on Dust II
     case "reload": pressReload(p, p.weapons[p.active]); break;
     case "clean": cleanWeapon(p, m); break;
     case "hack": finishHack(p, m); break;
@@ -3691,7 +3895,7 @@ const server = Bun.serve({
   websocket: {
     open(ws) {
       spectators.add(ws);
-      ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, shops: SHOPS, domeR: DOME_R, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS, items: ITEMS, crops: CROPS, seedPack: SEED_PACK, gear: GEAR, cards: CARDS, locs: LOCS, stocks: STOCKS, cands: CANDIDATES }));
+      ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, shops: SHOPS, domeR: DOME_R, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS, items: ITEMS, crops: CROPS, seedPack: SEED_PACK, gear: GEAR, cards: CARDS, locs: LOCS, stocks: STOCKS, cands: CANDIDATES, dust: DUST }));
       ws.send(JSON.stringify(mapMsg()));
       ws.send(JSON.stringify({ t: "ck", reset: 1, seed: MAP_SEED, walls: WALLS.filter((w) => w.ck), bio: [...CHUNKS].filter(([, c]) => c.kind !== "town").map(([k, c]) => [...k.split(",").map(Number), c.kind]) }));
     },
