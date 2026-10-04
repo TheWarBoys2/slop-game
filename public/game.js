@@ -1496,7 +1496,7 @@ function rayWorld(o, d, maxT, skipId, boxesOnly) {
   for (const b of worldBoxes()) {
     if (b.kind === "lake") continue; // water doesn't stop a bullet or a camera
     let tmin = 0, tmax = Infinity, miss = false;
-    const lo = [b.x, b.y, b.z0 || 0], hi = [b.x + b.w, b.y + b.h, b.z1 || 60];
+    const lo = [b.x, b.y, b.z0 || 0], hi = [b.x + b.w, b.y + b.h, b.z1 ?? 60];
     for (let i = 0; i < 3 && !miss; i++) {
       if (Math.abs(d[i]) < 1e-9) { if (o[i] < lo[i] || o[i] > hi[i]) miss = true; continue; }
       let t1 = (lo[i] - o[i]) / d[i], t2 = (hi[i] - o[i]) / d[i];
