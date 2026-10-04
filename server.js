@@ -1375,12 +1375,13 @@ function interact(p) {
   if (p.air || game.phase === "lobby") return;
   if (p.veh) return exitVehicle(p);
   if (p.z < -60 && touchGlyph(p)) return;
+  { const c = nearTerm(p); if (c) return startTermHack(p, c); } // office terminals are upstairs
   if (p.z > 40) return toast(p, "You'll have to come down first.", "#bbb");
   { const c = caches.find((q) => dist2(q, p) < 62 * 62); if (c) return startHack(p, c); }
   if (game.disaster && game.disaster.st && dist2(game.disaster.st, p) < 85 * 85) return startFix(p);
   { const b = bunkerWall(); if (b && rectHitsCircle(b, p, 46) && game.mode !== "royale") return enterBunker(p); }
   let best = null, bd = 60 * 60;
-  for (const c of crates) { const d = dist2(c, p); if (d < bd) { bd = d; best = c; } }
+  for (const c of crates) { const d = dist2(c, p); if (d < bd && (!c.vault || d < 26 * 26)) { bd = d; best = c; } } // vault loot: you have to be in the vault
   if (best && best.it) { // a crate of gear or supplies
     if (!bagAdd(p.bag, best.it.id, best.it.n || 1, best.it.r || 0)) return toast(p, "Your bag is full. Use or drop something [I].", "#f88");
     crates = crates.filter((c) => c !== best); p.invDirty = true;
@@ -2750,7 +2751,7 @@ function setupRoyale() {
   game.flags = { valley: VALLEY }; game.mods = freshMods(); game.vote = null; game.story = null; game.bossId = 0;
   game.hearthMax = game.hearth = 1e9;
   game.mayor = null; game.uav = 0; game.elec = null; game.nuke = null; game.waste = false; game.hot = []; game.fog = false; game.royaleN = players.size; // nothing carries over from a story game (fallout, a ticking nuke)
-  zombies = []; crates = []; caches = [];
+  zombies = []; crates = []; caches = []; resetOffices();
   for (const pl of PLOTS) { pl.stage = 0; pl.prog = 0; }
   for (const p of players.values()) { resetProgress(p); resetLoadout(p, true); p.weapons = [newWeapon("pistol")]; p.active = 0; p.gold = 0; }
   const n = 30 + 6 * players.size;
@@ -2818,7 +2819,7 @@ function setupStory() {
   game.flags = { valley: VALLEY, culprit: SUSPECTS[process.env.SLOP_CULPRIT] ? process.env.SLOP_CULPRIT : pickCulprit(), wrong: {} }; game.mods = freshMods(); game.vote = null; game.story = null; game.bossId = 0;
   const n = Math.max(1, players.size);
   game.hearthMax = game.hearth = 1000 + 300 * n;
-  zombies = []; crates = []; caches = [];
+  zombies = []; crates = []; caches = []; resetOffices();
   for (const pl of PLOTS) { pl.stage = 0; pl.prog = 0; }
   for (const p of players.values()) { resetProgress(p); resetLoadout(p, true); }
   spawnCrates();
@@ -2875,7 +2876,7 @@ function startHack(p, c) {
     used.add(row + "," + col); path.push(g[row][col]);
   }
   const seqs = [path.slice(0, 2), path.slice(1, 4), path.slice(2, 6)];
-  if (p.hack) { const old = caches.find((q) => q.id === p.hack.cache); if (old && old.busy === p.id) old.busy = 0; }
+  if (p.hack) { const old = caches.find((q) => q.id === p.hack.cache) || termRt.get(p.hack.cache); if (old && old.busy === p.id) old.busy = 0; }
   c.busy = p.id;
   p.hack = { cache: c.id, g, seqs, buf: 7, until: t + 30 };
   p.pe.push({ k: "hack", g, seqs, buf: 7, time: 30 });
@@ -2883,7 +2884,7 @@ function startHack(p, c) {
 function finishHack(p, m) {
   const h = p.hack; if (!h) return;
   p.hack = null;
-  const c = caches.find((q) => q.id === h.cache); if (!c) return;
+  const c = caches.find((q) => q.id === h.cache) || termRt.get(h.cache); if (!c) return;
   c.busy = 0;
   if (m.cancel) return;
   // check the picks follow the rules: row 0 first, then alternate column / row, no cell twice
@@ -2906,6 +2907,7 @@ function finishHack(p, m) {
     if (game.mode !== "royale" || true) { for (let i = 0; i < 3 + players.size; i++) spawnZombie(Math.random() < 0.3 ? "runner" : "walker", c); spawnZombie("screamer", c); }
     return toast(p, late ? "Too slow. ALARM." : "Access denied. ALARM.", "#ff6060");
   }
+  if (c.term) return termHacked(p, c, solved);
   caches = caches.filter((q) => q !== c);
   events.push({ k: "hacked", x: Math.round(c.x), y: Math.round(c.y), n: solved });
   shock(game.market, "SLOP", -0.025 * solved, solved >= 2 ? "Slop-Tech cache breached. Shareholders furious." : "");
@@ -2915,6 +2917,46 @@ function finishHack(p, m) {
   if (solved >= 2) crates.push({ id: nextId++, x: c.x, y: c.y, w: newWeapon(lootType(), solved === 3 ? (Math.random() < 0.3 ? 3 : 2) : 1) });
   if (solved === 3) { p.molo = Math.min(9, p.molo + 2); feed(`${fullName(p)} cracked a Slop-Tech cache wide open.`, "#7dffb0"); }
   toast(p, `ACCESS GRANTED (${solved}/3 daemons). ${solved >= 2 ? "Something good dropped out." : ""}`, "#7dffb0");
+}
+// ---------------------------------------------------------------- office vaults: hack enough of a block's terminals and its vault opens
+// Each office block has a terminal on every floor above the lobby and one on the roof (town.js). Hacking OFFICE_NEED of them
+// (same breach minigame as the caches) opens the steel vault in the lobby, which holds good gear. It all locks up again at dawn.
+const OFFICE_NEED = 3;
+let OFFICES = [], termRt = new Map();
+function resetOffices() {
+  for (const o of OFFICES) if (o.door && !WALLS.some((w) => w.kind === "vdoor" && w.bid === o.id)) { WALLS.push(o.door); mapVer++; mapDirty = true; }
+  crates = crates.filter((c) => !c.vault); // whatever nobody took goes back in the safe
+  OFFICES = WALLS.filter((w) => w.kind === "office").map((b) => ({ id: b.id, vault: b.vault, door: WALLS.find((w) => w.kind === "vdoor" && w.bid === b.id), terms: WALLS.filter((w) => w.kind === "term" && w.bid === b.id).map((w) => w.id), hacked: new Set(), open: false }));
+  termRt = new Map(WALLS.filter((w) => w.kind === "term").map((w) => [w.id, { id: w.id, x: w.x + w.w / 2, y: w.y + w.h / 2, z: w.z0, term: w, busy: 0 }]));
+}
+function nearTerm(p) {
+  for (const c of termRt.values()) if (rectHitsCircle(c.term, p, 44) && Math.abs((p.z || 0) - c.z) < 30) return c;
+  return null;
+}
+function startTermHack(p, c) {
+  const o = OFFICES.find((q) => q.id === c.term.bid);
+  if (!o) return;
+  if (o.open) return toast(p, "The vault downstairs is already open.", "#7dffb0");
+  if (o.hacked.has(c.id)) return toast(p, `Already in. ${o.hacked.size}/${OFFICE_NEED} terminals hacked.`, "#7dffb0");
+  startHack(p, c);
+}
+function termHacked(p, c, solved) {
+  const o = OFFICES.find((q) => q.id === c.term.bid);
+  if (!o || o.open) return;
+  o.hacked.add(c.id);
+  addXp(p, 8 * solved); deed("word", 2 * solved); addGold(p, 15 * solved, "Hacked an office terminal");
+  events.push({ k: "hacked", x: Math.round(c.x), y: Math.round(c.y), n: solved, tz: c.z, of: [o.hacked.size, OFFICE_NEED] });
+  if (o.hacked.size < OFFICE_NEED) return toast(p, `Terminal hacked: ${o.hacked.size}/${OFFICE_NEED}. The vault in the lobby opens at ${OFFICE_NEED}.`, "#7dffb0");
+  o.open = true;
+  if (o.door) { WALLS = WALLS.filter((w) => w !== o.door); mapVer++; mapDirty = true; }
+  const v = o.vault, at = (dx, dy) => ({ id: nextId++, x: v.x + dx, y: v.y + dy, vault: o.id });
+  crates.push({ ...at(-10, -6), w: newWeapon(lootType(), Math.random() < 0.25 ? 4 : 3) }); // a Legendary, sometimes a Mythic
+  crates.push({ ...at(10, -6), w: newWeapon(lootType(), 2 + (Math.random() < 0.5 ? 1 : 0)) });
+  crates.push({ ...at(0, 14), it: { id: pick(GEAR_KEYS), r: 3 } });
+  events.push({ k: "vault", x: Math.round(v.x), y: Math.round(v.y) });
+  shock(game.market, "SLOP", -0.04, "Office vault cracked. Insurers weep.");
+  feed(`${fullName(p)} cracked an office vault. The good stuff is in the lobby.`, "#7dffb0");
+  toast(p, "VAULT OPEN. Get down to the lobby.", "#7dffb0");
 }
 function spawnCrates() { // town gets a trickle; the good stuff is out in the wild
   const n = 1 + Math.floor(players.size / 2);
@@ -3285,6 +3327,7 @@ function collectRates() {
   }
 }
 function startDay() {
+  resetOffices(); // the office vaults lock again at dawn
   game.phase = "day"; game.mods.nightGold = 1; game.ends = now() + DAY_LEN; game.fog = false; game.dino = false; game.duskWarned = false;
   game.dinoDay = isDinoDay(game.night + 1); game.dinoNext = now() + 12;
   if (game.zone) zoneShrinkTo(40000, 20); // the fog lifts off the wild
@@ -3729,6 +3772,7 @@ function snapshot() {
     fi: [...fires.values()].map((f) => [f.cx, f.cy, r(f.z)]),
     pl: PLOTS.map((q) => q.stage + 4 * Math.max(0, CROP_KEYS.indexOf(q.crop || "turnip"))),
     ca: caches.map((c) => [c.id, r(c.x), r(c.y), c.busy ? 1 : 0]),
+    tm: OFFICES.flatMap((o) => o.open ? o.terms : [...o.hacked]), // hacked office terminals (all of them once the vault's open)
     np: NPC_POS.map((n) => [n.id, r(n.x), r(n.y), +(n.a || 0).toFixed(2)]),
     sh: game.shrine ? [...game.shrine.order, game.shrine.step, game.shrine.open ? 1 : 0] : null,
     cr: crates.map((c) => [c.id, r(c.x), r(c.y), c.w ? c.w.rarity : c.it.r || 0, c.grave ? 1 : 0, c.it ? (GEAR[c.it.id] ? 1 : 2) : 0]),
