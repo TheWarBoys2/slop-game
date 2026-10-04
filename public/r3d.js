@@ -185,7 +185,7 @@ var R3D = (function () {
   }
   function addWall(w) {
     const tgt = new T.Group();
-    const cx = w.x + w.w / 2, cy = w.y + w.h / 2, z0 = w.z0 || 0, z1 = w.z1 || 60, hgt = z1 - z0;
+    const cx = w.x + w.w / 2, cy = w.y + w.h / 2, z0 = w.z0 || 0, z1 = w.z1 ?? 60, hgt = z1 - z0;
     if (w.kind === "house") { // just the roof (you can stand on it); the walls are separate pieces
       const rc = ROOFS[w.roof || 0];
       tgt.add(at(box(w.w + 12, w.h + 12, hgt, mat(rc)), cx, cy, (z0 + z1) / 2));
@@ -404,8 +404,10 @@ var R3D = (function () {
       tgt.add(at(box(horiz ? w.w : w.w + 1, horiz ? w.h + 1 : w.h, 4, mat(0x7a8290)), cx, cy, z1 - 2));
     } else if (w.kind === "slab") { // a floor, a ceiling, or the turf over a tunnel
       const SL = { wood: [0x9a6e44, 0x7a5232], carpet: [0x4a5a66, 0x3a4a56], roof: [0x6a6e72, 0x55585c], turf: [0x5a4632, 0x6b4a33], stone: [0x8a8a86, 0x72726e], sandstone: [0xb89a68, 0x9a7c50], gold: [0x3a1640, 0xffd34d], club: [0x18181e, 0xff40c0] }[w.look] || [0x8a8a8a, 0x6a6a6a];
-      tgt.add(at(box(w.w, w.h, hgt, mat(SL[0])), cx, cy, (z0 + z1) / 2));
-      if (w.look === "wood" || w.look === "carpet") for (let i = 1; i < w.w / 26; i++) tgt.add(at(box(1.2, w.h, 0.6, mat(SL[1])), w.x + i * 26, cy, z1 + 0.3));
+      // at ground level the grass is drawn at 0 too: a floor sits just above it, and the turf over a tunnel just below (it's only seen from underneath)
+      const top = z1 !== 0 ? z1 : w.look === "turf" ? -1 : 0.4;
+      tgt.add(at(box(w.w, w.h, top - z0, mat(SL[0])), cx, cy, (z0 + top) / 2));
+      if (w.look === "wood" || w.look === "carpet") for (let i = 1; i < w.w / 26; i++) tgt.add(at(box(1.2, w.h, 0.6, mat(SL[1])), w.x + i * 26, cy, top + 0.3));
       if (w.look === "roof") tgt.add(at(box(w.w - 6, w.h - 6, 1, mat(0x4a4e52)), cx, cy, z1 + 0.6));
       if (w.look === "gold" || w.look === "club") tgt.add(at(box(w.w + 4, w.h + 4, 4, mat(SL[1], SL[1])), cx, cy, z1 - 2)); // a lit trim round the roof
     } else if (w.kind === "rail") {
