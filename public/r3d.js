@@ -282,13 +282,13 @@ var R3D = (function () {
         g.add(mesh(new T.BoxGeometry(12, 6, D2 - 16), mat(0xffffff), -L2 / 2 + 9, 17, 0)); // pillow
         g.add(mesh(new T.BoxGeometry(4, 26, D2), mat(0x5a3418), -L2 / 2 + 2, 13, 0)); // headboard
       } else {
-        g.add(mesh(new T.BoxGeometry(L2, 4, D2), mat(0x8a5a32), 0, z1 - 2, 0));
-        for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.add(mesh(new T.BoxGeometry(3, z1 - 4, 3), mat(0x6a4024), sx * (L2 / 2 - 4), (z1 - 4) / 2, sz * (D2 / 2 - 4)));
-        g.add(mesh(new T.CylinderGeometry(2, 2, 7, 8), mat(0xf4f0e0), 0, z1 + 3.5, 0)); // a candle
-        g.add(mesh(new T.SphereGeometry(1.6, 6, 5), basic(0xffc040, 1), 0, z1 + 8, 0));
-        g.add(mesh(new T.CylinderGeometry(5, 4, 3, 10), mat(0xd8d0c0), L2 / 4, z1 + 1.5, 0)); // a bowl of slop
+        g.add(mesh(new T.BoxGeometry(L2, 4, D2), mat(0x8a5a32), 0, hgt - 2, 0));
+        for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.add(mesh(new T.BoxGeometry(3, hgt - 4, 3), mat(0x6a4024), sx * (L2 / 2 - 4), (hgt - 4) / 2, sz * (D2 / 2 - 4)));
+        g.add(mesh(new T.CylinderGeometry(2, 2, 7, 8), mat(0xf4f0e0), 0, hgt + 3.5, 0)); // a candle
+        g.add(mesh(new T.SphereGeometry(1.6, 6, 5), basic(0xffc040, 1), 0, hgt + 8, 0));
+        g.add(mesh(new T.CylinderGeometry(5, 4, 3, 10), mat(0xd8d0c0), L2 / 4, hgt + 1.5, 0)); // a bowl of slop
       }
-      g.rotation.y = rotY; at(g, cx, cy, 0); tgt.add(g);
+      g.rotation.y = rotY; at(g, cx, cy, z0); tgt.add(g); // at its own floor: upstairs desks and beds, cellar shelves
     } else if (w.kind === "bulb") { // a bare bulb; the lights themselves follow the camera (see below)
       const g = new T.Group();
       g.add(mesh(new T.CylinderGeometry(0.5, 0.5, 10, 4), mat(0x3a3a3a), 0, 5, 0));
@@ -361,6 +361,21 @@ var R3D = (function () {
       if (w.sid === "general" || w.sid === "armoury") for (let i = 0; i < 6; i++) { const sw = 90 / 6; tgt.add(at(box(sw, 26, 3, mat(i % 2 ? 0xf4f0e0 : w.sid === "armoury" ? 0x5a6a3a : 0xd06a2a)), cx - 45 + sw * (i + 0.5), fy + out * 13, 84)); } // a striped awning over the door
       if (w.sid === "casino") { const wheel = new T.Group(); wheel.add(mesh(new T.CylinderGeometry(30, 30, 4, 16), mat(0xffd34d, 0x604000))); for (let i = 0; i < 8; i++) { const sp = mesh(new T.BoxGeometry(3, 5, 56), mat(i % 2 ? 0xc03050 : 0xf4f0e0)); sp.rotation.y = i * Math.PI / 8; wheel.add(sp); } wheel.rotation.x = Math.PI / 2; at(wheel, cx + 110, fy + out * 4, 60); tgt.add(wheel); (level.userData.spin = level.userData.spin || []).push(wheel); }
       if (w.sid === "club") { const ring = mesh(new T.TorusGeometry(14, 2, 6, 20), mat(0xff40c0, 0xff40c0)); at(ring, cx - 100, fy + out * 4, 60); tgt.add(ring); }
+    } else if (w.kind === "vwall" || w.kind === "vdoor") { // an office vault: brushed steel, and a round safe door with a wheel on it
+      tgt.add(at(box(w.w, w.h, hgt, mat(w.kind === "vdoor" ? 0x5a6068 : 0x8a9098)), cx, cy, (z0 + z1) / 2));
+      for (const k of [0.25, 0.75]) tgt.add(at(box(w.w + 0.6, w.h + 0.6, 2, mat(0x6a7078)), cx, cy, z0 + hgt * k));
+      if (w.kind === "vdoor") for (const s of [-1, 1]) { // both faces: a stripe of hazard paint and the wheel
+        const horiz = w.w >= w.h, ox = horiz ? 0 : s * (w.w / 2 + 0.8), oy = horiz ? s * (w.h / 2 + 0.8) : 0;
+        const wh = mesh(new T.TorusGeometry(9, 1.6, 6, 16), mat(0xc8ccd0)); wh.rotation.y = horiz ? 0 : Math.PI / 2; at(wh, cx + ox, cy + oy, 40); tgt.add(wh);
+        tgt.add(at(box(horiz ? w.w - 6 : 1, horiz ? 1 : w.h - 6, 4, mat(0xffd34d, 0x403000)), cx + ox, cy + oy, z1 - 8));
+      }
+    } else if (w.kind === "term") { // an office terminal: a cabinet with a screen that goes green once it's hacked
+      const g = new T.Group(), horiz = w.w >= w.h, L2 = horiz ? w.w : w.h, D2 = horiz ? w.h : w.w;
+      g.add(mesh(new T.BoxGeometry(L2, hgt - 12, D2), mat(0x2a2e36), 0, (hgt - 12) / 2, 0));
+      const scr = mesh(new T.BoxGeometry(L2 - 4, 12, 2), mat(0x10141a, 0xff3040), 0, hgt - 6, 0); scr.rotation.x = -0.35; g.add(scr);
+      g.add(mesh(new T.BoxGeometry(L2 - 6, 1.5, 6), mat(0x4a4e56), 0, hgt - 13, D2 / 2 - 2));
+      g.rotation.y = horiz ? 0 : -Math.PI / 2;
+      at(g, cx, cy, z0); tgt.add(g); (level.userData.terms = level.userData.terms || []).push([w.id, scr]);
     } else if (w.kind === "dust") { // Dust II's sandstone: pale blocks with a darker cap; door frames are timber
       if (w.look === "door") { tgt.add(at(box(w.w, w.h, hgt, mat(0x6a4a2a)), cx, cy, hgt / 2)); tgt.add(at(box(w.w + 2, w.h + 2, 6, mat(0x4a3018)), cx, cy, z1 - 3)); }
       else {
@@ -403,11 +418,13 @@ var R3D = (function () {
       tgt.add(at(box(horiz ? w.w : w.w + 1, horiz ? w.h + 1 : w.h, 4, mat(0x7a8290)), cx, cy, z0 + 2));
       tgt.add(at(box(horiz ? w.w : w.w + 1, horiz ? w.h + 1 : w.h, 4, mat(0x7a8290)), cx, cy, z1 - 2));
     } else if (w.kind === "slab") { // a floor, a ceiling, or the turf over a tunnel
-      const SL = { wood: [0x9a6e44, 0x7a5232], carpet: [0x4a5a66, 0x3a4a56], roof: [0x6a6e72, 0x55585c], turf: [0x5a4632, 0x6b4a33], stone: [0x8a8a86, 0x72726e], sandstone: [0xb89a68, 0x9a7c50], gold: [0x3a1640, 0xffd34d], club: [0x18181e, 0xff40c0] }[w.look] || [0x8a8a8a, 0x6a6a6a];
+      const SL = { wood: [0x9a6e44, 0x7a5232], carpet: [0x4a5a66, 0x3a4a56], tile: [0xc8c4bc, 0xa8a49c], roof: [0x6a6e72, 0x55585c], turf: [0x5a4632, 0x6b4a33], stone: [0x8a8a86, 0x72726e], sandstone: [0xb89a68, 0x9a7c50], gold: [0x3a1640, 0xffd34d], club: [0x18181e, 0xff40c0] }[w.look] || [0x8a8a8a, 0x6a6a6a];
       // at ground level the grass is drawn at 0 too: a floor sits just above it, and the turf over a tunnel just below (it's only seen from underneath)
       const top = z1 !== 0 ? z1 : w.look === "turf" ? -1 : 0.4;
       tgt.add(at(box(w.w, w.h, top - z0, mat(SL[0])), cx, cy, (z0 + top) / 2));
-      if (w.look === "wood" || w.look === "carpet") for (let i = 1; i < w.w / 26; i++) tgt.add(at(box(1.2, w.h, 0.6, mat(SL[1])), w.x + i * 26, cy, top + 0.3));
+      if (w.look === "wood") for (let i = 1; i < w.w / 26; i++) tgt.add(at(box(1.2, w.h, 0.6, mat(SL[1])), w.x + i * 26, cy, top + 0.3));
+      if (w.look === "tile") { for (let i = 1; i < w.w / 40; i++) tgt.add(at(box(1, w.h, 0.4, mat(SL[1])), w.x + i * 40, cy, top + 0.2)); for (let j = 1; j < w.h / 40; j++) tgt.add(at(box(w.w, 1, 0.4, mat(SL[1])), cx, w.y + j * 40, top + 0.2)); }
+      if (w.look === "carpet") tgt.add(at(box(w.w - 2, w.h - 2, 0.4, mat(0x56687a)), cx, cy, top + 0.2)); // a lighter carpet with a darker edge
       if (w.look === "roof") tgt.add(at(box(w.w - 6, w.h - 6, 1, mat(0x4a4e52)), cx, cy, z1 + 0.6));
       if (w.look === "gold" || w.look === "club") tgt.add(at(box(w.w + 4, w.h + 4, 4, mat(SL[1], SL[1])), cx, cy, z1 - 2)); // a lit trim round the roof
     } else if (w.kind === "rail") {
@@ -464,7 +481,7 @@ var R3D = (function () {
       const horiz = w.w > w.h;
       for (const s of [-1, 1]) tgt.add(at(box(horiz ? w.w : 4, horiz ? 4 : w.h, 26, mat(0x6e5232)), horiz ? cx : cx + s * (w.w / 2 - 2), horiz ? cy + s * (w.h / 2 - 2) : cy, z1 + 13));
     } else if (w.kind === "step") {
-      tgt.add(at(box(w.w, w.h, hgt, mat(0x9a7a4a)), cx, cy, hgt / 2));
+      tgt.add(at(box(w.w, w.h, hgt, mat(0x9a7a4a)), cx, cy, (z0 + z1) / 2)); // a step can start on an upper floor, or down in a cellar
       tgt.add(at(box(w.w, w.h, 3, mat(0x7a5a32)), cx, cy, z1 - 1.5));
     } else if (w.kind === "ledge") {
       tgt.add(at(box(w.w, w.h, hgt, mat(0x6a6a74)), cx, cy, (z0 + z1) / 2));
@@ -955,6 +972,7 @@ var R3D = (function () {
       if (D.beat !== beat || D.on !== on) { D.beat = beat; D.on = on; for (const [tl, i, j] of D.tiles) { const lit = on && (i + j + beat) % 3 === 0; tl.material.color.setHex(on ? [0xff40c0, 0x40c0ff, 0xffd34d, 0x7dff70][(i * 3 + j + beat) % 4] : 0x2a2a30); tl.material.emissive.setHex(lit ? tl.material.color.getHex() : on ? 0x101018 : 0x000000); } }
       D.ball.rotation.y = t * 1.3;
     }
+    if (level.userData.terms) { const done = new Set(S.tm || []); for (const [id, scr] of level.userData.terms) scr.material = done.has(id) ? mat(0x10141a, 0x30ff80) : mat(0x10141a, ((t * 1.5) | 0) % 2 ? 0xff3040 : 0x801020); } // red and blinking until hacked
     if (level.userData.slots) for (let i = 0; i < level.userData.slots.length; i++) level.userData.slots[i].material = mat(0xfff0c0, ((t * 2 + i * 0.7) | 0) % 2 ? 0xffd34d : 0xff8040);
     // the Hearth Dome: a pylon for each quarter paid, and a shimmering bubble once it's up
     if (S.g.dome && S.g.mode !== "royale" && MAP.hearth) {

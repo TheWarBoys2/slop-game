@@ -219,8 +219,9 @@ function handleEvent(e) {
   else if (e.k === "hatch") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 500) sfx("click"); }
   else if (e.k === "ballkick") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("kick"); }
   else if (e.k === "goal") { sfx("goal"); fx.push({ kind: "text", t0: t, dur: 2, x: e.x, y: e.y, z: 80, text: "GOAL!", color: "#ffd34d", big: true }); }
+  else if (e.k === "vault") { fx.push({ kind: "text", t0: t, dur: 2.5, x: e.x, y: e.y, z: 80, text: "VAULT OPEN", color: "#ffd34d", big: true }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 1200) sfx("jackpot"); }
   else if (e.k === "alarm") { fx.push({ kind: "shout", t0: t, dur: 1.5, x: e.x, y: e.y, a: 0, full: true, col: 0xff3030, c2: "255,48,48" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 1000) sfx("alarm"); }
-  else if (e.k === "hacked") { fx.push({ kind: "text", t0: t, dur: 1.6, x: e.x, y: e.y, z: 60, text: `ACCESS GRANTED ${e.n}/3`, color: "#7dffb0", big: true }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx("perfect"); }
+  else if (e.k === "hacked") { fx.push({ kind: "text", t0: t, dur: 1.6, x: e.x, y: e.y, z: (e.tz || 0) + 60, text: e.of ? `TERMINAL ${e.of[0]}/${e.of[1]}` : `ACCESS GRANTED ${e.n}/3`, color: "#7dffb0", big: true }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx("perfect"); }
 }
 function handlePersonal(e) {
   const t = T();
@@ -2457,6 +2458,10 @@ function drawHud(mine, t) {
     let hint = null;
     if (g.dis && g.dis.st && (g.dis.st[0] - pred.x) ** 2 + (g.dis.st[1] - pred.y) ** 2 < 85 * 85) hint = [g.dis.st[2] ? "Someone's working the station. Cover them!" : `E  ${{ meteor: "shoot down the meteors", flood: "open the sluice gates", tornado: "launch the cloud-seeding rocket", quake: "work the seismic damper" }[g.dis.k]}`, "#9fe0ff"];
     if (!hint) for (const [, x, y, busy] of S.ca || []) if ((x - pred.x) ** 2 + (y - pred.y) ** 2 < 62 * 62) { hint = [busy ? "Someone's hacking this one" : "E  hack the Slop-Tech cache", "#7dffb0"]; break; }
+    if (!hint) { // office terminals: hack enough of a block's and its vault opens
+      const tm = new Set(S.tm || []);
+      for (const w of MAP.walls) if (w.kind === "term" && Math.abs(pred.z - w.z0) < 30 && (w.x + w.w / 2 - pred.x) ** 2 + (w.y + w.h / 2 - pred.y) ** 2 < 56 * 56) { const n = MAP.walls.filter((q) => q.kind === "term" && q.bid === w.bid && tm.has(q.id)).length; hint = tm.has(w.id) ? [`Terminal hacked (${Math.min(n, 3)}/3 for the vault)`, "#7dffb0"] : [`E  hack the terminal (${n}/3 for the vault in the lobby)`, "#7dffb0"]; break; }
+    }
     if (!hint) for (const [, x, y, rar, grave] of S.cr) if ((x - pred.x) ** 2 + (y - pred.y) ** 2 < 60 * 60) { hint = [`E  ${grave ? "loot grave" : "open crate"}`, RARITY_COL[rar]]; break; }
     if (!hint) MAP.plots.forEach((pl, i) => { if (!hint && (pl.x - pred.x) ** 2 + (pl.y - pred.y) ** 2 < 48 * 48) { const s = S.pl[i] % 4, cr = CROPS[CROP_KEYS[S.pl[i] >> 2]] || {}; const sel = INV && INV.sel && INV.bag.some((b) => b.id === "s_" + INV.sel) ? CROPS[INV.sel].name.toLowerCase() : "seed"; hint = s === 0 ? [mine.sd ? `E  plant ${sel}` : "No seeds. Old Giles sells them at the produce stall.", "#8f8"] : s === 3 ? [`E  pick the ${(cr.name || "crop").toLowerCase()}`, "#ffd34d"] : [`${cr.name || ""} growing...`, "#aaa"]; } });
     if (!hint && MAP.keepers && g.mode !== "royale") { const st = MAP.walls.find((w) => w.kind === "stall"); if (st && (st.x + st.w / 2 - pred.x) ** 2 + (st.y + st.h / 2 - pred.y) ** 2 < 110 * 110) hint = g.ph === "night" ? ["The stall's shut. Back at dawn.", "#aaa"] : ["E  produce stall: sell crops, buy seeds", "#ffd34d"]; }

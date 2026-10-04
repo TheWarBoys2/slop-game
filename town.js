@@ -215,27 +215,36 @@ export function finishTown(big, { walls, W, H, lake }) {
       }
     };
     side(true, 0, w, true); side(true, h - FD, w, false); side(false, 0, h, false); side(false, w - FD, h, false);
-    // the stairs: two lanes at the back, flights alternating direction, with a wall between the lanes
-    const SN = 5, SD = 26, X0 = w - FD - 44 - SN * SD, laneA = h - FD - 44, laneB = h - FD - 88;
+    // the stairs: two lanes at the back, flights alternating direction, with a wall between the lanes.
+    // Lanes are 56 wide (a person is 32 across) and there's a 50-wide landing at the turn.
+    const SN = 5, SD = 28, LW = 56, LD = 50, X0 = w - FD - LD - SN * SD, laneA = h - FD - LW, laneB = h - FD - 2 * LW;
     for (let k = 0; k < n; k++) for (let i = 0; i < SN; i++) {
       const up = k % 2 === 0, lx = up ? X0 + i * SD : X0 + SN * SD - (i + 1) * SD;
-      push({ ...R(lx, up ? laneA : laneB, SD, 44), kind: "step", look: "concrete", ...own, z0: k * OS, z1: k * OS + 20 * (i + 1) });
+      push({ ...R(lx, up ? laneA : laneB, SD, LW), kind: "step", look: "concrete", ...own, z0: k * OS, z1: k * OS + 20 * (i + 1) });
     }
     push({ ...R(X0 + SD, laneA - 2, SN * SD - 2 * SD, 4), kind: "pillar", look: "core", ...own, z0: 0, z1: topZ });
-    // floors (and the roof), each with the hole the stairs come up through
+    // floors (and the roof), each with the hole the stairs come up through; the lobby gets a tiled floor
+    push({ ...R(FD, FD, w - 2 * FD, h - 2 * FD), kind: "slab", look: "tile", ...own, z0: -8, z1: 0 });
     for (let k = 1; k <= n; k++) {
-      const up = (k - 1) % 2 === 0, opening = { x: X0, y: up ? laneA : laneB, w: SN * SD, h: 44 };
+      const up = (k - 1) % 2 === 0, opening = { x: X0, y: up ? laneA : laneB, w: SN * SD, h: LW };
       for (const r of minus({ x: 0, y: 0, w, h }, opening)) push({ ...R(r.x, r.y, r.w, r.h), kind: "slab", look: k === n ? "roof" : "carpet", ...own, z0: k * OS - 8, z1: k * OS });
     }
     for (const r of [R(0, 0, w, FD), R(0, h - FD, w, FD), R(0, FD, FD, h - 2 * FD), R(w - FD, FD, FD, h - 2 * FD)]) push({ ...r, kind: "pillar", look: "parapet", ...own, z0: topZ, z1: topZ + 24 });
-    // the lobby and the floors above it
+    // the vault: a steel room in the front corner of the lobby, shut until enough of the building's terminals are hacked (server.js)
+    const VZ = OS - 8, VX = 84, VY = 92, DW = 44;
+    for (const [lx, ly, lw, lh] of [[FD, FD, VX - FD, 8], [FD, FD + 8, 8, VY - FD - 8], [VX - 8, FD + 8, 8, VY - FD - 8], [FD + 8, VY - 8, 8, 8], [22 + DW, VY - 8, VX - 8 - 22 - DW, 8]]) push({ ...R(lx, ly, lw, lh), kind: "vwall", ...own, noclimb: 1, z0: 0, z1: VZ });
+    push({ ...R(22, VY - 8, DW, 8), kind: "vdoor", ...own, noclimb: 1, z0: 0, z1: VZ });
+    b.vault = P((FD + VX) / 2, (FD + VY) / 2, 0);
+    // the lobby and the floors above it. Desks go against the front glass, so there's a clear walk behind them.
     const furn = (f, lx, ly, lw, lh, z0, ht) => push({ ...R(lx, ly, lw, lh), kind: "furn", f, ...own, z0, z1: z0 + ht });
-    furn("reception", 190, 60, 80, 26, 0, 32); furn("plant", 14, 12, 24, 24, 0, 44); furn("plant", w - 38, 12, 24, 24, 0, 44); furn("sofa", 12, 70, 28, 80, 0, 24); furn("cooler", w - 34, 98, 20, 20, 0, 42);
+    const term = (lx, ly, z0) => push({ ...R(lx, ly, 22, 26), kind: "term", ...own, z0, z1: z0 + 40 });
+    furn("reception", 170, 50, 80, 26, 0, 32); furn("plant", w - 38, 12, 24, 24, 0, 44); furn("sofa", 10, 120, 28, 80, 0, 24); furn("cooler", w - 34, 50, 20, 20, 0, 42);
     for (let k = 1; k < n; k++) {
-      for (const lx of [20, 110, 200]) for (const ly of [30, 86]) furn("desk", lx, ly, 50, 30, k * OS, 26);
-      furn("plant", 14, 140, 24, 24, k * OS, 44); furn(k % 2 ? "printer" : "cooler", w - 34, 98, 22, 22, k * OS, 40);
+      for (const lx of [100, 170, 240]) furn("desk", lx, FD + 2, 50, 30, k * OS, 26);
+      furn("plant", 14, FD + 6, 24, 24, k * OS, 44); furn(k % 2 ? "printer" : "cooler", 14, 190, 22, 22, k * OS, 40);
+      term(FD + 2, 140, k * OS);
     }
-    furn("ac", 30, 40, 50, 40, topZ, 30); furn("ac", 130, 30, 40, 40, topZ, 30);
+    furn("ac", 30, 30, 50, 40, topZ, 30); furn("ac", 130, 30, 40, 40, topZ, 30); term(FD + 2, 140, topZ);
     for (let k = 0; k < n; k++) { const c = P(w / 2, h / 2, 0); bulb(c.x, c.y, k * OS + OS - 16); } // strip lights, one per floor
     // waypoints: in the door, then flight by flight
     const sid = nav.structs.length;
@@ -244,7 +253,7 @@ export function finishTown(big, { walls, W, H, lake }) {
     edge(out, din);
     let prevTop = din;
     for (let k = 0; k < n; k++) {
-      const up = k % 2 === 0, cy = (up ? laneA : laneB) + 22;
+      const up = k % 2 === 0, cy = (up ? laneA : laneB) + LW / 2;
       const bot = node(P(up ? X0 - 16 : X0 + SN * SD + 18, cy, k * OS), sid + ":" + k), top = node(P(up ? X0 + SN * SD + 18 : X0 - 16, cy, (k + 1) * OS), sid + ":" + (k + 1));
       edge(prevTop, bot); edge(bot, top); prevTop = top;
     }
