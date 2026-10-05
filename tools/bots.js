@@ -15,7 +15,7 @@ for (let i = 0; i < count; i++) {
     if (m.g.ph === "over" && !seen.over) { seen.over = m.stats; seen.ending = m.ending; }
     const mp = m.p.find((q) => q.id === m.me); if (mp) seen.lv = Math.max(seen.lv, mp.lv);
     const mine = m.p.find((q) => q.id === m.me);
-    if (m.g.ph === "lobby" || (m.g.ph === "over" && process.env.AGAIN)) { const want = process.env.ROYALE ? "royale" : process.env.ENDLESS ? "endless" : "story"; if (m.g.mode !== want) ws.send(JSON.stringify({ t: "mode", m: want })); else if (mine && !mine.rd) ws.send(JSON.stringify({ t: "ready", v: true })); }
+    if (m.g.ph === "lobby" || (m.g.ph === "over" && process.env.AGAIN)) { const want = process.env.ROYALE ? "royale" : process.env.ENDLESS ? "endless" : process.env.ADVENTURE ? "adventure" : "story"; if (m.g.mode !== want) ws.send(JSON.stringify({ t: "mode", m: want })); else if (mine && !mine.rd) ws.send(JSON.stringify({ t: "ready", v: true })); }
     if (m.g.intro && Math.random() < 0.02) ws.send(JSON.stringify({ t: "skip" }));
     if (m.g.intro) seen.intro = true;
     if (m.g.cd >= 0) seen.cd = true;
@@ -68,6 +68,7 @@ for (let i = 0; i < count; i++) {
     for (const e of m.e) if (e.k === "shame") seen.shame = (seen.shame || 0) + 1;
     for (const e of m.pe) if (e.k === "wheel") seen.spins = (seen.spins || 0) + 1;
     for (const e of m.pe) if (e.k === "dlg" && !e.close) { seen.dlg = (seen.dlg || 0) + 1; setTimeout(() => ws.send(JSON.stringify({ t: "dlg", i: (Math.random() * e.opts.length) | 0 })), 100); }
+    if (m.g.adv) seen.adv = { towns: m.g.adv.t.length, found: m.g.adv.t.filter((t) => t[3]).length, jobs: m.g.adv.q.map((q) => q[2] + ": " + q[3]), renown: m.g.adv.ren[0] };
     seen.clues = m.g.clues.length; seen.alive = m.g.alive; seen.zone = m.g.zone && m.g.zone[2];
   };
   ws.onerror = () => seen.errors++;
@@ -107,4 +108,4 @@ for (let i = 0; i < count; i++) {
     if (S.story && !seen.stories.includes(S.story.title + ": " + S.story.pick)) seen.stories.push(S.story.title + ": " + S.story.pick);
   }, 50);
 }
-setInterval(() => console.log(JSON.stringify({ phases: [...seen.phases], maxZ: seen.maxZ, hh: seen.hh, errors: seen.errors, lv: seen.lv, dlg: seen.dlg, clues: seen.clues, alive: seen.alive, zone: seen.zone, casino: seen.casino, spins: seen.spins, games: seen.games, cos: seen.cos, lastMsg: seen.lastMsg, maxZ3: seen.maxZ3, sym: seen.sym, mess: seen.mess, unlucky: seen.unlucky, intro: seen.intro, cd: seen.cd, veh: seen.veh, builds: seen.builds, legend: seen.legend, reckoned: seen.reckoned, deeds: seen.deeds, stories: seen.stories, ending: seen.ending, zt: seen.zt && Object.keys(seen.zt).join(""), fires: seen.fires, projs: seen.projs, fog: seen.fog, night: seen.night, hoe: seen.hoe, gold: seen.gold, shame: seen.shame, hacks: seen.hacks, hacked: seen.hacked, alarms: seen.alarms, collapse: seen.collapse, dis: seen.dis && Object.keys(seen.dis).join(","), fixTry: seen.fixTry, fixed: seen.fixed, dinoBanner: seen.dinoBanner, dinoDay: seen.dinoDay, votes: seen.voteTitles, elec: seen.elecSeen, lobbyGold: seen.lobbyGold, goals: seen.goals, zaps: seen.zaps, jams: seen.jams, eff: seen.eff, cleans: seen.cleans, stress: seen.stress, ball: seen.maxWalls, over: seen.over && seen.over.map((r) => [r.name, r.rating, r.kills, r.hs, r.acc, r.deaths]) })), 5000);
+setInterval(() => console.log(JSON.stringify({ phases: [...seen.phases], maxZ: seen.maxZ, hh: seen.hh, errors: seen.errors, lv: seen.lv, dlg: seen.dlg, clues: seen.clues, alive: seen.alive, zone: seen.zone, casino: seen.casino, spins: seen.spins, games: seen.games, cos: seen.cos, lastMsg: seen.lastMsg, maxZ3: seen.maxZ3, sym: seen.sym, mess: seen.mess, unlucky: seen.unlucky, intro: seen.intro, cd: seen.cd, veh: seen.veh, builds: seen.builds, legend: seen.legend, reckoned: seen.reckoned, deeds: seen.deeds, stories: seen.stories, ending: seen.ending, zt: seen.zt && Object.keys(seen.zt).join(""), fires: seen.fires, projs: seen.projs, fog: seen.fog, night: seen.night, hoe: seen.hoe, gold: seen.gold, shame: seen.shame, hacks: seen.hacks, hacked: seen.hacked, alarms: seen.alarms, collapse: seen.collapse, dis: seen.dis && Object.keys(seen.dis).join(","), fixTry: seen.fixTry, fixed: seen.fixed, dinoBanner: seen.dinoBanner, dinoDay: seen.dinoDay, votes: seen.voteTitles, elec: seen.elecSeen, lobbyGold: seen.lobbyGold, goals: seen.goals, zaps: seen.zaps, jams: seen.jams, eff: seen.eff, cleans: seen.cleans, stress: seen.stress, ball: seen.maxWalls, adv: seen.adv, over: seen.over && seen.over.map((r) => [r.name, r.rating, r.kills, r.hs, r.acc, r.deaths]) })), 5000);
