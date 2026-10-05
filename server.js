@@ -20,6 +20,7 @@ import { CANDIDATES, ELECT_EVERY, ballot } from "./politics.js";
 import { CS, makeChunk, BIOMES } from "./world.js";
 import { DUST, inDust, siteXY, routes as dustRoutes, tSpawn, ctSpawn } from "./dust2.js";
 import { CD, SH, placeBig, finishTown, regionOf, segHitsRect } from "./town.js";
+import { makeTowns, rollQuest, TOWN_HALF, RENOWN_GOAL, LEGEND, legendText, cap } from "./adventure.js";
 import { CARDS, LOCS, STARTER, OPPONENTS, DECK_SIZE, newMatch, stage as cgStage, resolveTurn as cgResolve, aiPlays, view as cgView, deckFor, packCard } from "./cards.js";
 
 const MV = new Function(moveJs + "\nreturn MV;")(); // the same movement code the browser predicts with
@@ -37,7 +38,7 @@ const FOG_NIGHT = process.env.SLOP_FOGNIGHT ? 1 : 0.3; // chance a night (from n
 const DINO_FORCE = !!process.env.SLOP_DINO; // every day is Dinosaur Day (for testing)
 // Dinosaurs only come on DINOSAUR DAY: day 4 of the story, and in endless day 4 and every 7th day after.
 // That day (and its night) nothing but dinosaurs crawls out of the well, and fewer of them than a normal night.
-function isDinoDay(day) { if (game.mode === "royale") return false; if (DINO_FORCE) return day >= 2; return game.mode === "story" ? day === 4 : day >= 4 && (day - 4) % 7 === 0; }
+function isDinoDay(day) { if (game.mode === "royale" || game.mode === "adventure") return false; if (DINO_FORCE) return day >= 2; return game.mode === "story" ? day === 4 : day >= 4 && (day - 4) % 7 === 0; }
 const DISASTER = process.env.SLOP_DISASTER || ""; // testing only: force a disaster every phase
 const DISASTER_CHANCE = 0.18;
 const DROP_LEN = FAST ? 4 : 12; // seconds the balloon takes to cross the valley
@@ -56,7 +57,7 @@ const UAV_STREAK = 10, UAV_LEN = 30; // kills without dying, and how long the UA
 const HEARTH_HEAL = 3, HEARTH_HEAL_R = 190; // hp per second, and how close you need to be
 const ANTIDOTE_IMMUNE = 90; // seconds an antidote keeps you from being reinfected
 const FORCE_SYM = process.env.SLOP_SYM || ""; // testing only
-const INTRO_LEN = { story: FAST ? 3 : 25, royale: FAST ? 2 : 10, endless: FAST ? 3 : 25 };
+const INTRO_LEN = { story: FAST ? 3 : 25, royale: FAST ? 2 : 10, endless: FAST ? 3 : 25, adventure: FAST ? 2 : 10 };
 const COUNTDOWN = FAST ? 1 : 4;
 
 // ---------------------------------------------------------------- helpers
@@ -378,7 +379,7 @@ function npcTick(t, dt) {
     else { n.x += dx / d * sp; n.y += dy / d * sp; }
   }
 }
-function npcList() { return game.mode !== "story" ? [] : NPC_POS.map((n) => ({ ...n, name: NPCS[n.id].name, role: NPCS[n.id].role, color: NPCS[n.id].color, hat: NPCS[n.id].hat, guest: NPCS[n.id].guest ? 1 : 0, quips: NPCS[n.id].quips || null, ride: NPCS[n.id].ride || null })); }
+function npcList() { if (game.mode === "adventure") return advFolk(); return game.mode !== "story" ? [] : NPC_POS.map((n) => ({ ...n, name: NPCS[n.id].name, role: NPCS[n.id].role, color: NPCS[n.id].color, hat: NPCS[n.id].hat, guest: NPCS[n.id].guest ? 1 : 0, quips: NPCS[n.id].quips || null, ride: NPCS[n.id].ride || null })); }
 const WELL = { x: 1775, y: 1145 };
 function mapMsg() { return { t: "map", map: { W, H, ver: mapVer, walls: WALLS.filter((w) => w.kind !== "built" && !w.ck), hearth: HEARTH, well: WELL, pitch: PITCH, plots: PLOTS.map((p) => ({ x: p.x, y: p.y })), seed: MAP_SEED, valley: VALLEY, npcs: npcList(), keepers: game.mode === "royale" ? [] : KEEPERS } }; }
 
@@ -1001,6 +1002,7 @@ function respawnHeir(p) {
   p.champion = game.flags.champion === p.id;
   resetLoadout(p, false);
   p.food = Math.max(p.food, 70); p.water = Math.max(p.water, 70); p.rad = 0; p.drunk = 0; p.invDirty = true; // the heir keeps the bag, the gear and the shares
+  if (game.mode === "adventure") { const t = advTowns()[p.advTown || 0] || advTowns()[0]; if (t) { p.x = t.cx + rand(-60, 60); p.y = t.cy + rand(30, 90); } } // the heir lands in the last town you were in
   toast(p, `${old} is dead. Long live ${fullName(p)}! (Inheritance tax: ${tax}g) Steer your hellpod with WASD.`, "#ffd34d");
   feed(`${fullName(p)} inherits the farm`, "#c0a0ff");
   hellpod(p);
@@ -1378,6 +1380,7 @@ function interact(p) {
   { const c = nearTerm(p); if (c) return startTermHack(p, c); } // office terminals are upstairs
   if (p.z > 40) return toast(p, "You'll have to come down first.", "#bbb");
   { const c = caches.find((q) => dist2(q, p) < 62 * 62); if (c) return startHack(p, c); }
+  if (game.mode === "adventure" && advInteract(p)) return; // notice boards, signposts, the folk, signs of the beast
   if (game.disaster && game.disaster.st && dist2(game.disaster.st, p) < 85 * 85) return startFix(p);
   { const b = bunkerWall(); if (b && rectHitsCircle(b, p, 46) && game.mode !== "royale") return enterBunker(p); }
   let best = null, bd = 60 * 60;
@@ -1476,7 +1479,7 @@ function buy(p, item) {
   if (game.mode === "royale") return toast(p, "No shops in the Royale. Loot it or lose it.", "#f88");
   if (p.dead) return;
   const it = own(SHOP, item); if (!it) return;
-  const buyZone = it.shop === "armoury" && inDust(p) && game.mode !== "royale"; // Dust II's buy menu: Haddock's stock, anywhere on the map
+  const buyZone = (it.shop === "armoury" && inDust(p) && game.mode !== "royale") || (game.mode === "adventure" && advNearTrader(p, it.shop)); // Dust II's buy menu, and Adventure's merchants and smiths
   if (!nearShop(p, it.shop) && !buyZone) return toast(p, `You'll have to go to ${SHOPS[it.shop].name} for that.`, "#f88");
   if (!shopIsOpen(it.shop) && !buyZone) return toast(p, SHOPS[it.shop].shut || "Shut.", "#f88");
   if (item.startsWith("dome")) return fundDome(p, it.cost);
@@ -1589,7 +1592,7 @@ const MATCHUP = { // [weak to, resists]
   boomer: ["fire", "storm"], screamer: ["force", "storm"], elite: ["fire", "frost"], raptor: ["frost", "fire"], rex: ["storm", "fire"],
 };
 const BOSS_MATCH = { leshen: ["fire", "frost"], drowned: ["storm", "fire"], golem: ["frost", "force"] };
-function matchOf(z) { return z.type === "boss" ? BOSS_MATCH[game.bossKind] || [] : MATCHUP[z.type] || []; }
+function matchOf(z) { if (z.weak) return [z.weak, ""]; return z.type === "boss" ? BOSS_MATCH[game.bossKind] || [] : MATCHUP[z.type] || []; }
 function elemsFor(p) { return ELEM_ORDER.filter((e) => p.lvl >= ELEMENTS[e].lvl || p.gen > 1 && ELEMENTS[e].lvl <= 2); }
 function cycleElement(p) {
   const list = elemsFor(p);
@@ -1862,7 +1865,7 @@ const storyApi = {
 // The town votes once a day. The ballot opens at dawn, stays open all day (change your mind as often as you like)
 // and is counted at dusk. Story days have their story question; other days get an ordinary town meeting.
 function openVote(day) {
-  if (!players.size || game.mode === "royale") return;
+  if (!players.size || game.mode === "royale" || game.mode === "adventure") return;
   const ev = (game.mode === "story" && storyEvent(day, storyApi)) || townMeeting(day, storyApi);
   if (!ev) return;
   game.vote = { day, ev, votes: new Map(), ends: game.ends };
@@ -1984,6 +1987,7 @@ function mainQuest() {
 }
 function sendDlg(p) {
   if (!p.dlg) { p.pe.push({ k: "dlg", close: 1 }); return; }
+  if (p.dlg.adv) return advSend(p);
   const npc = p.dlg.npc, N = NPCS[npc], node = p.dlg.node === "~snap" ? snapNode(p, npc) : p.dlg.node.startsWith("~acc") ? accuseNode(p, npc, p.dlg.node) : p.dlg.node[0] === "~" ? romanceNode(p, npc, p.dlg.node) : N.nodes[p.dlg.node], c = dlgCtx(p);
   p.dlgOpts = node.opts.filter((o) => !o.if || o.if(c));
   if (p.dlg.node === "start" && canAccuse(npc)) p.dlgOpts.splice(Math.max(0, p.dlgOpts.length - 1), 0, { label: `"I know it was you, ${SUSPECTS[npc].name}."`, to: "~accuse", do: () => { if (npc !== game.flags.culprit) wrongAccuse(p, npc); } });
@@ -2257,6 +2261,7 @@ const RADIO = [
   "📻 Nothing but the long tone. Haddock says that means tonight. Is the Dome up?",
 ];
 function radioNews() {
+  if (game.mode === "adventure") return;
   if (game.mode === "royale" || !game.dome || game.dome.struck) return;
   const d = game.dome, line = RADIO[Math.min(game.night, RADIO.length - 1)];
   setTimeout(() => {
@@ -2424,7 +2429,7 @@ function dividends() {
 
 // ---------------------------------------------------------------- elections
 function openElection() {
-  if (game.mode === "royale" || !players.size || game.elec) return;
+  if (game.mode === "royale" || game.mode === "adventure" || !players.size || game.elec) return; // Adventure has no mayor: the towns run themselves
   game.elec = { cands: ballot(game.mayor), votes: new Map(), ends: game.ends };
   events.push({ k: "feed", text: "It's election day too: the mayor's race is on today's ballot [N].", color: "#9fc0ff" });
 }
@@ -2473,6 +2478,7 @@ const guestApi = {
 };
 function pickDlg(p, i) {
   if (!p.dlg) return;
+  if (p.dlg.adv) return advPick(p, i);
   const o = p.dlgOpts && p.dlgOpts[i];
   if (!o) { p.dlg = null; sendDlg(p); return; }
   const c = dlgCtx(p), npc = p.dlg.npc;
@@ -2783,12 +2789,13 @@ function startGame() {
   PLOTS.length = BASE_PLOTS; // tilled plots belong to the last game
   BALL.x = BALL.y = 0;
   generateMap((Math.random() * 1e9) | 0);
-  vehicles = []; builds = []; game.zone = null; game.drop = null; game.countdown = 0; game.skip = new Set(); game.pendingVote = null;
+  vehicles = []; builds = []; game.zone = null; game.drop = null; game.countdown = 0; game.skip = new Set(); game.pendingVote = null; game.adv = null; ADV_KEEP = [];
   game.deeds = freshDeeds(); game.legend = null;
   if (game.mode === "story") placeNpcs(); else NPC_POS = [];
   projs = []; fires.clear(); scorched.clear(); game.disaster = null; game.dino = false; game.dinoDay = false; shrineReset(); game.dust = null;
   broadcastRaw(JSON.stringify(mapMsg()));
   if (game.mode === "royale") setupRoyale(); else setupStory();
+  if (game.mode === "adventure") { setupAdventure(); broadcastRaw(JSON.stringify(mapMsg())); } // the other towns, their boards and their folk
   for (const p of players.values()) { p.air = "wait"; p.ready = false; p.dlg = null; }
   game.phase = "intro"; game.introT0 = now(); game.introEnds = now() + INTRO_LEN[game.mode];
   game.cast = [...players.values()].map((p) => [fullName(p), CLASSES[p.cls].name, p.color]);
@@ -2802,11 +2809,12 @@ function beginPlay() {
     events.push({ k: "banner", text: `SLOP ROYALE: ${VALLEY.toUpperCase()}`, sub: "Jump with SPACE. Loot up. Build [C]. Steal a ride [E]. Last farmer standing wins." });
     return;
   }
-  game.ends = now() + DAY_LEN;
+  game.ends = now() + (game.mode === "adventure" ? ADV_DAY : DAY_LEN);
   const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
   // the closing fog ring is Royale's; in Story and Endless the night itself is the pressure
   startDrop(hc);
   events.push({ k: "feed", text: "Somebody has built all of Dust II out in the desert to the north-east. Follow the 💣 on your compass.", color: "#e0c080" });
+  if (game.mode === "adventure") { events.push({ k: "banner", text: `ADVENTURE: ${VALLEY.toUpperCase()}`, sub: "No Hearth to hold tonight. Take work from the notice board by the Hearth [E], find the other towns, get paid." }); feed(`There are ${advTowns().length - 1} towns out past the hedge, each with its own work. Your journal [J] has the map.`, "#ffe9a0"); return; }
   if (game.mode === "endless") { events.push({ k: "banner", text: `ENDLESS: ${VALLEY.toUpperCase()}`, sub: "No story. No end. Keep the Hearth burning as long as you can. A boss comes every fifth night." }); openVote(1); openElection(); return; }
   events.push({ k: "banner", text: `WELCOME TO ${VALLEY.toUpperCase()}`, sub: "SPACE to jump. Talk to the townsfolk [E]. Build defences [C]. Night is coming." });
   if (game.cameoDay === 1) cameoArrive();
@@ -2862,7 +2870,7 @@ let caches = [];
 const HEX = ["1C", "55", "BD", "E9", "7A", "FF"];
 function spawnCaches(n) {
   for (let i = 0; i < n; i++) { const sp = freeSpot(40); caches.push({ id: nextId++, x: sp.x, y: sp.y }); }
-  caches = caches.slice(-6);
+  caches = [...caches.filter((c) => c.qid), ...caches.filter((c) => !c.qid).slice(-6)]; // Adventure's relays stay put
 }
 function startHack(p, c) {
   const t = now();
@@ -2916,6 +2924,7 @@ function finishHack(p, m) {
   p.gren = Math.min(9, p.gren + 1);
   if (solved >= 2) crates.push({ id: nextId++, x: c.x, y: c.y, w: newWeapon(lootType(), solved === 3 ? (Math.random() < 0.3 ? 3 : 2) : 1) });
   if (solved === 3) { p.molo = Math.min(9, p.molo + 2); feed(`${fullName(p)} cracked a Slop-Tech cache wide open.`, "#7dffb0"); }
+  if (c.qid) advHacked(p, c, solved);
   toast(p, `ACCESS GRANTED (${solved}/3 daemons). ${solved >= 2 ? "Something good dropped out." : ""}`, "#7dffb0");
 }
 // ---------------------------------------------------------------- office vaults: hack enough of a block's terminals and its vault opens
@@ -2976,7 +2985,7 @@ function ensureChunks() {
       const cx = pcx + i, cy = pcy + j, key = cx + "," + cy;
       if (CHUNKS.has(key)) continue;
       if (cx * CS >= 0 && cy * CS >= 0 && (cx + 1) * CS <= W && (cy + 1) * CS <= H) { CHUNKS.set(key, { kind: "town" }); continue; }
-      const c = makeChunk(MAP_SEED, cx, cy, TOWN);
+      const c = makeChunk(MAP_SEED, cx, cy, TOWN, ADV_KEEP);
       CHUNKS.set(key, { kind: c.kind }); bio.push([cx, cy, c.kind]); // the client paints the ground to match
       for (const w of c.walls) w.id = wallId++;
       WALLS.push(...c.walls); fresh.push(...c.walls);
@@ -2988,8 +2997,8 @@ function ensureChunks() {
       }
     }
     // tell people where they've wandered to
-    const own = CHUNKS.get(pcx + "," + pcy), where = inTownXY(p.x, p.y) ? "town" : own && own.kind;
-    if (where && where !== p.where) { if (p.where && where !== "town" && BIOMES[where]) toast(p, `You wander into ${BIOMES[where].name}.`, "#b8e070"); else if (p.where && where === "town") toast(p, `Back in ${VALLEY}.`, "#ffe9a0"); p.where = where; }
+    const own = CHUNKS.get(pcx + "," + pcy), atTown = game.mode === "adventure" ? advTownAt(p) : null, where = inTownXY(p.x, p.y) ? "town" : atTown ? "adv" + atTown.i : own && own.kind;
+    if (where && where !== p.where) { if (p.where && atTown && where !== "town") toast(p, `Entering ${atTown.name}.`, "#ffe9a0"); else if (p.where && where !== "town" && BIOMES[where]) toast(p, `You wander into ${BIOMES[where].name}.`, "#b8e070"); else if (p.where && where === "town") toast(p, `Back in ${VALLEY}.`, "#ffe9a0"); p.where = where; }
   }
   if (fresh.length || bio.length) broadcastRaw(JSON.stringify({ t: "ck", seed: MAP_SEED, walls: fresh, bio }));
 }
@@ -2998,17 +3007,17 @@ function wildTick(t) {
   if (!OPEN() || !(game.phase === "day" || game.phase === "night")) return;
   const live = [...players.values()].filter((p) => !p.dead && !p.air);
   for (const p of live) {
-    if (inTownXY(p.x, p.y, 250)) continue;
+    if (inTownXY(p.x, p.y, 250) || ADV_KEEP.some((b) => p.x > b.x - 250 && p.x < b.x + b.w + 250 && p.y > b.y - 250 && p.y < b.y + b.h + 250)) continue; // towns are safe-ish
     const far = Math.hypot(p.x - W / 2, p.y - H / 2), cap = Math.min(12, 2 + Math.floor(far / 1800)) + (game.phase === "night" ? 3 : 0);
     if (zombies.filter((z) => dist2(z, p) < 1400 * 1400).length >= cap || Math.random() < 0.35) continue;
     const a = rand(0, Math.PI * 2), d = rand(750, 1000), at = { x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d };
-    if (inTownXY(at.x, at.y, 100) || insideWall(at.x, at.y, 10)) continue;
+    if (inTownXY(at.x, at.y, 100) || insideWall(at.x, at.y, 10) || ADV_KEEP.some((b) => at.x > b.x - 100 && at.x < b.x + b.w + 100 && at.y > b.y - 100 && at.y < b.y + b.h + 100)) continue;
     const z = spawnZombie(nightType(Math.max(game.night, 1 + Math.floor(far / 2500)), false), at);
     if (!z) continue;
     z.wild = 1; z.aggro = p.id; z.aggroUntil = t + 30; const k = 1 + far / 9000; z.hp *= k; z.maxHp *= k;
   }
   // the wild doesn't keep the dead nobody is near
-  zombies = zombies.filter((z) => !z.wild || z.type === "boss" || live.some((p) => dist2(p, z) < 3200 * 3200));
+  zombies = zombies.filter((z) => !z.wild || z.keep || z.type === "boss" || live.some((p) => dist2(p, z) < 3200 * 3200));
 }
 // ---------------------------------------------------------------- Dust II: zombie terrorists, a bomb, two sites
 // Press E at the radio in CT spawn. Ten seconds to buy (B opens Haddock's stock anywhere on the map), then the terrorists
@@ -3098,6 +3107,314 @@ function dustView(t) {
 }
 
 // ---------------------------------------------------------------- natural disasters
+// ---------------------------------------------------------------- Adventure: towns past the hedge, notice boards, contracts and travel (adventure.js)
+// No Hearth to hold and no waves. Every town has a notice board of work (Witcher contracts, Cyberpunk gigs and breaches,
+// deliveries between towns), a signpost for fast travel once you've been there, a merchant, a smith and an inn.
+// Work is shared by the party: anyone can take it, everyone gets paid. Enough of it and the Legendary Contract goes up.
+const ADV_BOARD = 3; // jobs on each board
+const ADV_ACTIVE = 4; // jobs the party can have on at once
+const ADV_TRAVEL = 25; // what the coach costs between signposts
+const ADV_DAY = FAST ? 6 : 240, ADV_NIGHT = FAST ? 8 : 150; // longer days: there's walking to do
+let ADV_KEEP = []; // the towns' patches, which the wild leaves alone
+const isAdv = () => game.mode === "adventure";
+const bossName = (k) => BOSSES[k].name.toLowerCase().replace(/(^|\s)\w/g, (c) => c.toUpperCase()); // "The Drowned Mayor", not shouting it
+const advTowns = () => (game.adv ? game.adv.towns : []);
+function setupAdventure() {
+  game.hearthMax = game.hearth = 1e9; game.dome = null; game.cameoDay = 0; // nothing to defend
+  const home = { i: 0, name: VALLEY, cx: W / 2, cy: H / 2, tier: 1, home: true, folk: [], box: TOWN,
+    board: { x: 1530, y: 1176, w: 90, h: 14, kind: "board", town: 0, z0: 0, z1: 70 }, sign: { x: 1650, y: 1176, w: 14, h: 14, kind: "sign", town: 0, z0: 0, z1: 96 } };
+  const towns = [home, ...makeTowns(MAP_SEED, { x: W / 2, y: H / 2 }, [{ x: -600, y: -600, w: W + 1200, h: H + 1200 }, DUST], 5, 1)];
+  const add = [home.board, home.sign];
+  for (const t of towns.slice(1)) add.push(...t.walls);
+  for (const w of add) { w.id = wallId++; const hp = WALL_HP[w.kind]; if (hp) w.hp = w.maxHp = hp; }
+  for (const w of add) if (w.house) { w.hid = w.house.id; delete w.house; }
+  WALLS.push(...add); mapVer++;
+  ADV_KEEP = towns.slice(1).map((t) => t.box);
+  let seq = 1;
+  game.adv = { towns, quests: [], seq: () => seq++, disc: new Set([0]), renown: 0, legend: null, day: 1 };
+  for (const t of towns) fillBoard(t);
+  for (const p of players.values()) p.advTown = 0;
+}
+// open ground near a town, away from the other towns, the valley and Dust II
+function advSpot(t, minD, maxD) {
+  for (let i = 0; i < 80; i++) {
+    const a = rand(0, Math.PI * 2), d = rand(minD, maxD), x = Math.round(t.cx + Math.cos(a) * d), y = Math.round(t.cy + Math.sin(a) * d);
+    const r = { x: x - 150, y: y - 150, w: 300, h: 300 };
+    const bad = (b, pad) => r.x < b.x + b.w + pad && r.x + r.w + pad > b.x && r.y < b.y + b.h + pad && r.y + r.h + pad > b.y;
+    if (bad(TOWN, 300) || bad(DUST, 200) || ADV_KEEP.some((b) => bad(b, 300))) continue;
+    return { x, y };
+  }
+  return { x: Math.round(t.cx + maxD), y: Math.round(t.cy) };
+}
+function fillBoard(t) {
+  const A = game.adv, on = A.quests.filter((q) => q.state === "board" && q.town === t.i).length;
+  for (let i = on; i < ADV_BOARD; i++) {
+    const r = Math.random(), others = advTowns().filter((o) => o !== t);
+    const kind = r < 0.36 ? "contract" : r < 0.64 ? "gig" : r < 0.84 ? "delivery" : "hack";
+    const q = rollQuest(Math.random, t, kind, (a, b) => advSpot(t, a, b), pick(others), A.seq);
+    q.state = "board"; A.quests.push(q);
+  }
+}
+const advTownAt = (e, pad = 0) => advTowns().find((t) => !t.home && Math.abs(e.x - t.cx) < TOWN_HALF + pad && Math.abs(e.y - t.cy) < TOWN_HALF + pad) || (inTownXY(e.x, e.y, pad) ? advTowns()[0] : null);
+const advActive = () => (game.adv ? game.adv.quests.filter((q) => q.state === "active") : []);
+const enemiesNear = (p, r) => zombies.some((z) => !z.burn && dist2(z, p) < r * r);
+// the folk: the map shows them like the valley's townsfolk, but they stand in their town square
+function advFolk() { return advTowns().flatMap((t) => t.folk.map((f) => ({ id: f.id, x: f.x, y: f.y, a: f.a, name: f.name, role: f.role, color: f.color, hat: f.hat, guest: 0 }))); }
+function advFolkNear(p, r = 70) { for (const t of advTowns()) for (const f of t.folk) if (dist2(f, p) < r * r) return f; return null; }
+function advNearTrader(p, sid) { const job = sid === "general" ? "merchant" : sid === "armoury" ? "smith" : ""; return !!job && advTowns().some((t) => t.folk.some((f) => f.job === job && dist2(f, p) < 160 * 160)); }
+function advPay(q, why) {
+  for (const p of players.values()) { addGold(p, q.gold, why); addXp(p, q.xp); }
+  game.adv.renown++;
+  shock(game.market, "*", 0.01);
+}
+function advComplete(q, by, msg) {
+  q.state = "done";
+  advPay(q, q.kind === "contract" || q.legend ? "Contract reward" : q.kind === "delivery" ? "Delivery" : "Fixer payment");
+  if (q.item) { const p = by && players.get(by); const at = p ? { x: p.x + rand(-30, 30), y: p.y + 40 } : { x: q.at.x, y: q.at.y }; collide(at, 20); crates.push({ id: nextId++, ...at, w: newWeapon(lootType(), Math.min(4, lootRarity(q.tier) + (q.tier >= 3 ? 1 : 0))) }); }
+  events.push({ k: "banner", text: q.kind === "contract" ? "CONTRACT COMPLETE" : q.kind === "delivery" ? "DELIVERED" : q.kind === "hack" ? "BREACH COMPLETE" : "GIG COMPLETE", sub: `${q.title}. ${q.gold}g and ${q.xp} XP each. Renown ${game.adv.renown}/${RENOWN_GOAL}.` });
+  if (msg) feed(msg, "#7dffb0");
+  if (game.adv.renown >= RENOWN_GOAL && !game.adv.legend) advLegend();
+}
+// a quest's monsters: they don't wander off, don't burn at dawn, and don't get tidied away when nobody's looking
+function advSpawn(q, type, at, hpMul = 1) {
+  const z = spawnZombie(type, at);
+  if (!z) return null;
+  z.keep = 1; z.qid = q.id; z.arson = false;
+  const k = (1 + 0.35 * (q.tier - 1)) * hpMul; z.hp *= k; z.maxHp *= k;
+  return z;
+}
+function advLegend() {
+  const A = game.adv, far = advTowns().slice(1).sort((a, b) => b.tier - a.tier)[0] || advTowns()[0];
+  const kind = pick(Object.keys(BOSSES)), bn = bossName(kind);
+  const q = { id: A.seq(), kind: "contract", legend: true, town: far.i, tier: 6, title: `${LEGEND.title}: ${bn}`, desc: legendText(bn, far.name), at: advSpot(far, 1400, 2200), r: 500, gold: LEGEND.gold, xp: LEGEND.xp, item: true, step: "hunt", found: 3, boss: kind, state: "active" };
+  A.legend = q; A.quests.push(q);
+  events.push({ k: "banner", text: "THE LEGENDARY CONTRACT", sub: `${bn} has come out of hiding near ${far.name}. Kill it to finish the adventure (💀 on your compass).` });
+  feed(`Every notice board in the valley has the same poster: ${bn}, near ${far.name}.`, "#ffd34d");
+}
+// what the journal and the compass show for a quest: [what to do, where]
+function advStep(q) {
+  const T = advTowns(), home = T[q.town] || T[0], board = { x: home.board.x + 45, y: home.board.y + 7 };
+  if (q.kind === "contract") {
+    if (q.step === "search") return [`Search the marked area for signs of ${q.beast} (${q.found}/3 found, 🔍 when you're close)`, q.at];
+    if (q.step === "hunt") return q.night && game.phase !== "night" && !q.zid ? [`You know enough. ${cap(q.beast)} only comes out at night: be at its lair after dusk`, q.at] : [`Hunt ${q.legend ? bossName(q.boss) : q.beast} at its lair`, q.at];
+    return [`Collect your pay at the ${home.name} notice board`, board];
+  }
+  if (q.kind === "gig") return [q.step === "fight" ? `Clear ${q.place}: ${q.left.filter((id) => zombies.some((z) => z.id === id)).length} left` : `Go to ${q.place} and clear it out`, q.at];
+  if (q.kind === "hack") return [`Breach the ${q.what} (press E at it)`, q.at];
+  const c = q.carrier && players.get(q.carrier), dest = T[q.to];
+  if (!c) return [`The parcel was dropped. Pick it up (📦) and take it to ${dest.name}`, q.drop || q.at];
+  return [`${fullName(c)} is carrying ${q.goods} to the ${dest.name} notice board${q.day === game.night + 1 && game.phase === "day" ? " (before nightfall for a bonus)" : ""}`, { x: dest.board.x + 45, y: dest.board.y + 7 }];
+}
+function advView() {
+  const A = game.adv; if (!A) return null;
+  const r = Math.round, pts = [];
+  for (const q of advActive()) {
+    if (q.kind === "contract" && q.clues) for (const c of q.clues) if (!c.found) pts.push([r(c.x), r(c.y), 0]);
+    if (q.kind === "delivery" && q.drop && !q.carrier) pts.push([r(q.drop.x), r(q.drop.y), 1]);
+  }
+  return {
+    t: A.towns.map((t) => [t.name, r(t.cx), r(t.cy), A.disc.has(t.i) ? 1 : 0, t.tier, t.home ? 1 : 0]),
+    q: advActive().map((q) => { const [txt, at] = advStep(q); return [q.id, q.kind, q.title, txt, r(at.x), r(at.y), q.step === "search" || q.step === "go" ? q.r : 0, A.towns[q.town].name, q.gold, q.legend ? 1 : 0, q.night ? 1 : 0, q.desc]; }),
+    ren: [A.renown, RENOWN_GOAL], pts,
+    qb: zombies.filter((z) => z.qname).map((z) => [z.id, z.qname]),
+  };
+}
+// quest spots are picked before the wild there is built, so once it is, shuffle anything that landed in a rock or a tree onto open ground
+function advClear(pt) {
+  const blocked = (x, y) => nearXY(x, y).some((w) => (w.z1 || 0) > 8 && (w.z0 || 0) < 60 && !MV.soft(w) && rectHitsCircle(w, { x, y }, 36));
+  for (let r = 0; r < 400; r += 30) for (let i = 0; i < (r ? 12 : 1); i++) {
+    const a = i / 12 * Math.PI * 2, x = Math.round(pt.x + Math.cos(a) * r), y = Math.round(pt.y + Math.sin(a) * r);
+    if (!blocked(x, y)) { pt.x = x; pt.y = y; return pt; }
+  }
+  return pt;
+}
+// ---- the loop
+function advTick(t) {
+  const A = game.adv; if (!A || !(game.phase === "day" || game.phase === "night")) return;
+  const live = [...players.values()].filter((p) => !p.dead && !p.air);
+  for (const p of live) { // finding towns
+    const tw = advTownAt(p);
+    if (tw) p.advTown = tw.i;
+    if (tw && !A.disc.has(tw.i)) {
+      A.disc.add(tw.i); addXp(p, 25);
+      events.push({ k: "banner", text: tw.name.toUpperCase(), sub: `New town discovered. Its signpost can take you to any town you've found, and its notice board has work.` });
+      feed(`${fullName(p)} found ${tw.name}.`, "#ffe9a0");
+    }
+  }
+  for (const q of advActive()) {
+    if (!q.cleared && live.some((p) => dist2(p, q.at) < 1100 * 1100)) { // the wild round here exists now
+      q.cleared = true;
+      for (const c of q.clues || []) advClear(c);
+      const cache = q.kind === "hack" && caches.find((c) => c.qid === q.id); if (cache) { advClear(cache); q.at = { x: cache.x, y: cache.y }; }
+    }
+    if (q.kind === "contract" && q.step === "hunt" && !q.zid) {
+      const close = live.some((p) => dist2(p, q.at) < 900 * 900);
+      if (close && (!q.night || game.phase === "night" || q.legend)) {
+        if (q.legend) {
+          game.bossKind = q.boss;
+          const b = spawnZombie("boss", q.at); if (!b) continue;
+          b.keep = 1; b.qid = q.id; b.x = q.at.x; b.y = q.at.y;
+          b.hp = b.maxHp = Math.round(ZTYPES.boss.hp * BOSSES[q.boss].hp * (0.6 + 0.4 * Math.max(1, players.size)));
+          game.bossId = b.id; q.zid = b.id;
+          events.push({ k: "banner", text: BOSSES[q.boss].name.toUpperCase(), sub: "The Legendary Contract. Kill it to finish the adventure." });
+        } else {
+          const big = ["runner", "flyer", "screamer", "boomer"].includes(q.base) ? 8 : q.base === "rex" ? 0.7 : 2.4;
+          const z = advSpawn(q, q.base, q.at, big * (0.6 + 0.4 * Math.max(1, players.size)));
+          if (!z) continue;
+          z.x = q.at.x; z.y = q.at.y; z.qname = cap(q.beast); z.weak = q.weak; z.armHp = z.maxHp * 0.3;
+          q.zid = z.id;
+          for (let i = 0; i < 1 + q.tier; i++) advSpawn(q, q.tier >= 3 ? "runner" : "walker", q.at);
+          events.push({ k: "roar", x: z.x, y: z.y });
+          feed(`${cap(q.beast)} is here.`, "#ff9060");
+        }
+      }
+    } else if (q.kind === "contract" && q.step === "hunt" && q.zid && !zombies.some((z) => z.id === q.zid)) {
+      if (q.legend) { game.bossId = 0; q.state = "done"; advPay(q, "The Legendary Contract"); endGame(true); return; }
+      q.step = "return";
+      events.push({ k: "banner", text: `${cap(q.beast).toUpperCase()} IS DEAD`, sub: `Take the news back to ${A.towns[q.town].name} and collect your pay at the notice board.` });
+    }
+    if (q.kind === "gig") {
+      if (q.step === "go" && live.some((p) => dist2(p, q.at) < 700 * 700)) {
+        q.step = "fight"; q.left = [];
+        const n = Math.round((5 + 2 * q.tier) * (0.7 + 0.3 * Math.max(1, players.size)));
+        for (let i = 0; i < n; i++) { const z = advSpawn(q, nightType(1 + q.tier, false), q.at); if (z) q.left.push(z.id); }
+        const lt = advSpawn(q, q.tier >= 4 ? "charger" : "tank", q.at, 1.4); if (lt) { lt.armHp = lt.maxHp * 0.3; lt.qname = "The Boss"; q.left.push(lt.id); }
+        feed(`${q.place}: there they are.`, "#ff9060");
+      } else if (q.step === "fight" && !q.left.some((id) => zombies.some((z) => z.id === id))) advComplete(q, 0, `Fixer: "${q.place} is clear. Money's sent. Nice work."`);
+    }
+    if (q.kind === "hack" && !q.guards && live.some((p) => dist2(p, q.at) < 650 * 650)) {
+      q.guards = true;
+      for (let i = 0; i < 2 + q.tier; i++) advSpawn(q, Math.random() < 0.4 ? "runner" : "walker", { x: q.at.x + rand(-200, 200), y: q.at.y + rand(-200, 200) });
+      if (q.tier >= 3) advSpawn(q, "screamer", q.at);
+    }
+    if (q.kind === "delivery") {
+      const c = q.carrier && players.get(q.carrier);
+      if (q.carrier && (!c || c.dead)) { q.drop = c ? { x: c.x, y: c.y } : q.drop || { x: A.towns[q.town].cx, y: A.towns[q.town].cy }; q.carrier = 0; feed(`The parcel for ${A.towns[q.to].name} was dropped. Somebody pick it up (📦).`, "#ffb070"); }
+      const dest = A.towns[q.to];
+      if (c && !c.dead && rectHitsCircle(dest.board, c, 200)) {
+        const early = q.day === game.night + 1 && game.phase === "day";
+        if (early) q.gold = Math.round(q.gold * 1.5);
+        advComplete(q, c.id, `${fullName(c)} delivered ${q.goods} to ${dest.name}${early ? " before nightfall (+50%)" : ""}.`);
+      }
+    }
+  }
+}
+// E near a sign of the beast, a dropped parcel, a board, a signpost or one of the folk
+function advInteract(p) {
+  const A = game.adv; if (!A) return false;
+  for (const q of advActive()) {
+    if (q.kind === "contract" && q.step === "search") for (const c of q.clues) if (!c.found && dist2(c, p) < 60 * 60) {
+      c.found = true; q.found++; addXp(p, 10);
+      events.push({ k: "advsign", n: q.found });
+      feed(`Sign ${q.found}/3: ${q.signs[q.found - 1]}`, "#e0c0ff");
+      if (q.found >= 3) { q.step = "hunt"; feed(q.night ? `That's enough to go on. ${cap(q.beast)} comes out after dark.` : `That's enough to go on. ${cap(q.beast)} is close.`, "#ffd34d"); }
+      return true;
+    }
+    if (q.kind === "delivery" && q.drop && !q.carrier && dist2(q.drop, p) < 60 * 60) { q.carrier = p.id; q.drop = null; toast(p, `You pick up ${q.goods}. Take it to ${A.towns[q.to].name}.`, "#ffd34d"); return true; }
+  }
+  for (const t of A.towns) {
+    if (rectHitsCircle(t.board, p, 60)) { p.dlg = { adv: "board", town: t.i, node: "start", at: { x: t.board.x + 45, y: t.board.y + 7 } }; sendDlg(p); return true; }
+    if (rectHitsCircle(t.sign, p, 60)) { p.dlg = { adv: "sign", town: t.i, node: "start", at: { x: t.sign.x + 7, y: t.sign.y + 7 } }; sendDlg(p); return true; }
+  }
+  const f = advFolkNear(p);
+  if (f) { p.talked.add(f.id); p.dlg = { adv: "folk", town: f.town, folk: f.id, node: "start", at: { x: f.x, y: f.y } }; sendDlg(p); return true; }
+  return false;
+}
+// the board, the signpost and the folk all talk through the ordinary dialogue box
+function advNode(p) {
+  const A = game.adv, d = p.dlg, t = A.towns[d.town], bye = { label: "Leave.", go: null };
+  if (d.adv === "board") {
+    const offers = A.quests.filter((q) => q.state === "board" && q.town === t.i);
+    const owed = A.quests.filter((q) => q.state === "active" && q.kind === "contract" && q.step === "return" && q.town === t.i);
+    if (d.node.startsWith("q")) {
+      const q = A.quests.find((x) => x.id === +d.node.slice(1));
+      if (!q || q.state !== "board") return { name: `${t.name} notice board`, role: "", text: "Somebody's already torn that one down.", opts: [{ label: "Back.", go: "start" }, bye] };
+      const lvl = q.tier, warn = p.lvl < lvl * 2 ? ` It looks hard for your level (${lvl * 2}+ suggested).` : "";
+      return { name: q.title, role: `Level ${lvl * 2}+ · ${q.gold}g · ${q.xp} XP each${q.item ? " · a weapon" : ""}`, text: q.desc + warn,
+        opts: [{ label: "Take the job.", do: () => advAccept(p, q), go: "start" }, { label: "Back.", go: "start" }, bye] };
+    }
+    const opts = [
+      ...owed.map((q) => ({ label: `Collect your pay: ${q.title} (${q.gold}g each)`, do: () => advComplete(q, p.id, `${fullName(p)} brought word to ${t.name}: ${q.beast} is dead.`), go: "start" })),
+      ...offers.map((q) => ({ label: `${q.title}  ·  Lv ${q.tier * 2}+  ·  ${q.gold}g`, go: "q" + q.id })),
+      bye];
+    const n = advActive().length;
+    return { name: `${t.name} notice board`, role: `Work on offer. The party has ${n}/${ADV_ACTIVE} jobs on. Renown ${A.renown}/${RENOWN_GOAL}.`,
+      text: offers.length ? "Notices, nailed on top of older notices. New ones go up every morning." : "Nothing new today. More goes up at dawn.", opts };
+  }
+  if (d.adv === "sign") {
+    const dests = A.towns.filter((o) => o !== t && A.disc.has(o.i));
+    const near = enemiesNear(p, 450);
+    return { name: `Signpost: ${t.name}`, role: `Fast travel to any town you've found · ${ADV_TRAVEL}g`,
+      text: near ? "You can't travel with the dead this close. Deal with them first." : dests.length ? "Where to? The coach leaves when you're on it." : "You haven't found any other towns yet. Go and look: they're on the map in your journal [J].",
+      opts: [...(near ? [] : dests.map((o) => ({ label: `${o.name}${o.home ? " (home)" : ""}  ·  ${Math.round(Math.hypot(o.cx - t.cx, o.cy - t.cy) / 10)}m`, do: () => advTravel(p, o), go: null }))), bye] };
+  }
+  const f = t.folk.find((x) => x.id === d.folk);
+  if (!f) return { name: "", role: "", text: "", opts: [bye] };
+  const rumour = () => {
+    const q = A.quests.find((x) => x.state === "board" && x.town !== t.i && x.tier >= t.tier) || A.quests.find((x) => x.state === "board" && x.town !== t.i);
+    if (A.legend && A.legend.state === "active") return `Everyone's talking about ${bossName(A.legend.boss)}. Out past ${A.towns[A.legend.town].name}, they say.`;
+    return q ? `Heard ${A.towns[q.town].name} is paying ${q.gold}g for "${q.title.replace(/^\w+: /, "")}". Their notice board, if you're interested.` : "Quiet, for once. Don't jinx it.";
+  };
+  if (d.node === "news") return { name: f.name, role: f.role, text: rumour(), opts: [{ label: "Back.", go: "start" }, bye] };
+  const opts = [];
+  if (f.job === "merchant") opts.push({ label: "Let's trade.", do: () => p.pe.push({ k: "shop", sid: "general", at: [Math.round(f.x), Math.round(f.y)] }), go: null });
+  if (f.job === "smith") opts.push({ label: "Let's trade.", do: () => p.pe.push({ k: "shop", sid: "armoury", at: [Math.round(f.x), Math.round(f.y)] }), go: null });
+  if (f.job === "keeper") opts.push({ label: "A hot meal and a bed (20g).", do: () => advRest(p), go: null });
+  opts.push({ label: "Any news?", go: "news" }, bye);
+  const hello = { merchant: "Tins, bandages, gifts for whoever you're courting. Coin first.", smith: "Guns, bullets, plate. I enhance too, if you're feeling lucky.", keeper: "Sit down before you fall down. You look like the road chewed you up." }[f.job];
+  return { name: f.name, role: f.role, text: hello, opts };
+}
+function advSend(p) {
+  const n = advNode(p);
+  p.dlgOpts = n.opts;
+  p.pe.push({ k: "dlg", npc: p.dlg.folk || "", name: n.name, role: n.role, text: n.text, opts: n.opts.map((o) => o.label) });
+}
+function advPick(p, i) {
+  const o = p.dlgOpts && p.dlgOpts[i], d = p.dlg;
+  if (o && o.do) o.do();
+  p.dlg = o && o.go && p.dlg === d ? { ...d, node: o.go } : null;
+  sendDlg(p);
+}
+function advAccept(p, q) {
+  if (advActive().filter((x) => !x.legend).length >= ADV_ACTIVE) return toast(p, `The party already has ${ADV_ACTIVE} jobs on. Finish one first [J].`, "#f88");
+  q.state = "active"; q.by = p.id; q.day = game.night + 1;
+  if (q.kind === "contract") q.clues = Array.from({ length: 3 }, () => { const a = rand(0, Math.PI * 2), d = rand(60, q.r - 40); return { x: Math.round(q.at.x + Math.cos(a) * d), y: Math.round(q.at.y + Math.sin(a) * d), found: false }; });
+  if (q.kind === "hack") caches.push({ id: nextId++, x: q.at.x, y: q.at.y, qid: q.id });
+  if (q.kind === "delivery") { q.carrier = p.id; toast(p, `You're carrying ${q.goods}. If you die, it drops where you fall.`, "#ffd34d"); }
+  feed(`${fullName(p)} took a job: ${q.title}. It's in everyone's journal [J].`, "#e0c0ff");
+  fillBoard(game.adv.towns[q.town]);
+}
+function advTravel(p, o) {
+  if (enemiesNear(p, 450)) return toast(p, "Not with the dead this close.", "#f88");
+  const cost = price(p, ADV_TRAVEL);
+  if (p.gold < cost) return toast(p, `The coach is ${cost}g. You have ${p.gold}g.`, "#f88");
+  p.gold -= cost;
+  const at = { x: o.sign.x + 7 + rand(-30, 30), y: o.sign.y + 70 };
+  p.x = at.x; p.y = at.y; p.z = 0; p.vx = p.vy = p.vz = 0; collide(p, 16); p.advTown = o.i;
+  p.pe.push({ k: "travel", to: o.name });
+  toast(p, `The coach drops you off in ${o.name}.`, "#ffe9a0");
+}
+function advRest(p) {
+  const cost = price(p, 20);
+  if (p.gold < cost) return toast(p, `It's ${cost}g. You have ${p.gold}g.`, "#f88");
+  p.gold -= cost; p.hp = maxHp(p); p.food = 100; p.water = 100; p.stress = 0; p.invDirty = true;
+  cure(p, "A night's sleep sees the infection off.");
+  toast(p, "Stew, ale, a lumpy bed. You feel brand new.", "#8f8");
+}
+// a hacked relay finishes its job; anything else hacked is just a cache
+function advHacked(p, c, solved) {
+  const q = game.adv && game.adv.quests.find((x) => x.id === c.qid);
+  if (!q || q.state !== "active") return;
+  q.gold = Math.round(q.gold * (0.7 + 0.15 * solved));
+  advComplete(q, p.id, `Fixer: "Data's coming through. ${solved}/3 daemons, ${solved === 3 ? "clean job" : "messy but it'll do"}. Money's sent."`);
+}
+function advDawn() {
+  const A = game.adv; if (!A) return;
+  A.quests = A.quests.filter((q) => q.state !== "board" || Math.random() < 0.5); // half of yesterday's notices come down
+  for (const t of A.towns) fillBoard(t);
+  feed("New work is up on the notice boards.", "#e0c0ff");
+}
+
 const DISASTERS = {
   meteor: { name: "METEOR SHOWER", sub: "Get out of the red circles. Or get to the defence console and shoot them down [E].", len: 36, station: "orbital defence console", game: "Orbital Defence" },
   flood:  { name: "FLASH FLOOD", sub: "Get to high ground, or get to the sluice gates and drain it [E]. Crops won't survive it.", len: 45, station: "sluice gates", game: "Sluice Gates" },
@@ -3267,7 +3584,7 @@ function disasterTick(t, dt) {
   }
 }
 function maybeNuke() {
-  if (game.mode === "royale" || game.nuke) return;
+  if (game.mode === "royale" || game.mode === "adventure" || game.nuke) return;
   if (game.night < FIRST_NUKE) return; // five days of peace (of a sort) to get the dome up
   if (game.dome && !game.dome.struck) return nukeWarn(`The war has reached ${VALLEY}.`); // it was always coming
   if (game.mayor === "posad" && game.posadAt && game.night >= game.posadAt) { game.posadAt = 0; return nukeWarn("Comrade Posad has kept his campaign promise."); }
@@ -3281,6 +3598,13 @@ function startNight() {
   game.night++;
   game.phase = "night";
   for (const n of NPC_POS) npcRoute(n, true);
+  if (game.mode === "adventure") { // no waves: the wild just gets meaner, and the night-only beasts come out
+    game.spawnLeft = 0; game.fog = false; game.dino = false; game.ends = now() + ADV_NIGHT;
+    const owed = advActive().some((q) => q.night && q.step === "hunt" && !q.zid);
+    events.push({ k: "banner", text: `NIGHT ${game.night}`, sub: owed ? "Night falls. The beast you've been tracking is out now." : "Night falls. The dead are bolder out in the wild. The towns are safe." });
+    maybeDisaster();
+    return;
+  }
   const n = Math.max(1, players.size);
   game.spawnLeft = Math.round(Math.min(120, (8 + 6 * game.night) * (0.7 + 0.3 * n) * game.mods.zCount * game.mods.nightCut));
   game.mods.nightCut = 1;
@@ -3328,7 +3652,7 @@ function collectRates() {
 }
 function startDay() {
   resetOffices(); // the office vaults lock again at dawn
-  game.phase = "day"; game.mods.nightGold = 1; game.ends = now() + DAY_LEN; game.fog = false; game.dino = false; game.duskWarned = false;
+  game.phase = "day"; game.mods.nightGold = 1; game.ends = now() + (game.mode === "adventure" ? ADV_DAY : DAY_LEN); game.fog = false; game.dino = false; game.duskWarned = false;
   game.dinoDay = isDinoDay(game.night + 1); game.dinoNext = now() + 12;
   if (game.zone) zoneShrinkTo(40000, 20); // the fog lifts off the wild
   for (const n of NPC_POS) npcRoute(n, false);
@@ -3348,10 +3672,11 @@ function startDay() {
   maybeNuke();
   radioNews();
   for (const p of players.values()) { p.talked.clear(); cure(p, "The sunrise burns the infection out of you."); }
-  for (const z of zombies) if (z.type !== "elite") z.burn = true;
+  for (const z of zombies) if (z.type !== "elite" && !z.keep) z.burn = true; // Adventure's quest monsters don't mind the sun
   spawnCrates();
   if (game.mode === "story" && !game.flags.finalAt && game.night >= UNMASK_AFTER) unmask();
-  const sub = game.mode === "endless" ? `You survived night ${game.night}. ${ENDLESS_BOSS_EVERY - (game.night % ENDLESS_BOSS_EVERY)} until the next boss. The shops are open.`
+  if (game.mode === "adventure") advDawn();
+  const sub = game.mode === "adventure" ? `New work on the notice boards. Renown ${game.adv ? game.adv.renown : 0}/${RENOWN_GOAL}.` : game.mode === "endless" ? `You survived night ${game.night}. ${ENDLESS_BOSS_EVERY - (game.night % ENDLESS_BOSS_EVERY)} until the next boss. The shops are open.`
     : game.flags.finalAt === game.night + 1 ? `Tonight is the last night: ${BOSSES[bossKind(game.flags)].name} comes for the Hearth. Get ready. The shops are open.`
     : game.clues.size >= 3 ? "You know enough to accuse someone [E]. Until somebody's caught, the dead keep coming. The shops are open."
     : "The sun burns the dead. Find out who poisoned the well [J], and they'll keep coming until you do. The shops are open.";
@@ -3374,7 +3699,11 @@ function endGame(win) {
   for (const z of zombies) z.burn = true;
   game.flags.clueCount = game.clues.size;
   const lg = legendOf(game.deeds);
-  if (game.mode === "endless") {
+  if (game.mode === "adventure") {
+    const A = game.adv, L = A && A.legend;
+    game.ending = [win && L ? `${bossName(L.boss)} is dead, and the whole valley knows who did it.` : "The road goes on without you.", `${A ? A.renown : 0} jobs done, ${A ? A.disc.size - 1 : 0} of ${A ? A.towns.length - 1 : 0} towns found, ${game.night + 1} day${game.night ? "s" : ""} on the road.`, "Every notice board in the valley has your faces on it now. Drinks are on the house. Forever (a week)."];
+    game.prev = `Last time, a party from ${VALLEY} finished the Legendary Contract.`;
+  } else if (game.mode === "endless") {
     const best = Math.max(game.night - 1, 0);
     game.ending = [`${VALLEY} held out for ${best} night${best === 1 ? "" : "s"}. The Hearth went out on night ${game.night}.`, best >= 15 ? "Songs will be sung. Badly, but sung." : best >= 8 ? "A respectable showing. The dead were mildly inconvenienced." : "The dead barely noticed you were there."];
     game.prev = `Last time, ${VALLEY} survived ${best} nights of the endless dark.`;
@@ -3415,7 +3744,7 @@ function armourChance(type, n) {
 }
 const ARM_SOAK = 0.3, WEAK_MULT = 2.6;
 function spawnRaptors(at) { for (let i = 0; i < 3; i++) spawnZombie("raptor", at); }
-function spawnZombie(type, at) { const z = spawnZombie0(type, at); if (game.waste && z) z.glow = true; return z; }
+function spawnZombie(type, at) { const z = spawnZombie0(type, at); if (game.waste && z) z.glow = true; if (z && game.mode === "adventure") z.wild = 1; return z; } // no Hearth to walk to in Adventure
 function spawnZombie0(type, at) {
   const def = ZTYPES[type];
   let x, y;
@@ -3462,6 +3791,7 @@ function tick() {
   zoneTick(t);
   if (tickN % 10 === 0) ensureChunks();
   if (tickN % 45 === 0) wildTick(t);
+  if (tickN % 10 === 5 && game.mode === "adventure") advTick(t);
   if (game.phase === "day" || game.phase === "night") dustTick(t, dt);
   if (OPEN() && game.phase === "day" && !game.duskWarned && game.ends - t < 25 && game.zone) { // the fog comes for the wild at night
     game.duskWarned = true;
@@ -3529,7 +3859,8 @@ function tick() {
       if (p.hp <= 0) killPlayer(p, null, "lost in the slop fog");
       if (p.dead) continue;
     }
-    if (p.dlg) { const n = NPC_POS.find((q) => q.id === p.dlg.npc); if (!n || dist2(n, p) > 150 * 150) { p.dlg = null; sendDlg(p); } }
+    if (p.dlg && p.dlg.adv) { if (dist2(p.dlg.at, p) > 170 * 170) { p.dlg = null; sendDlg(p); } }
+    else if (p.dlg) { const n = NPC_POS.find((q) => q.id === p.dlg.npc); if (!n || dist2(n, p) > 150 * 150) { p.dlg = null; sendDlg(p); } }
     if (!Number.isFinite(p.gold)) p.gold = 0; // backstop: NaN gold would make every price check pass
     if (p.cg && !NPC_POS.some((q) => q.id === p.cg.npc)) { toast(p, "Your opponent has left. The game's off; you get your stake back.", "#bbb"); if (!p.cg.M.over) p.gold += p.cg.stake; p.cg = null; sendCards(p); }
     if (playing) {
@@ -3721,7 +4052,7 @@ function tick() {
   }
   const bossWasAlive = zombies.some((z) => z.id === game.bossId);
   zombies = zombies.filter((z) => z.hp > 0);
-  if (game.phase === "night" && bossWasAlive && !zombies.some((z) => z.id === game.bossId)) {
+  if (game.phase === "night" && game.mode !== "adventure" && bossWasAlive && !zombies.some((z) => z.id === game.bossId)) {
     if (game.mode === "story") endGame(true);
     else { game.bossId = 0; game.ends = t + 8; events.push({ k: "banner", text: "BOSS DOWN", sub: "The sun is coming up. Enjoy it while it lasts." }); }
   }
@@ -3744,7 +4075,7 @@ function snapshot() {
       drop: game.drop && t - game.drop.t0 < game.drop.dur + 3 ? [r(game.drop.x0), r(game.drop.y0), r(game.drop.x1), r(game.drop.y1), +dropPos(t).k.toFixed(3)] : null,
       clues: [...game.clues].map(clueText), mq: mainQuest(),
       ph: game.phase, n: game.night, uav: game.uav && game.uav > t ? Math.ceil(game.uav - t) : 0, left: game.ends === Infinity ? -1 : Math.max(0, r(game.ends - t)), hh: r(game.hearth), hm: game.hearthMax, res: game.result, boss: game.bossId, bk: game.bossKind, valley: VALLEY, fog: game.fog ? 1 : 0, solved: solved() ? 1 : 0, dino: game.dino ? 1 : 0, dd: game.dinoDay ? 1 : 0,
-      du: dustView(t),
+      du: dustView(t), adv: game.mode === "adventure" ? advView() : null,
       mk: SYMS.map((s) => +game.market.px[s].toFixed(2)), news: game.market.news.map((n) => [n.text, n.up ? 1 : 0]),
       mayor: game.mayor, nuke: game.nuke ? [r(game.nuke.x), r(game.nuke.y), Math.max(0, +(game.nuke.at - t).toFixed(1))] : null, dome: game.dome && game.mode !== "royale" ? [game.dome.have, game.dome.cost] : null, waste: game.waste ? 1 : 0, hot: game.hot.map((h) => [r(h.x), r(h.y), r(h.r), h.lake ? 1 : 0]),
       elec: game.elec ? { c: game.elec.cands, v: Object.fromEntries(game.elec.votes), left: Math.max(0, r(game.elec.ends - t)) } : null,
@@ -3838,6 +4169,7 @@ function onMessage(ws, raw) {
       if (m.elect) openElection();
       if (m.clues) for (let i = 0; i < m.clues; i++) storyApi.freeClue();
       if (m.dusk) game.ends = now() + 0.5;
+      if (m.killQ) for (const z of zombies) if (z.qid && z.type !== "boss") hurtZombie(z, z.hp + 1, p); // Adventure's quest monsters
       if (m.killBoss) { const b = zombies.find((z) => z.id === game.bossId); if (b) hurtZombie(b, b.hp + 1, p); }
       if (m.weapon) giveWeapon(p, newWeapon(m.weapon, m.rarity || 0));
       if (m.mode !== undefined) p.weapons[p.active].mode = m.mode || undefined;
@@ -3877,7 +4209,7 @@ function onMessage(ws, raw) {
     case "ready": if (game.phase === "lobby" || game.phase === "over") { p.ready = m.v === undefined ? !p.ready : !!m.v; feed(`${fullName(p)} is ${p.ready ? "ready" : "not ready"}`, p.ready ? "#8f8" : "#aaa"); } break;
     case "build": if (["day", "night", "royale"].includes(game.phase) && !p.dead && !p.air && !p.veh) placePiece(p, String(m.kind), +m.x || 0, +m.y || 0, false); break;
     case "dlg": pickDlg(p, m.i | 0); break;
-    case "mode": if (p.id === hostId() && (game.phase === "lobby" || game.phase === "over") && (m.m === "story" || m.m === "royale" || m.m === "endless")) { game.mode = m.m; broadcastRaw(JSON.stringify(mapMsg())); } break;
+    case "mode": if (p.id === hostId() && (game.phase === "lobby" || game.phase === "over") && (m.m === "story" || m.m === "royale" || m.m === "endless" || m.m === "adventure")) { game.mode = m.m; broadcastRaw(JSON.stringify(mapMsg())); } break;
     case "shout": doShout(p); break;
     case "elem": cycleElement(p); break;
     case "go": relieve(p); break;

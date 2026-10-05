@@ -547,6 +547,15 @@ var R3D = (function () {
       for (let i = 0; i < 9; i++) { const c = mesh(new T.BoxGeometry(18 + (i * 7) % 20, 10 + (i * 5) % 14, 16), mat(i % 3 ? 0x8b5a3a : ROOFS[w.roof || 0])); at(c, w.x + ((i * 37) % 97) / 97 * w.w, w.y + ((i * 61) % 89) / 89 * w.h, hgt * 0.6 + (i % 3) * 3); c.rotation.set(i, i * 2, i * 3); tgt.add(c); }
     } else if (w.kind === "post") {
       tgt.add(at(box(w.w, w.h, hgt, mat(0xf4f4f4)), cx, cy, (z0 + z1) / 2));
+    } else if (w.kind === "board") { // Adventure's notice board: two posts, a little roof, notices pinned all over it
+      const horiz = w.w >= w.h, L = horiz ? w.w : w.h;
+      for (const sd of [-1, 1]) tgt.add(at(box(6, 6, hgt, mat(0x5a3a1e)), horiz ? cx + sd * (L / 2 - 3) : cx, horiz ? cy : cy + sd * (L / 2 - 3), hgt / 2));
+      tgt.add(at(box(horiz ? L - 8 : 4, horiz ? 4 : L - 8, 40, mat(0x8a6a42)), cx, cy, hgt - 26));
+      tgt.add(at(box(horiz ? L + 12 : 18, horiz ? 18 : L + 12, 4, mat(0x6b4520)), cx, cy, hgt + 2));
+      for (let i = 0; i < 6; i++) { const f = (i + 0.5) / 6; tgt.add(at(box(horiz ? 11 : 7, horiz ? 7 : 11, 13, mat([0xf4f0e0, 0xf4e0a0, 0xe0e8f0][i % 3])), horiz ? w.x + 6 + f * (L - 12) : cx, horiz ? cy : w.y + 6 + f * (L - 12), hgt - 32 + (i % 2) * 14)); }
+    } else if (w.kind === "sign") { // a signpost: fingers pointing every which way
+      tgt.add(at(box(6, 6, hgt, mat(0x5a3a1e)), cx, cy, hgt / 2));
+      for (let i = 0; i < 3; i++) { const b = at(box(48, 4, 10, mat(0xd8c08a)), cx, cy, hgt - 12 - i * 16); b.rotation.y = i * 1.1 + 0.3; tgt.add(b); }
     } else {
       tgt.add(at(box(w.w, w.h, hgt, mat(0x8a8a8a)), cx, cy, (z0 + z1) / 2));
     }

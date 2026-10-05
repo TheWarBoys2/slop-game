@@ -27,9 +27,9 @@ export function biomeAt(seed, cx, cy) {
   return ["forest", "forest", "meadow", "meadow", "moor", "orchard"][Math.floor(r * 6)];
 }
 
-// build one chunk. `town` is the town's rectangle: nothing in the wild goes inside it.
+// build one chunk. `town` is the town's rectangle: nothing in the wild goes inside it (nor inside any of `keep`, Adventure's towns).
 // Returns walls (no ids yet) and spots for loot.
-export function makeChunk(seed, cx, cy, town) {
+export function makeChunk(seed, cx, cy, town, keep = []) {
   const rng = mulberry(hash(seed, cx * 31 + 7, cy * 17 + 11));
   const R = (a, b) => a + rng() * (b - a), N = ([a, b]) => Math.floor(R(a, b + 1));
   const x0 = cx * CS, y0 = cy * CS;
@@ -37,7 +37,7 @@ export function makeChunk(seed, cx, cy, town) {
   const kind = dustHere ? "dust" : biomeAt(seed, cx, cy), B = BIOMES[kind];
   const walls = dustChunk(cx, cy, CS), loot = [];
   const hitR = (r, o, pad) => r.x < o.x + o.w + pad && r.x + r.w + pad > o.x && r.y < o.y + o.h + pad && r.y + r.h + pad > o.y;
-  const inTown = (r, pad) => hitR(r, town, pad) || hitR(r, DUST, pad); // nothing wild grows in town or on Dust II
+  const inTown = (r, pad) => hitR(r, town, pad) || hitR(r, DUST, pad) || keep.some((k) => hitR(r, k, pad)); // nothing wild grows in town or on Dust II
   const free = (r, pad) => !inTown(r, 140) && r.x > x0 + 10 && r.y > y0 + 10 && r.x + r.w < x0 + CS - 10 && r.y + r.h < y0 + CS - 10 &&
     !walls.some((o) => r.x < o.x + o.w + pad && r.x + r.w + pad > o.x && r.y < o.y + o.h + pad && r.y + r.h + pad > o.y);
   const place = (n, mk, pad) => { for (let i = 0, tries = 0; i < n && tries < n * 30; tries++) { const r = mk(); if (free(r, pad)) { walls.push(r); i++; } } };

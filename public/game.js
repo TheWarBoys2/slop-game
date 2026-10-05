@@ -128,11 +128,11 @@ function onSnap(m) {
   for (const e of m.pe) handlePersonal(e);
   if (m.g.ph === "over" && prevPhase !== "over") showOver();
   if (m.g.ph !== "over") { $("over").classList.add("hidden"); if (cut) endCutscene(); }
-  if (m.g.ph === "night" && shopOpen && (SHOPS[shopSid] || {}).hours === "day") toggleShop(false);
+  if (m.g.ph === "night" && shopOpen && !shopAt && (SHOPS[shopSid] || {}).hours === "day") toggleShop(false);
   renderStory();
   // a heads-up before dark, once a day, so nobody gets caught out in the fields
   if (m.g.ph === "day" && m.g.left > 14) duskLong = m.g.n; // only warn on days that were long enough to need it
-  if (joined && m.g.ph === "day" && m.g.left > 0 && m.g.left <= 10 && duskWarn !== m.g.n && duskLong === m.g.n) { duskWarn = m.g.n; pushLim(toasts, { text: `Night falls in ${m.g.left}s. The dead come for the Hearth.`, color: "#ffb040", t: T() }, 4); sfx("banner"); }
+  if (joined && m.g.ph === "day" && m.g.left > 0 && m.g.left <= 10 && duskWarn !== m.g.n && duskLong === m.g.n) { duskWarn = m.g.n; pushLim(toasts, { text: m.g.mode === "adventure" ? `Night falls in ${m.g.left}s. The wild gets meaner after dark.` : `Night falls in ${m.g.left}s. The dead come for the Hearth.`, color: "#ffb040", t: T() }, 4); sfx("banner"); }
   const mr = m.p.find((p) => p.id === me);
   if (mr && mr.rl > 0) { const end = T() + mr.rl; if (!rel.end || Math.abs(end - rel.end) > 0.15) rel.end = end; rel.total = mr.rt; rel.tried = !!mr.rtr; } else rel.end = 0;
   const hostId = m.p.length ? Math.min(...m.p.map((p) => p.id)) : 0;
@@ -172,6 +172,7 @@ function handleEvent(e) {
   else if (e.k === "banner") { banner = { text: e.text, sub: e.sub, t }; sfx("banner"); if (e.npc) { const n = S && S.np && S.np.find((q) => q[0] === e.npc); if (n && Math.hypot(n[1] - pred.x, n[2] - pred.y) < 600) speakNpc(e.npc, ARRIVE_LINE[e.npc] || ""); } } // only the people standing there hear them
   else if (e.k === "vote") { sfx("banner"); pushLim(toasts, { text: "The town meeting is open until dusk. Press N to vote.", color: "#e0c0ff", t }, 4); }
   else if (e.k === "clue") { sfx("lvl"); clueT = t; }
+  else if (e.k === "advsign") { sfx("lvl"); advSignT = t; advSignN = e.n; }
   else if (e.k === "lcharge") { const d = Math.hypot(e.x - pred.x, e.y - pred.y); if (d < 900) sfx("lcharge", 1 - d / 900); }
   else if (e.k === "armbreak") { fx.push({ kind: "boom", t0: t, dur: 0.3, x: e.x, y: e.y, z: e.z, r: 26, col: 0xb0b8c0 }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx("armbreak"); }
   else if (e.k === "podin") { if (e.id === me) sfx("boom", 0.4); }
@@ -226,6 +227,7 @@ function handleEvent(e) {
 function handlePersonal(e) {
   const t = T();
   if (e.k === "toast") { pushLim(toasts, { text: e.text, color: e.color, t }, 4); if (/^(Bought|Upgraded)/.test(e.text)) sfx("perfect", 0.5); else if (e.color === "#f88") sfx("hit", 0.6); } // a ka-ching when it worked, a dull thud when it didn't
+  else if (e.k === "travel") { sfx("banner"); banner = { text: e.to.toUpperCase(), sub: "The coach rattles off without you.", t }; pred.init = false; }
   else if (e.k === "dmg") {
     fx.push({ kind: "text", t0: t, dur: 0.7, x: e.x + (Math.random() - 0.5) * 16, y: e.y, z: e.z, text: e.wk ? `${e.v}!!` : e.hs ? `${e.v}!` : String(e.v), color: e.ff ? "#ff5050" : e.wk ? "#ff3030" : e.hs ? "#ff9d2e" : e.arm ? "#9aa4ad" : e.crit ? "#ffd34d" : "#fff", big: e.crit || e.hs || e.wk });
     // hitmarkers: a different mark and sound for body, headshot, weak point, armour and the kill
@@ -255,7 +257,7 @@ function handlePersonal(e) {
   else if (e.k === "mkh") { mkHist = e.hist; if (mktOpen) renderMarket(); }
   else if (e.k === "cg") { if (e.close) { cgState = null; if (cardsOpen) toggleCards(false); } else { const fresh = !cgState || cgState.v.turn !== e.v.turn || e.v.over; cgState = e; if (fresh) cgStaged = []; toggleCards(true); renderCards(); } }
   else if (e.k === "stall") { if (!stallOpen) speakNpc("giles", "What've you got for me?"); toggleStall(true); }
-  else if (e.k === "shop") { const fresh = !shopOpen || shopSid !== e.sid; toggleShop(true, e.sid); if (fresh) speakNpc(SHOP_VOICE[e.sid], SHOP_BLURB[e.sid]); }
+  else if (e.k === "shop") { const fresh = !shopOpen || shopSid !== e.sid; shopAt = e.at || null; toggleShop(true, e.sid); if (fresh) speakNpc(SHOP_VOICE[e.sid], SHOP_BLURB[e.sid]); }
   else if (e.k === "pack") { pushLim(toasts, { text: `New card${e.cards.length > 1 ? "s" : ""}: ${e.cards.map((c) => CARDS[c] ? CARDS[c].name : c).join(", ")}  [Y]`, color: "#ffd34d", t }, 4); sfx("perfect"); }
   else if (e.k === "wheel") { wheelAnim = { t0: t, from: wheelAngle, seg: e.seg }; sfx("banner"); toggleCasino(true); }
   else if (e.k === "casino") { casinoState = e; if (e.game || e.open || (e.spins && wantCasino)) { wantCasino = false; toggleCasino(true); } renderCasino(); }
@@ -311,6 +313,7 @@ function nearShake(e, amt) { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 500) s
 let shameT = -99, shameWho = null, deafT = -99, cleanOpen = false, hackOpen = false;
 let hitT = -9, hitKind = "body";
 let hudTop = 84, nukeBottom = 0; // how far down the top-centre HUD reaches this frame
+let advSignT = -9, advSignN = 0;
 let hearthHitT = 0, hsT = -9, localReloadTry = 0, wastedPlace = 0, fogT = -9, clueT = -9, legendT = -99, legendKind = null, intro = null;
 const pieceHit = new Map();
 const rel = { end: 0, total: 1, tried: false };
@@ -517,9 +520,10 @@ function drawRadial() {
 // ---------------------------------------------------------------- lobby
 let lobbySig = "";
 const MODE_INFO = {
-  story: ["Story", "Somebody poisoned the well, and it's someone different every game. Find the evidence, accuse them, then survive what they raised. Votes, a mayor, a celebrity visit and Dinosaur Day on day 4."],
-  endless: ["Endless", "No story, no end. A boss every fifth night and Dinosaur Day every week. How long can you last?"],
+  story: ["Hearth Defence: Story", "Hold the Hearth against the dead every night. Somebody poisoned the well, and it's someone different every game. Find the evidence, accuse them, then survive what they raised. Votes, a mayor, a celebrity visit and Dinosaur Day on day 4."],
+  endless: ["Hearth Defence: Endless", "No story, no end. A boss every fifth night and Dinosaur Day every week. How long can you last?"],
   royale: ["Royale", "Jump from the balloon, loot up, last farmer standing wins. Friendly fire is very much on."],
+  adventure: ["Adventure (RPG)", "No Hearth, no waves. Five towns out past the hedge, each with a notice board of work: monster contracts, gigs, breaches and deliveries. Travel, get paid, level up, then take the Legendary Contract."],
 };
 const LOBBY_TIPS = [
   "Reloading: press R, then tap R again as the marker crosses the green for an instant, empowered mag.",
@@ -663,7 +667,7 @@ function toggleShop(force, sid) {
   $("shop").classList.toggle("hidden", !shopOpen);
   if (shopOpen) { if (casinoOpen) toggleCasino(false); if (wardOpen) toggleWardrobe(false); toggleStall(false); keys.clear(); mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); renderShop(true); }
 }
-let shopTab = null, shopList = [];
+let shopTab = null, shopList = [], shopAt = null;
 const GUN_TYPES = new Set(["pistol", "smg", "shotgun", "rifle", "sniper", "ak"]);
 const SHOP_TABS = [["arms", "Weapons"], ["mods", "Attachments & skins 🔧"], ["gear", "Gear"], ["food", "Food & medicine"], ["gift", "Gifts 💐"], ["veh", "Vehicles 🚁"], ["farm", "Farm & fun"], ["dome", "The Dome"]];
 const SHOP_VOICE = { general: "vex", armoury: "haddock", casino: "lou", produce: "giles" };
@@ -1042,9 +1046,33 @@ function toggleJournal(force) {
   $("journal").classList.toggle("hidden", !journalOpen);
   if (journalOpen) renderJournal();
 }
+// Adventure: the jobs the party has on, and a map of the towns
+const ADV_ICON = { contract: "🐺", gig: "⚔", hack: "💾", delivery: "📦" };
+const advIcon = (q) => (q[9] ? "💀" : ADV_ICON[q[1]] || "❗");
+const advWalls = () => MAP._adv || (MAP._adv = MAP.walls.filter((w) => w.kind === "board" || w.kind === "sign")); // cached per map
+function renderAdvJournal(mine) {
+  const A = S.g.adv, esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const qs = A.q.length ? A.q.map((q) => `<div class="jq"><b>${advIcon(q)} ${esc(q[2])}</b> <span>${q[8]}g</span><small>${esc(q[3])}${q[10] && q[1] === "contract" ? " 🌙" : ""}</small><small style="color:#8a7aa0">${esc(q[11])} (${esc(q[7])})</small></div>`).join("") : `<div class="tag">No jobs on. Every town has a notice board [E] with work on it. The one in ${esc(MAP.valley)} is just north of the Hearth.</div>`;
+  // the map: every town, the jobs, and the party
+  const xs = [...A.t.map((t) => t[1]), ...A.q.map((q) => q[4]), ...S.p.map((p) => p.x)], ys = [...A.t.map((t) => t[2]), ...A.q.map((q) => q[5]), ...S.p.map((p) => p.y)];
+  const x0 = Math.min(...xs) - 900, x1 = Math.max(...xs) + 900, y0 = Math.min(...ys) - 900, y1 = Math.max(...ys) + 900, Wm = 460, k = Wm / Math.max(x1 - x0, y1 - y0), Hm = Math.round((y1 - y0) * k);
+  const X = (x) => ((x - x0) * k).toFixed(1), Y = (y) => ((y - y0) * k).toFixed(1);
+  let svg = `<svg width="${Wm}" height="${Hm}" style="background:#2d4424;border-radius:8px;display:block;margin:6px auto">`;
+  for (const q of A.q) if (q[6]) svg += `<circle cx="${X(q[4])}" cy="${Y(q[5])}" r="${Math.max(6, q[6] * k)}" fill="#ffd34d22" stroke="#ffd34d" stroke-dasharray="3 3"/>`;
+  for (const [n, x, y, disc, tier, home] of A.t) {
+    svg += `<rect x="${(X(x) - 7)}" y="${(Y(y) - 7)}" width="14" height="14" rx="3" fill="${home ? "#ff8a2a" : disc ? "#ffe9a0" : "#6a7a60"}" stroke="#000"/>`;
+    svg += `<text x="${X(x)}" y="${(+Y(y) + 22)}" fill="${disc || home ? "#fff" : "#aab"}" font-size="12" font-weight="bold" text-anchor="middle">${esc(disc || home ? n : n + " ?")}${home ? "" : ` · Lv ${tier * 2}+`}</text>`;
+  }
+  for (const q of A.q) svg += `<text x="${X(q[4])}" y="${(+Y(q[5]) + 5)}" font-size="15" text-anchor="middle">${advIcon(q)}</text>`;
+  for (const p of S.p) if (!p.d) svg += `<circle cx="${X(p.id === me ? pred.x : p.x)}" cy="${Y(p.id === me ? pred.y : p.y)}" r="${p.id === me ? 5 : 4}" fill="${p.id === me ? "#fff" : p.c}" stroke="#000"/>`;
+  svg += `<text x="8" y="16" fill="#cfe0b8" font-size="11">N ↑ · you are the white dot · towns you've found are pale gold</text></svg>`;
+  const found = A.t.filter((t) => t[3] && !t[5]).length;
+  $("journalBody").innerHTML = `<h3>Jobs (${A.q.length})</h3>${qs}<h3>Renown ${A.ren[0]}/${A.ren[1]}</h3><div class="tag">${A.ren[0] >= A.ren[1] ? "The Legendary Contract is up. Follow the 💀." : `Finish ${A.ren[1] - A.ren[0]} more job${A.ren[1] - A.ren[0] === 1 ? "" : "s"} and the Legendary Contract goes up.`} ${found}/${A.t.length - 1} towns found. A town's signpost can take you to any town you've already found (25g).</div><h3>The valley</h3>${svg}`;
+}
 function renderJournal() {
   const mine = S?.p.find((p) => p.id === me);
   if (!mine) return;
+  if (S.g.adv) return renderAdvJournal(mine);
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const qs = mine.q.length ? mine.q.map(([title, desc, prog, goal, done, npc]) => `<div class="jq${done ? " done" : ""}"><b>${esc(title)}</b> <span>${done ? "done" : `${prog}/${goal}`}</span><small>${esc(desc)} (${esc(npc)})</small></div>`).join("") : `<div class="tag">No quests yet. Talk to people in town [E].</div>`;
   const cl = S.g.clues.length ? S.g.clues.map((c) => `<div class="jc">${esc(c)}</div>`).join("") : `<div class="tag">Nothing yet. Somebody in town knows something.</div>`;
@@ -1114,6 +1142,7 @@ function flyInput() {
 setInterval(() => {
   if (!shopOpen) return;
   const w = shopWallC(shopSid);
+  if (shopAt) { if (Math.hypot(pred.x - shopAt[0], pred.y - shopAt[1]) > 200) toggleShop(false); else renderShop(); return; } // an Adventure town's merchant or smith
   const buyZone = shopSid === "armoury" && inDustC(); // Dust II's buy menu works anywhere on the map, day or night
   if (!buyZone && w && Math.max(Math.abs(pred.x - (w.x + w.w / 2)) - w.w / 2, Math.abs(pred.y - (w.y + w.h / 2)) - w.h / 2) > 150) return toggleShop(false); // walked off
   if (!buyZone && S && S.g.ph === "night" && (SHOPS[shopSid] || {}).hours === "day") { toggleShop(false); return pushLim(toasts, { text: "Closing time. Out you go.", color: "#f88", t: T() }, 4); }
@@ -1244,6 +1273,13 @@ function drawVehicle(kind, x, y, a, t, occ, speed, z = 0) {
 const lerp = (a, b, k) => a + (b - a) * k;
 const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
 const RISE = [[-150, -60], [-60, 40], [40, -90], [130, 20], [-110, 110], [80, 120], [170, -80]];
+function advShots() {
+  const hc = { x: MAP.W / 2, y: MAP.H / 2 };
+  return [
+    { d: 4, tint: "rgba(255,220,150,0.08)", cam: (k) => ({ x: lerp(hc.x - 700, hc.x + 700, ease(k)), y: hc.y - 150, z: 0.8 }), cap: () => "No horde at the Hearth this time. Just the road, and work for anyone who wants it." },
+    { d: 5, card: true, tint: "rgba(0,0,0,0)", cam: () => ({ x: hc.x + 700, y: hc.y - 150, z: 0.8 }), cap: () => "" },
+  ];
+}
 function storyShots() {
   const V = MAP.valley, wl = MAP.well || { x: 1275, y: 745 }, h = MAP.hearth, hc = { x: h.x + h.w / 2, y: h.y + h.h / 2 };
   const rc = { x: MAP.W * 0.28, y: MAP.H * 0.72 };
@@ -1292,7 +1328,7 @@ function royaleShots() {
   ];
 }
 function introShot(t) {
-  const shots = intro.mode === "royale" ? royaleShots() : storyShots();
+  const shots = intro.mode === "royale" ? royaleShots() : intro.mode === "adventure" ? advShots() : storyShots();
   let el = t - intro.start, i = 0;
   while (i < shots.length - 1 && el >= shots[i].d) { el -= shots[i].d; i++; }
   const sh = shots[i], k = Math.max(0, Math.min(1, el / sh.d)), c = sh.cam(k);
@@ -1316,8 +1352,9 @@ function drawIntroOverlay(sh, t, worldXf) {
     text(royale ? MAP.valley.toUpperCase() : "starring", VW / 2, VH * 0.25 + 50, 18, "#cfe0b8");
     cast.forEach(([n, cls, col], i) => { if (sh.k * sh.d > 0.8 + i * 0.35) text(`${n}, the ${cls}`, VW / 2, VH * 0.25 + 90 + i * 30, 20, col); });
     const y2 = VH * 0.25 + 110 + cast.length * 30;
-    if (sh.k > 0.55) text(royale ? `One balloon. ${cast.length} farmer${cast.length === 1 ? "" : "s"}. One survivor.` : "and one very special guest (maybe)", VW / 2, y2, 17, "#e0c0ff");
-    if (sh.k > 0.7) text(royale ? "Celebrity commentary by Gordon Rampage: \"I've seen more fight in a soufflé.\"" : "The valley is watching. It will remember what you do.", VW / 2, y2 + 32, 15, royale ? "#ff9ad0" : "#aaa");
+    if (sh.k > 0.55 && intro.mode === "adventure") text("Five towns. A lot of work. One Legendary Contract.", VW / 2, y2, 17, "#e0c0ff");
+    else if (sh.k > 0.55) text(royale ? `One balloon. ${cast.length} farmer${cast.length === 1 ? "" : "s"}. One survivor.` : "and one very special guest (maybe)", VW / 2, y2, 17, "#e0c0ff");
+    if (sh.k > 0.7 && intro.mode !== "adventure") text(royale ? "Celebrity commentary by Gordon Rampage: \"I've seen more fight in a soufflé.\"" : "The valley is watching. It will remember what you do.", VW / 2, y2 + 32, 15, royale ? "#ff9ad0" : "#aaa");
     ctx.globalAlpha = 1;
   } else {
     const cap = sh.cap(sh.k), n = Math.floor(sh.k * sh.d * 40);
@@ -1389,6 +1426,7 @@ function drawCompass(t) {
   if (S.g.mode !== "royale") for (const w of MAP.walls) if (w.kind === "shop" && w.sid !== "casino") mark(w.x + w.w / 2, w.y + w.h / 2, w.sid === "armoury" ? "🔫" : w.sid === "club" ? "🪩" : "🛒", "#fff");
   if (S.g.mode !== "royale" && DUSTR) mark(DUSTR.x + DUSTR.w / 2, DUSTR.y + DUSTR.h / 2, "💣", "#e0c080"); // Dust II, out in the desert
   for (const n of questNpcs()) mark(n.x, n.y, "❓", "#ffa020");
+  if (S.g.adv) { for (const [, x, y, disc, , home] of S.g.adv.t) if (!home) mark(x, y, disc ? "🏘" : "❔", "#ffe9a0"); for (const q of S.g.adv.q) mark(q[4], q[5], advIcon(q), "#ffd34d"); }
   const boss = S.g.boss && S.z.find((z) => z[0] === S.g.boss); if (boss) mark(boss[2], boss[3], "💀", "#fff");
   ctx.fillStyle = "#ffd34d"; ctx.fillRect(cx - 1, y - 14, 2, 5);
 }
@@ -1412,6 +1450,11 @@ function drawMinimap(mine, t) {
     for (const w of MAP.walls) if (w.kind === "shop") text(w.sid === "casino" ? "🎰" : w.sid === "armoury" ? "🔫" : w.sid === "club" ? "🪩" : "🛒", mx + (w.x + w.w / 2 - ox) * k, my + (w.y + w.h / 2 - oy) * k, 11, "#fff", "center", false);
     const st = MAP.walls.find((w) => w.kind === "stall"); if (st) text("🥕", mx + (st.x + st.w / 2 - ox) * k, my + (st.y + st.h / 2 - oy) * k, 10, "#fff", "center", false);
     for (const n of questNpcs()) text("?", mx + (n.x - ox) * k, my + (n.y - oy) * k, 14 + Math.sin(t * 4) * 2, "#ffa020");
+  }
+  if (S.g.adv) { // Adventure: the towns, the jobs' search areas, and anything you can pick up
+    for (const [, x, y, disc, , home] of S.g.adv.t) if (!home) { ctx.fillStyle = disc ? "#ffe9a0" : "#8a9a80"; ctx.fillRect(mx + (x - ox) * k - 5, my + (y - oy) * k - 5, 10, 10); }
+    for (const q of S.g.adv.q) { const qx = mx + (q[4] - ox) * k, qy = my + (q[5] - oy) * k; if (q[6]) { ctx.strokeStyle = "#ffd34d"; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(qx, qy, Math.max(4, q[6] * k), 0, 7); ctx.stroke(); ctx.setLineDash([]); } text(advIcon(q), qx, qy, 11, "#fff", "center", false); }
+    for (const [x, y, kind] of S.g.adv.pts) text(kind ? "📦" : "🔍", mx + (x - ox) * k, my + (y - oy) * k, 9, "#fff", "center", false);
   }
   ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
   if (S.g.zone) {
@@ -1627,6 +1670,14 @@ function overlay3d(mine, t, dt) {
   const seen = (x, y, z) => { if (!camNow || camNow.x === undefined) return true; const v = [x - camNow.x, y - camNow.y, z - camNow.z], L = Math.hypot(...v); if (L < 1) return true; return rayWorld([camNow.x, camNow.y, camNow.z], v.map((c) => c / L), L, me, true) >= L - 12; };
   const P = (x, y, z) => { const s = R3D.project(x, y, z); return s && s.d < 1500 && seen(x, y, z) ? s : null; };
   // the main quest's next step: a big orange ? you can see from anywhere
+  if (S.g.adv) {
+    const A = S.g.adv;
+    for (const [x, y, kind] of A.pts) { const s = P(x, y, 30); if (s && s.d < 800) text(kind ? "📦" : "🔍", s.x, s.y + Math.sin(t * 3) * 3, 26, "#fff", "center", false); }
+    for (const q of A.q) { const s = R3D.project(q[4], q[5], 140); if (s && s.d > 350) { text(advIcon(q), s.x, s.y, 22, "#fff", "center", false); text(`${Math.round(s.d / 10)}m`, s.x, s.y + 18, 11, "#ffd34d"); } } // a waypoint you can see from anywhere
+    for (const [id, name] of A.qb) { const z = S.z.find((q) => q[0] === id); if (!z) continue; const s = P(z[2], z[3], (z[6] || 0) + 120); if (s && s.d < 1200) text(name, s.x, s.y, 14, "#ff9060"); }
+    for (const w of advWalls()) { const s = P(w.x + w.w / 2, w.y + w.h / 2, w.z1 + 20); if (s && s.d < 700) text(w.kind === "board" ? "Notice board" : "Signpost", s.x, s.y, 13, "#ffe9a0"); }
+    for (const [n, x, y, , , home] of A.t) { if (home) continue; const s = R3D.project(x, y, 260); if (s && s.d < 1400 && s.d > 300) text(n, s.x, s.y, 22, "#ffe9a0"); }
+  }
   for (const n of questNpcs()) { const s = R3D.project(n.x, n.y, 100); if (!s) continue; const bob = Math.sin(t * 3) * 4; ctx.save(); ctx.shadowColor = "#ff8a00"; ctx.shadowBlur = 18; text("?", s.x, s.y - 16 + bob, 44, "#ffa020"); ctx.restore(); if (s.d > 300) text(`${Math.round(s.d / 10)}m`, s.x, s.y + 14 + bob, 12, "#ffc070"); }
   for (const p of S.p) {
     if (p.d || p.air === 1 || p.air === 3 || p.vh) continue;
@@ -2268,12 +2319,12 @@ function drawHud(mine, t) {
   else if (g.ph === "night") label = g.left < 0 ? `NIGHT ${g.n}  ·  ${g.mode === "endless" ? "BOSS NIGHT" : "THE LAST NIGHT"}` : `NIGHT ${g.n}${g.fog ? " · FOG" : ""}${g.dino ? " · DINOSAURS" : ""}  ·  dawn in ${g.left}s`;
   else if (g.ph === "royale") label = `ROYALE · ${g.alive} alive${g.zone && g.zone[6] >= 0 ? ` · fog moves in ${g.zone[6]}s` : g.zone && g.zone[5] < g.zone[2] - 2 ? " · FOG CLOSING" : ""}`;
   else label = g.res === "win" ? "VICTORY" : g.res === "royale" ? "ROYALE OVER" : "DEFEAT";
-  if (g.ph === "lobby") label += g.mode === "royale" ? " · Royale" : g.mode === "endless" ? " · Endless" : " · Story";
+  if (g.ph === "lobby") label += g.mode === "royale" ? " · Royale" : g.mode === "endless" ? " · Hearth Defence: Endless" : g.mode === "adventure" ? " · Adventure" : " · Hearth Defence";
   ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 200, 10, 400, 44, 10); ctx.fill();
   const dusk = (g.ph === "day" || (g.ph === "night" && g.left >= 0)) && g.left >= 0 && g.left <= 10; // the last ten seconds of a day or night glow amber
   text(label, VW / 2, 26, 18, dusk && Math.floor(t * 2) % 2 ? "#ffb040" : g.ph === "night" ? "#9fc0ff" : "#ffe9a0");
   const hHit = t - hearthHitT < 1.5 && g.mode !== "royale";
-  if (g.mode !== "royale") bar(VW / 2 - 180, 42, 360, 6, g.hh / g.hm, hHit && Math.floor(t * 8) % 2 ? "#ff3020" : "#e8703a");
+  if (g.mode !== "royale" && g.mode !== "adventure") bar(VW / 2 - 180, 42, 360, 6, g.hh / g.hm, hHit && Math.floor(t * 8) % 2 ? "#ff3020" : "#e8703a");
   // everything under the clock and compass stacks downwards, so nothing lands on top of anything else
   let top = use3d && !["lobby", "over", "intro"].includes(g.ph) && Math.min(420, VW - 460) >= 160 ? 84 : 62;
   const slot = (h) => { const y = top; top += h + 4; return y; };
@@ -2293,6 +2344,14 @@ function drawHud(mine, t) {
   if (g.boss) {
     const bz = S.z.find((z) => z[0] === g.boss);
     if (bz) { const y = slot(30); text(BOSS_NAME[g.bk] || "BOSS", VW / 2, y + 7, 16, "#ff6060"); bar(VW / 2 - 250, y + 18, 500, 12, bz[4] / 100, "#c02020"); }
+  }
+  if (g.adv && ["day", "night"].includes(g.ph)) {
+    const q = g.adv.q.find((x) => x[9]) || g.adv.q[0];
+    if (q) { const y = slot(20), dx = q[4] - pred.x, dy = q[5] - pred.y, txt = `${advIcon(q)} ${Math.round(Math.hypot(dx, dy) / 10)}m ${compass(dx, dy)}  ·  ${q[3].length > 90 ? q[3].slice(0, 88) + "…" : q[3]}`; ctx.font = 'bold 13px "Trebuchet MS", sans-serif'; const w = Math.min(VW - 40, ctx.measureText(txt).width + 48); ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - w / 2, y, w, 20, 8); ctx.fill(); text(txt, VW / 2, y + 10, 13, "#ffe9a0"); }
+    let best = null, bd = 1100 * 1100;
+    for (const [id, name] of g.adv.qb) { const z = S.z.find((q2) => q2[0] === id); if (!z) continue; const d = (z[2] - pred.x) ** 2 + (z[3] - pred.y) ** 2; if (d < bd) { bd = d; best = [z, name]; } }
+    if (best && !g.boss) { const y = slot(28); text(best[1].toUpperCase(), VW / 2, y + 7, 15, "#ff9060"); bar(VW / 2 - 180, y + 17, 360, 9, best[0][4] / 100, "#d05030"); }
+    if (t - advSignT < 4) { const y = slot(22); text(`SIGN FOUND (${advSignN}/3): press J`, VW / 2, y + 11, 18, "#e0c0ff"); }
   }
   const elite = S.z.find((z) => z[1] === "e");
   if (elite && !g.boss) { const y = slot(28); text("THE DROWNED MAYOR", VW / 2, y + 7, 16, "#6ab0e0"); bar(VW / 2 - 200, y + 18, 400, 10, elite[4] / 100, "#3a7ab0"); }
@@ -2486,6 +2545,10 @@ function drawHud(mine, t) {
     if (!hint && !mine.vh) for (const [, kind, vx, vy, , , drv, pas, , vz] of S.vh) if ((vx - pred.x) ** 2 + (vy - pred.y) ** 2 < (AIR[kind] ? 76 : 62) ** 2 && Math.abs((vz || 0) - pred.z) < 70 && (!drv || !pas)) { hint = [`E  ${drv ? "ride in" : AIR[kind] ? "fly" : "drive"} the ${VEH_NAME[kind]}`, "#9fe0ff"]; break; }
     if (mine.vh) hint = piloting() ? [pad() ? "Flying with your stick · button 3 gets out" : "W/S pitch · A/D strafe · mouse turns · SPACE up · C down · E out", "#9fe0ff"] : [S.vh.find((v) => v[0] === mine.vh)?.[6] === me ? "WASD drive · E get out" : "E get out", "#9fe0ff"];
     if (!hint && mine.sw && pred.z < -60 && MAP.walls.some((w) => w.kind === "glyph" && (w.x + 15 - pred.x) ** 2 + (w.y + 15 - pred.y) ** 2 < 60 * 60)) hint = ["E  touch the glyph", "#7dd8ff"];
+    if (!hint && g.adv && !dlgOpen) {
+      for (const [x, y, kind] of g.adv.pts) if ((x - pred.x) ** 2 + (y - pred.y) ** 2 < 60 * 60) { hint = kind ? ["E  pick up the parcel", "#ffd34d"] : ["E  examine", "#e0c0ff"]; break; }
+      if (!hint) for (const w of advWalls()) if (Math.max(Math.abs(pred.x - (w.x + w.w / 2)) - w.w / 2, Math.abs(pred.y - (w.y + w.h / 2)) - w.h / 2) < 60) { hint = w.kind === "board" ? ["E  read the notice board", "#ffe9a0"] : ["E  signpost: fast travel", "#ffe9a0"]; break; }
+    }
     if (!hint && MAP.npcs && g.mode !== "royale" && !dlgOpen) for (const n of MAP.npcs) if ((n.x - pred.x) ** 2 + (n.y - pred.y) ** 2 < 70 * 70) { hint = [`E  talk to ${n.name}`, "#e0c0ff"]; break; }
     if (!hint && mine.hoe && g.mode !== "royale" && !mine.vh && pred.gr && pred.z < 4 && (g.ph === "day" || g.ph === "night") && !dlgOpen) hint = ["E  till a new plot here", "#b8e070"];
     if (mine.air === 1) hint = ["SPACE to jump", "#ffd34d"];
