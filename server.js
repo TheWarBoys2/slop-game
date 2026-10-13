@@ -1221,7 +1221,7 @@ function shoot(p, w) {
   const boom = def.boom ? def.boom * (myth ? 1.6 : 1) : myth && w.type === "sniper" ? 110 : 0;
   // aim: yaw + pitch in the 3D views. The classic top-down view (and bots) send no pitch, and then height is ignored for targets.
   const flat = p.pt == null;
-  const mx = p.x + Math.cos(p.a) * 20, my = p.y + Math.sin(p.a) * 20, mz = (p.z || 0) + MV.EYE - 6;
+  const mx = p.x + Math.cos(p.a) * 20, my = p.y + Math.sin(p.a) * 20, mz = (p.z || 0) + MV.EYE - (p.slide > 0 ? 28 : crouched(p) ? 20 : 0) - (p.ads && w.type === "sniper" ? 0 : 6); // from the eye the client draws, crouched or not, so the scope is true
   const inZ = (tz, z0, z1) => flat || (tz >= z0 && tz <= z1);
   let anyHit = false;
   for (let i = 0; i < pellets; i++) {
@@ -2789,7 +2789,7 @@ function startGame() {
   PLOTS.length = BASE_PLOTS; // tilled plots belong to the last game
   BALL.x = BALL.y = 0;
   generateMap((Math.random() * 1e9) | 0);
-  vehicles = []; builds = []; game.zone = null; game.drop = null; game.countdown = 0; game.skip = new Set(); game.pendingVote = null; game.adv = null; ADV_KEEP = [];
+  vehicles = []; builds = []; game.zone = null; game.drop = null; game.countdown = 0; game.skip = new Set(); game.pendingVote = null; game.adv = null; ADV_KEEP = []; game.force = false;
   game.deeds = freshDeeds(); game.legend = null;
   if (game.mode === "story") placeNpcs(); else NPC_POS = [];
   projs = []; fires.clear(); scorched.clear(); game.disaster = null; game.dino = false; game.dinoDay = false; shrineReset(); game.dust = null;
@@ -3774,7 +3774,7 @@ function tick() {
 
   // lobby: the game starts once everyone is ready
   if (game.phase === "lobby" || game.phase === "over") {
-    const all = players.size > 0 && [...players.values()].every((p) => p.ready);
+    const all = players.size > 0 && (game.force || [...players.values()].every((p) => p.ready)); // or the host said go
     if (!all) game.countdown = 0;
     else if (!game.countdown) { game.countdown = t + COUNTDOWN; events.push({ k: "cd" }); }
     else if (t >= game.countdown) startGame();
@@ -4209,6 +4209,9 @@ function onMessage(ws, raw) {
     case "ready": if (game.phase === "lobby" || game.phase === "over") { p.ready = m.v === undefined ? !p.ready : !!m.v; feed(`${fullName(p)} is ${p.ready ? "ready" : "not ready"}`, p.ready ? "#8f8" : "#aaa"); } break;
     case "build": if (["day", "night", "royale"].includes(game.phase) && !p.dead && !p.air && !p.veh) placePiece(p, String(m.kind), +m.x || 0, +m.y || 0, false); break;
     case "dlg": pickDlg(p, m.i | 0); break;
+    // the host's lobby buttons: start now, ready or not, and show someone the door
+    case "force": if (p.id === hostId() && (game.phase === "lobby" || game.phase === "over") && !game.force) { game.force = true; feed(`${fullName(p)} (host) is starting the game`, "#ffd34d"); } break;
+    case "kick": { const q = players.get(+m.id); if (p.id === hostId() && q && q !== p) { feed(`${fullName(q)} was kicked by the host`, "#f88"); try { q.ws.send(JSON.stringify({ t: "kicked" })); q.ws.close(); } catch {} } } break;
     case "mode": if (p.id === hostId() && (game.phase === "lobby" || game.phase === "over") && (m.m === "story" || m.m === "royale" || m.m === "endless" || m.m === "adventure")) { game.mode = m.m; broadcastRaw(JSON.stringify(mapMsg())); } break;
     case "shout": doShout(p); break;
     case "elem": cycleElement(p); break;

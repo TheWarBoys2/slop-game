@@ -34,7 +34,7 @@ var R3D = (function () {
       gl.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;z-index:0;display:none";
       document.body.insertBefore(gl, document.body.firstChild);
       R = new T.WebGLRenderer({ canvas: gl, antialias: true, powerPreference: "high-performance" });
-      R.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      R.setPixelRatio(Math.min(window.devicePixelRatio || 1, scale));
       scene = new T.Scene();
       scene.background = new T.Color(0x8fc4e8);
       scene.fog = new T.Fog(0x8fc4e8, 1500, 4200);
@@ -52,6 +52,9 @@ var R3D = (function () {
     } catch (e) { console.warn("3D unavailable:", e); ok = false; if (gl) gl.remove(); }
     return ok;
   }
+  // render resolution (Options): fewer pixels is the biggest framerate win on a weak or high-DPI screen
+  let scale = 1;
+  function setScale(v) { scale = Math.max(0.4, Math.min(1.5, +v || 1)); if (R) { R.setPixelRatio(Math.min(window.devicePixelRatio || 1, scale)); if (vw) R.setSize(vw, vh, false); } }
   function show(v) { if (gl) gl.style.display = v ? "block" : "none"; }
   function resize(w, h) {
     if (w === vw && h === vh) return;
@@ -144,7 +147,7 @@ var R3D = (function () {
       for (const c of cuts) parts = parts.flatMap((r) => minus(r, c));
       for (const r of parts) piece(r.x, r.y, r.w, r.h);
     };
-    level.userData.lake = lake || null; level.userData.gm = gm; level.userData.bio = new Set();
+    level.userData.lake = lake || null; level.userData.cutOut = (r) => cuts.reduce((ps, c) => ps.flatMap((q) => minus(q, c)), [r]); level.userData.gm = gm; level.userData.bio = new Set();
     if (lake) { // the ground goes round the lake, not over it
       groundPiece(0, 0, MAP.W, lake.y); groundPiece(0, lake.y + lake.h, MAP.W, MAP.H - lake.y - lake.h);
       groundPiece(0, lake.y, lake.x, lake.h); groundPiece(lake.x + lake.w, lake.y, MAP.W - lake.x - lake.w, lake.h);
@@ -163,8 +166,12 @@ var R3D = (function () {
     const wild = new T.Group(), wm = bioMat("grass"), WE = 120000; level.add(wild); level.userData.wild = wild; // grass out to the horizon, with a hole for the lake
     const L0 = lake || { x: -1, y: -1, w: 0, h: 0 };
     for (const [x, y, w, h] of [[-WE, -WE, 2 * WE, L0.y + WE], [-WE, L0.y + L0.h, 2 * WE, WE - L0.y - L0.h], [-WE, L0.y, L0.x + WE, L0.h], [L0.x + L0.w, L0.y, WE - L0.x - L0.w, L0.h]]) {
-      if (w <= 0 || h <= 0) continue; const geo = new T.PlaneGeometry(w, h), uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / BIO_TILE, uv.getY(i) * h / BIO_TILE);
-      const m = mesh(geo, wm, x + w / 2, -1, y + h / 2); m.rotation.x = -Math.PI / 2; wild.add(m);
+      if (w <= 0 || h <= 0) continue;
+      for (const r of level.userData.cutOut({ x, y, w, h })) { // and holes over the stairwells, or it hides the cellars and tunnels
+        const geo = new T.PlaneGeometry(r.w, r.h), pos = geo.attributes.position, uv = geo.attributes.uv;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, (r.x + r.w / 2 + pos.getX(i)) / BIO_TILE, -(r.y + r.h / 2 - pos.getY(i)) / BIO_TILE);
+        const m = mesh(geo, wm, r.x + r.w / 2, -1, r.y + r.h / 2); m.rotation.x = -Math.PI / 2; wild.add(m);
+      }
     }
     // farmland beyond the hedge, so the valley doesn't float in the sky when you fly
     const far = mat(0x3f6430), E = 4000;
@@ -924,15 +931,16 @@ var R3D = (function () {
         // leave the town (and its lake) alone: a chunk on the town's edge only paints the part outside it
         const tx0 = Math.max(x0, 0), tx1 = Math.min(x1, MAP.W), ty0 = Math.max(y0, 0), ty1 = Math.min(y1, MAP.H);
         const parts = tx0 >= tx1 || ty0 >= ty1 ? [[x0, y0, x1, y1]] : [[x0, y0, x1, ty0], [x0, ty1, x1, y1], [x0, ty0, tx0, ty1], [tx1, ty0, x1, ty1]];
-        for (const [a0, b0, a1, b1] of parts) {
-          const w = a1 - a0, h = b1 - b0; if (w <= 0 || h <= 0) continue;
+        for (const [p0, q0, p1, q1] of parts) for (const r of ud.cutOut({ x: p0, y: q0, w: p1 - p0, h: q1 - q0 })) { // not over a stairwell
+          const a0 = r.x, b0 = r.y, w = r.w, h = r.h; if (w <= 0 || h <= 0) continue;
           const geo = new T.PlaneGeometry(w, h), pos = geo.attributes.position, uv = geo.attributes.uv;
           for (let i = 0; i < uv.count; i++) uv.setXY(i, (a0 + w / 2 + pos.getX(i)) / BIO_TILE, -(b0 + h / 2 - pos.getY(i)) / BIO_TILE);
           const m = mesh(geo, bioMat(MAP.bio[k]), a0 + w / 2, -0.6, b0 + h / 2); m.rotation.x = -Math.PI / 2; ud.wild.add(m);
         }
       }
       const pv = st.pred || (cam && { x: cam.position.x, y: cam.position.z });
-      if (pv && frameNo % 20 === 0) for (const o of wallObjs.values()) { const c = o.userData.ck; if (c) o.visible = Math.abs(c[0] - pv.x) < 3600 && Math.abs(c[1] - pv.y) < 3600; }
+      const vr = Math.min(3600, scene.fog.far + 500); // past the fog it's all fog colour anyway (at night that's much closer)
+      if (pv && frameNo % 20 === 0) for (const o of wallObjs.values()) { const c = o.userData.ck; if (c) o.visible = Math.abs(c[0] - pv.x) < vr && Math.abs(c[1] - pv.y) < vr; }
     }
     // time of day
     let n = 0;
@@ -1284,6 +1292,10 @@ var R3D = (function () {
       if (!p.vh) spotUse.push({ x: e.x, y: e.y, z: e.z + 44, yaw, pitch, d: mine ? -1 : (e.x - st.cam.x) ** 2 + (e.y - st.cam.y) ** 2 });
     }
     spotUse.sort((a, b) => a.d - b.d);
+    // a light at zero still costs every pixel on screen, so whole sets are put away when they can't be on.
+    // Only by set (night, indoors), so the shaders only ever see a few light counts and don't keep recompiling.
+    const dark = n >= 0.05;
+    for (const l of [...L.spots, ...L.points, ...L.muzzle]) l.visible = dark;
     for (const s of L.spots) {
       const u = spotUse[si++];
       if (!u || n < 0.05) { s.intensity = 0; continue; }
@@ -1299,6 +1311,8 @@ var R3D = (function () {
     { // the bulbs indoors: light the nearest few, so cellars and offices aren't black
       const bl = level.userData.bulbs || [], c0b = st.cam;
       if (bl.length) bl.sort((a, b) => ((a[0] - c0b.x) ** 2 + (a[1] - c0b.y) ** 2 + (a[2] - c0b.z) ** 2) - ((b[0] - c0b.x) ** 2 + (b[1] - c0b.y) ** 2 + (b[2] - c0b.z) ** 2));
+      const near = bl.length > 0 && Math.hypot(bl[0][0] - c0b.x, bl[0][1] - c0b.y, bl[0][2] - c0b.z) <= 900;
+      for (const pt of L.bulbs) pt.visible = near;
       L.bulbs.forEach((pt, i) => { const b = bl[i]; if (!b || Math.hypot(b[0] - c0b.x, b[1] - c0b.y, b[2] - c0b.z) > 900) { pt.intensity = 0; return; } at(pt, b[0], b[1], b[2]); pt.intensity = 5; });
     }
     // the balloon
@@ -1388,5 +1402,5 @@ var R3D = (function () {
     if (v.z > 1 || v.z < -1) return null;
     return { x: (v.x + 1) / 2 * vw, y: (1 - v.y) / 2 * vh, d: cam.position.distanceTo(new T.Vector3(x, z, y)) };
   }
-  return { init, show, resize, frame, project, get ok() { return ok; } };
+  return { init, show, resize, frame, project, setScale, get ok() { return ok; } };
 })();

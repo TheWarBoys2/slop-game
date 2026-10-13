@@ -137,6 +137,7 @@
   #lobbyPanel { background: rgba(8, 10, 8, .9); }
   .lp-row { display: flex; justify-content: space-between; padding: 5px 8px; margin: 3px 0; background: #2a3423; border-radius: 6px; font-size: 14px; }
   .lp-row .ok { color: #7dffb0; font-weight: bold; } .lp-row .no { color: #999; }
+  .lp-kick { margin-left: 8px; padding: 1px 7px; font-size: 11px; border: 0; border-radius: 4px; background: #6a2a2a; color: #fcc; cursor: pointer; } .lp-kick:hover { background: #a03a3a; }
   .readyBtn { margin-top: 10px; width: 100%; padding: 12px; font-size: 20px; font-weight: bold; border: 0; border-radius: 8px; cursor: pointer; background: #ffd34d; color: #3a2400; }
   .readyBtn.on { background: #3fbf6f; color: #062; }
   .lp-cd { text-align: center; color: #7dffb0; font-size: 18px; font-weight: bold; margin-top: 8px; min-height: 22px; }
@@ -299,6 +300,7 @@
         <h3 style="margin:0 0 6px;color:#cfe0b8">Farmers</h3>
         <div id="lpList"></div>
         <button class="readyBtn" id="readyBtn">Ready</button>
+        <button class="cbtn alt hidden" id="lpForce" style="width:100%;margin-top:6px">Start now, ready or not (host)</button>
         <div class="lp-cd" id="lpCd"></div>
         <div class="lp-f">Press <b>F</b> to ready up. It starts when everyone is ready.</div>
       </div>
