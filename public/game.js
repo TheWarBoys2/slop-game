@@ -104,9 +104,16 @@ function connect() {
     if (m.t === "map") { const fresh = !MAP || MAP.seed !== m.map.seed; if (fresh) { CHUNK_WALLS = []; CHUNK_BIO = {}; } MAP = m.map; MAP.bio = CHUNK_BIO; MAP.walls = MAP.walls.concat(CHUNK_WALLS); MAP.cv = chunkVer; if (fresh) { buildDecor(); disp.clear(); } return; }
     if (m.t === "ck") { if (m.reset) { CHUNK_WALLS = []; for (const k in CHUNK_BIO) delete CHUNK_BIO[k]; } CHUNK_WALLS.push(...m.walls); for (const [cx, cy, kind] of m.bio || []) CHUNK_BIO[cx + "," + cy] = kind; chunkVer++; if (MAP && MAP.seed === m.seed) { MAP.walls = MAP.walls.filter((w) => !w.ck).concat(CHUNK_WALLS); MAP.cv = chunkVer; } return; }
     if (m.t === "s") onSnap(m);
+    if (m.t === "kicked") kicked = true;
   };
-  ws.onclose = () => { setTimeout(connect, 1500); };
+  ws.onclose = () => {
+    if (!kicked) { setTimeout(connect, 1500); return; }
+    if (document.pointerLockElement) document.exitPointerLock();
+    const d = document.createElement("div"); d.style.cssText = "position:fixed;inset:0;z-index:99;display:flex;align-items:center;justify-content:center;flex-direction:column;background:#111e;color:#ffd34d;font:bold 28px sans-serif;text-align:center";
+    d.innerHTML = "The host kicked you out of the valley.<br><button class='cbtn' style='margin-top:18px;font-size:18px'>Try again</button>"; d.querySelector("button").onclick = () => location.reload(); document.body.appendChild(d);
+  };
 }
+let kicked = false;
 function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
 connect();
 
@@ -159,12 +166,12 @@ function onSnap(m) {
 }
 function handleEvent(e) {
   const t = T();
-  if (e.k === "tr") { fx.push({ kind: "tr", t0: t, dur: e.c === "laser" ? 0.6 : e.c === "sniper" ? 0.25 : use3d ? 0.12 : 0.08, col: parseInt((TRACER[e.c] || "#ffffff").slice(1), 16), ...e }); if (e.c !== "rico" && Math.hypot(e.x1 - pred.x - Math.cos(aimYaw) * 20, e.y1 - pred.y - Math.sin(aimYaw) * 20) < 24) { lastShotT = t; ownShot(e.c, t); } const d = Math.hypot(e.x1 - pred.x, e.y1 - pred.y); if (d < 700) sfx("shot", 1 - d / 700, e.c); }
-  else if (e.k === "boom") { fx.push({ kind: "boom", t0: t, dur: e.small ? 0.25 : 0.4, ...e }); nearShake(e, e.small ? 3 : 8); sfx("boom", e.small ? 0.35 : 1); }
-  else if (e.k === "shout") { const el = ELEMS[e.el] || ELEMS.force; fx.push({ kind: "shout", t0: t, dur: 0.7, ...e, text: e.text || el.word + "!", col: el.hex, c2: el.rgb }); nearShake(e, 10); sfx("shout", 1, e.el); }
+  if (e.k === "tr") { fx.push({ kind: "tr", t0: t, dur: e.c === "laser" ? 0.6 : e.c === "sniper" ? 0.25 : use3d ? 0.12 : 0.08, col: parseInt((TRACER[e.c] || "#ffffff").slice(1), 16), ...e }); if (e.c !== "rico" && Math.hypot(e.x1 - pred.x - Math.cos(aimYaw) * 20, e.y1 - pred.y - Math.sin(aimYaw) * 20) < 24) { lastShotT = t; ownShot(e.c, t); } sfxAt({ x: e.x1, y: e.y1, far: e.c === "sniper" || e.c === "laser" || e.c === "rocket" ? 2600 : 1800 }, "shot", 1, e.c); }
+  else if (e.k === "boom") { fx.push({ kind: "boom", t0: t, dur: e.small ? 0.25 : 0.4, ...e }); nearShake(e, e.small ? 3 : 8); sfxAt({ x: e.x, y: e.y, far: e.small ? 1200 : 3000 }, "boom", e.small ? 0.35 : 1); }
+  else if (e.k === "shout") { const el = ELEMS[e.el] || ELEMS.force; fx.push({ kind: "shout", t0: t, dur: 0.7, ...e, text: e.text || el.word + "!", col: el.hex, c2: el.rgb }); nearShake(e, 10); sfxAt({ x: e.x, y: e.y, far: 1400 }, "shout", 1, e.el); }
   else if (e.k === "burn") fx.push({ kind: "burn", t0: t, dur: 0.8, x: e.x + (Math.random() - 0.5) * 20, y: e.y });
   else if (e.k === "trample") fx.push({ kind: "text", t0: t, dur: 1, x: e.x, y: e.y, text: e.burnt ? "burnt!" : "trampled!", color: e.burnt ? "#f84" : "#c96" });
-  else if (e.k === "roar") { fx.push({ kind: "shout", t0: t, dur: 0.8, x: e.x, y: e.y, a: 0, full: true, ...(e.rex ? { col: 0xc8a040, c2: "200,160,64" } : {}) }); shake = Math.max(shake, e.rex ? 18 : 12); if (e.rex && Math.hypot(e.x - pred.x, e.y - pred.y) < 1100) sfx("rex"); }
+  else if (e.k === "roar") { fx.push({ kind: "shout", t0: t, dur: 0.8, x: e.x, y: e.y, a: 0, full: true, ...(e.rex ? { col: 0xc8a040, c2: "200,160,64" } : {}) }); shake = Math.max(shake, e.rex ? 18 : 12); if (e.rex) sfxAt({ x: e.x, y: e.y, far: 1600 }, "rex"); }
   else if (e.k === "hhit") { hearthHitT = t; }
   else if (e.k === "feed") pushLim(feed, { text: e.text, color: e.color, t }, 6);
   else if (e.k === "chat") pushLim(chatLog, { from: e.from, text: e.text, color: e.color, t }, 8);
@@ -173,20 +180,20 @@ function handleEvent(e) {
   else if (e.k === "vote") { sfx("banner"); pushLim(toasts, { text: "The town meeting is open until dusk. Press N to vote.", color: "#e0c0ff", t }, 4); }
   else if (e.k === "clue") { sfx("lvl"); clueT = t; }
   else if (e.k === "advsign") { sfx("lvl"); advSignT = t; advSignN = e.n; }
-  else if (e.k === "lcharge") { const d = Math.hypot(e.x - pred.x, e.y - pred.y); if (d < 900) sfx("lcharge", 1 - d / 900); }
-  else if (e.k === "armbreak") { fx.push({ kind: "boom", t0: t, dur: 0.3, x: e.x, y: e.y, z: e.z, r: 26, col: 0xb0b8c0 }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx("armbreak"); }
+  else if (e.k === "lcharge") { sfxAt({ x: e.x, y: e.y, far: 1200 }, "lcharge"); }
+  else if (e.k === "armbreak") { fx.push({ kind: "boom", t0: t, dur: 0.3, x: e.x, y: e.y, z: e.z, r: 26, col: 0xb0b8c0 }); sfxAt({ x: e.x, y: e.y, far: 700 }, "armbreak"); }
   else if (e.k === "podin") { if (e.id === me) sfx("boom", 0.4); }
-  else if (e.k === "podland") { nearShake(e, 14); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 900) sfx("boom"); }
+  else if (e.k === "podland") { nearShake(e, 14); sfxAt({ x: e.x, y: e.y, far: 900 }, "boom"); }
   else if (e.k === "land") fx.push({ kind: "boom", t0: t, dur: 0.35, x: e.x, y: e.y, r: 30, dust: true });
-  else if (e.k === "built") { fx.push({ kind: "boom", t0: t, dur: 0.3, x: e.x, y: e.y, r: 24, dust: true }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 500) sfx("hit"); }
+  else if (e.k === "built") { fx.push({ kind: "boom", t0: t, dur: 0.3, x: e.x, y: e.y, r: 24, dust: true }); sfxAt({ x: e.x, y: e.y, far: 500 }, "hit"); }
   else if (e.k === "bhit") pieceHit.set(e.id, t);
   else if (e.k === "cd") sfx("lvl");
   else if (e.k === "legend") { legendT = t; legendKind = e.kind; sfx("banner"); }
-  else if (e.k === "mess") { pushLim(messes, { ...e, t }, 60); if (e.drop) { fx.push({ kind: "boom", t0: t, dur: 0.6, x: e.x, y: e.y, r: 70, dust: true, col: e.kind === "poo" ? 0x6a4a20 : 0xe0d040 }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("hurt", 0.5); } }
-  else if (e.k === "slash") { slashT.set(e.id, t); fx.push({ kind: "slash", t0: t, dur: 0.22, ...e }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("shout", 0.25); }
+  else if (e.k === "mess") { pushLim(messes, { ...e, t }, 60); if (e.drop) { fx.push({ kind: "boom", t0: t, dur: 0.6, x: e.x, y: e.y, r: 70, dust: true, col: e.kind === "poo" ? 0x6a4a20 : 0xe0d040 }); sfxAt({ x: e.x, y: e.y, far: 600 }, "hurt", 0.5); } }
+  else if (e.k === "slash") { slashT.set(e.id, t); fx.push({ kind: "slash", t0: t, dur: 0.22, ...e }); sfxAt({ x: e.x, y: e.y, far: 600 }, "shout", 0.25); }
   else if (e.k === "shame") { shameT = t; shameWho = e; sfx("shame"); shake = Math.max(shake, 10); sayShame(e.who); }
-  else if (e.k === "bile") { fx.push({ kind: "boom", t0: t, dur: 0.7, x: e.x, y: e.y, z: e.z, r: e.r * 0.7, col: 0x9fd040, c2: "159,208,64" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("bile"); }
-  else if (e.k === "scream") { fx.push({ kind: "shout", t0: t, dur: 1.2, x: e.x, y: e.y, z: e.z, a: 0, full: true, col: 0xff4040 }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 900) sfx("scream"); }
+  else if (e.k === "bile") { fx.push({ kind: "boom", t0: t, dur: 0.7, x: e.x, y: e.y, z: e.z, r: e.r * 0.7, col: 0x9fd040, c2: "159,208,64" }); sfxAt({ x: e.x, y: e.y, far: 600 }, "bile"); }
+  else if (e.k === "scream") { fx.push({ kind: "shout", t0: t, dur: 1.2, x: e.x, y: e.y, z: e.z, a: 0, full: true, col: 0xff4040 }); sfxAt({ x: e.x, y: e.y, far: 900 }, "scream"); }
   else if (e.k === "dust") { // Dust II: the radio calls it
     const near = inDustC() || (DUSTR && Math.hypot(pred.x - (DUSTR.x + DUSTR.w / 2), pred.y - (DUSTR.y + DUSTR.h / 2)) < 2200);
     if (near) {
@@ -196,33 +203,32 @@ function handleEvent(e) {
       if (e.say === "planted") sfx("ding", 1, 1);
     } else if (e.say === "ct" || e.say === "t") pushLim(feed, { text: `Dust II: ${e.text.toLowerCase()}`, color: "#e0c080", t }, 6);
   }
-  else if (e.k === "ding") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("ding", 1, e.b); }
-  else if (e.k === "glass" && e.id === undefined) { /* a molotov bottle smashing; a window pane (with an id) is handled below */ fx.push({ kind: "boom", t0: t, dur: 0.35, x: e.x, y: e.y, z: e.z, r: 50, col: 0xffa030, c2: "255,160,48" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx("glass"); }
+  else if (e.k === "ding") { sfxAt({ x: e.x, y: e.y, far: 600 }, "ding", 1, e.b); }
+  else if (e.k === "glass" && e.id === undefined) { /* a molotov bottle smashing; a window pane (with an id) is handled below */ fx.push({ kind: "boom", t0: t, dur: 0.35, x: e.x, y: e.y, z: e.z, r: 50, col: 0xffa030, c2: "255,160,48" }); sfxAt({ x: e.x, y: e.y, far: 700 }, "glass"); }
   else if (e.k === "throw") { if (Math.hypot((S?.p.find((p) => p.id === e.id)?.x ?? 1e9) - pred.x, (S?.p.find((p) => p.id === e.id)?.y ?? 1e9) - pred.y) < 600) sfx("throw"); }
-  else if (e.k === "mv") { if (e.id !== me && Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx(e.m === "slide" ? "slide" : e.m === "boost" ? "boost" : e.m === "mantle" || e.m === "wallrun" ? "step" : "whoosh", 0.5); }
-  else if (e.k === "kd") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) { sfx("hit"); sfx("kick", 0.7); } }
-  else if (e.k === "pad") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("perfect", 0.6); }
-  else if (e.k === "splash") { fx.push({ kind: "boom", t0: t, dur: 0.6, x: e.x, y: e.y, z: -12, r: 40, dust: true, col: 0xbfe8ff, c2: "190,230,255" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("splash"); }
-  else if (e.k === "glyph") { fx.push({ kind: "shout", t0: t, dur: 0.9, x: e.x, y: e.y, z: e.z, a: 0, full: true, col: e.g < 0 ? 0xff4040 : 0x60e0ff, c2: e.g < 0 ? "255,64,64" : "96,224,255" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx(e.g < 0 ? "jam" : "perfect"); }
+  else if (e.k === "mv") { if (e.id !== me) sfxAt({ x: e.x, y: e.y, far: 600 }, e.m === "slide" ? "slide" : e.m === "boost" ? "boost" : e.m === "mantle" || e.m === "wallrun" ? "step" : "whoosh", 0.5); }
+  else if (e.k === "kd") { sfxAt({ x: e.x, y: e.y, far: 700 }, "hit"); sfxAt({ x: e.x, y: e.y, far: 700 }, "kick", 0.7); }
+  else if (e.k === "pad") { sfxAt({ x: e.x, y: e.y, far: 600 }, "perfect", 0.6); }
+  else if (e.k === "splash") { fx.push({ kind: "boom", t0: t, dur: 0.6, x: e.x, y: e.y, z: -12, r: 40, dust: true, col: 0xbfe8ff, c2: "190,230,255" }); sfxAt({ x: e.x, y: e.y, far: 600 }, "splash"); }
+  else if (e.k === "glyph") { fx.push({ kind: "shout", t0: t, dur: 0.9, x: e.x, y: e.y, z: e.z, a: 0, full: true, col: e.g < 0 ? 0xff4040 : 0x60e0ff, c2: e.g < 0 ? "255,64,64" : "96,224,255" }); sfxAt({ x: e.x, y: e.y, far: 700 }, e.g < 0 ? "jam" : "perfect"); }
   else if (e.k === "wedding") { sfx("goal"); for (let i = 0; i < 18; i++) fx.push({ kind: "text", t0: t + i * 0.05, dur: 2, x: pred.x + (Math.random() - 0.5) * 300, y: pred.y + (Math.random() - 0.5) * 200, z: 60 + Math.random() * 60, text: "♥", color: ["#ff8fc8", "#ff5fa0", "#fff"][i % 3], big: true }); }
   else if (e.k === "glass") {
     if (MAP) { MAP.walls = MAP.walls.filter((w) => w.id !== e.id); chunkVer++; MAP.cv = chunkVer; }
-    const d = Math.hypot(e.x - pred.x, e.y - pred.y);
-    if (d < 900) sfx("glass", 1 - d / 900);
+    sfxAt({ x: e.x, y: e.y, far: 900 }, "glass");
     fx.push({ kind: "boom", t0: t, dur: 0.45, x: e.x, y: e.y, z: e.z, r: 24, col: 0xbfe2f0 });
   }
-  else if (e.k === "collapse") { fx.push({ kind: "boom", t0: t, dur: 0.9, x: e.x, y: e.y, z: 10, r: Math.max(e.w, e.h) * 0.6, dust: true }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) { sfx("boom", 0.6); shake = Math.max(shake, 6); } }
+  else if (e.k === "collapse") { fx.push({ kind: "boom", t0: t, dur: 0.9, x: e.x, y: e.y, z: 10, r: Math.max(e.w, e.h) * 0.6, dust: true }); sfxAt({ x: e.x, y: e.y, far: 1800 }, "boom", 0.6); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) shake = Math.max(shake, 6); }
   else if (e.k === "zap") { fx.push({ kind: "zap", t0: t, dur: 0.35, pts: e.pts }); if (Math.hypot(e.pts[0][0] - pred.x, e.pts[0][1] - pred.y) < 900) sfx("zap"); }
-  else if (e.k === "meteor") { fx.push({ kind: "boom", t0: t, dur: 0.8, x: e.x, y: e.y, z: e.z, r: 170 }); fx.push({ kind: "boom", t0: t, dur: 1.4, x: e.x, y: e.y, z: e.z, r: 120, dust: true }); const d = Math.hypot(e.x - pred.x, e.y - pred.y); if (d < 1200) { sfx("boom", 1 - d / 1400); shake = Math.max(shake, 16 * (1 - d / 1200)); } }
+  else if (e.k === "meteor") { fx.push({ kind: "boom", t0: t, dur: 0.8, x: e.x, y: e.y, z: e.z, r: 170 }); fx.push({ kind: "boom", t0: t, dur: 1.4, x: e.x, y: e.y, z: e.z, r: 120, dust: true }); const d = Math.hypot(e.x - pred.x, e.y - pred.y); sfxAt({ x: e.x, y: e.y, far: 3500 }, "boom"); if (d < 1200) { shake = Math.max(shake, 16 * (1 - d / 1200)); } }
   else if (e.k === "quake") shake = Math.max(shake, 14);
   else if (e.k === "siren") { sirenT = t; sfx("siren"); }
   else if (e.k === "nuke") { nukeFx = { x: e.x, y: e.y, t }; shake = Math.max(shake, 30); sfx("nuke"); }
-  else if (e.k === "hatch") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 500) sfx("click"); }
-  else if (e.k === "ballkick") { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 600) sfx("kick"); }
+  else if (e.k === "hatch") { sfxAt({ x: e.x, y: e.y, far: 500 }, "click"); }
+  else if (e.k === "ballkick") { sfxAt({ x: e.x, y: e.y, far: 600 }, "kick"); }
   else if (e.k === "goal") { sfx("goal"); fx.push({ kind: "text", t0: t, dur: 2, x: e.x, y: e.y, z: 80, text: "GOAL!", color: "#ffd34d", big: true }); }
-  else if (e.k === "vault") { fx.push({ kind: "text", t0: t, dur: 2.5, x: e.x, y: e.y, z: 80, text: "VAULT OPEN", color: "#ffd34d", big: true }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 1200) sfx("jackpot"); }
-  else if (e.k === "alarm") { fx.push({ kind: "shout", t0: t, dur: 1.5, x: e.x, y: e.y, a: 0, full: true, col: 0xff3030, c2: "255,48,48" }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 1000) sfx("alarm"); }
-  else if (e.k === "hacked") { fx.push({ kind: "text", t0: t, dur: 1.6, x: e.x, y: e.y, z: (e.tz || 0) + 60, text: e.of ? `TERMINAL ${e.of[0]}/${e.of[1]}` : `ACCESS GRANTED ${e.n}/3`, color: "#7dffb0", big: true }); if (Math.hypot(e.x - pred.x, e.y - pred.y) < 700) sfx("perfect"); }
+  else if (e.k === "vault") { fx.push({ kind: "text", t0: t, dur: 2.5, x: e.x, y: e.y, z: 80, text: "VAULT OPEN", color: "#ffd34d", big: true }); sfxAt({ x: e.x, y: e.y, far: 1200 }, "jackpot"); }
+  else if (e.k === "alarm") { fx.push({ kind: "shout", t0: t, dur: 1.5, x: e.x, y: e.y, a: 0, full: true, col: 0xff3030, c2: "255,48,48" }); sfxAt({ x: e.x, y: e.y, far: 1000 }, "alarm"); }
+  else if (e.k === "hacked") { fx.push({ kind: "text", t0: t, dur: 1.6, x: e.x, y: e.y, z: (e.tz || 0) + 60, text: e.of ? `TERMINAL ${e.of[0]}/${e.of[1]}` : `ACCESS GRANTED ${e.n}/3`, color: "#7dffb0", big: true }); sfxAt({ x: e.x, y: e.y, far: 700 }, "perfect"); }
 }
 function handlePersonal(e) {
   const t = T();
@@ -423,7 +429,7 @@ cv.addEventListener("mousemove", (e) => {
     radial.sel = d < 28 ? -1 : Math.round(((Math.atan2(radial.ay, radial.ax) + Math.PI / 2 + Math.PI * 4) % (Math.PI * 2)) / (Math.PI * 2 / items.length)) % items.length;
     return;
   }
-  if (document.pointerLockElement === cv) { const sm = S && S.p.find((q) => q.id === me), sc = sm && sm.w === "sniper" && adsZoom > 1.3 && viewMode === "fp"; const sens = 0.0024 * OPTS.sens * (sc ? 0.2 : adsZoom > 1.05 ? 0.55 : 1); yaw += e.movementX * sens; pitch = Math.max(-1.45, Math.min(1.45, pitch - e.movementY * sens * (OPTS.invert ? -1 : 1))); return; }
+  if (document.pointerLockElement === cv) { const sm = S && S.p.find((q) => q.id === me), sc = sm && sm.w === "sniper" && adsZoom > 1.3; const sens = 0.0024 * OPTS.sens * (sc ? 0.2 : adsZoom > 1.05 ? 0.55 : 1); yaw += e.movementX * sens; pitch = Math.max(-1.45, Math.min(1.45, pitch - e.movementY * sens * (OPTS.invert ? -1 : 1))); return; }
   mouseX = e.clientX; mouseY = e.clientY;
 });
 const menusOpen = () => fixOpen || dlgOpen || bugOpen || ballotOpen || (S && S.g.ph === "lobby") || cleanOpen || hackOpen || optsOpen || chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || journalOpen || invOpen || mktOpen || cardsOpen || stallOpen || (S && S.g.ph === "over");
@@ -450,6 +456,7 @@ cv.addEventListener("wheel", () => { const n = performance.now(); if (n - wheelT
 cv.addEventListener("contextmenu", (e) => e.preventDefault());
 $("readyBtn").onclick = (e) => { e.target.blur(); send({ t: "ready" }); };
 $("lpOpts").onclick = (e) => { e.target.blur(); toggleOptions(true); };
+$("lpForce").onclick = (e) => { e.target.blur(); send({ t: "force" }); };
 $("lpBug").onclick = (e) => { e.target.blur(); toggleBug(true); };
 setInterval(() => { lobbyTip = (lobbyTip + 1) % LOBBY_TIPS.length; if (S && S.g.ph === "lobby") $("lpTip").textContent = "Tip: " + LOBBY_TIPS[lobbyTip]; }, 9000);
 // ---------------------------------------------------------------- bug reports (F8)
@@ -549,7 +556,9 @@ function renderLobby(m, hostId) {
   $("lpModes").innerHTML = Object.entries(MODE_INFO).map(([k, [n, d]]) => `<div class="lp-mode${k === m.g.mode ? " sel" : ""}${host ? " pick" : ""}" data-m="${k}"><b>${n}${k === m.g.mode ? " ✓" : ""}</b>${d}</div>`).join("");
   if (host) for (const el of $("lpModes").querySelectorAll(".lp-mode")) el.onclick = () => send({ t: "mode", m: el.dataset.m });
   $("lpTip").textContent = "Tip: " + LOBBY_TIPS[lobbyTip];
-  $("lpList").innerHTML = m.p.map((p) => `<div class="lp-row"><span style="color:${p.c}">${p.id === hostId ? "♛ " : ""}${esc(p.n)}</span><span class="${p.rd ? "ok" : "no"}">${p.rd ? "READY" : "not ready"}</span></div>`).join("");
+  $("lpList").innerHTML = m.p.map((p) => `<div class="lp-row"><span style="color:${p.c}">${p.id === hostId ? "♛ " : ""}${esc(p.n)}</span><span><span class="${p.rd ? "ok" : "no"}">${p.rd ? "READY" : "not ready"}</span>${host && p.id !== me ? ` <button class="lp-kick" data-kick="${p.id}" title="Kick them out of the game">Kick</button>` : ""}</span></div>`).join("");
+  for (const el of $("lpList").querySelectorAll("[data-kick]")) el.onclick = () => { const p = m.p.find((q) => q.id === +el.dataset.kick); if (p && confirm(`Kick ${p.n} out of the game?`)) send({ t: "kick", id: p.id }); };
+  $("lpForce").classList.toggle("hidden", !host || m.p.length < 2 || m.g.cd >= 0 || ready === m.p.length);
   $("lpMode").textContent = hostId === me ? "You're the host: click a mode to pick it." : "The host picks the mode.";
   for (const b of [$("readyBtn"), $("overReady")]) { b.classList.toggle("on", !!(mine && mine.rd)); b.textContent = mine && mine.rd ? "Ready! (click to cancel)" : b.id === "readyBtn" ? "Ready" : "Ready for another round"; }
   $("lpCd").textContent = cd;
@@ -815,21 +824,34 @@ function zombieSounds(t) {
   const near = [];
   for (const z of S.z) {
     const d = Math.hypot(z[2] - pred.x, z[3] - pred.y);
-    if (z[1] === "c") { if (z[7] && !zWound.has(z[0])) { zWound.add(z[0]); if (d < 900) sfx("moan", 1 - d / 900, "snort"); } else if (!z[7]) zWound.delete(z[0]); }
+    if (z[1] === "c") { if (z[7] && !zWound.has(z[0])) { zWound.add(z[0]); sfxAt({ x: z[2], y: z[3], far: 900 }, "moan", 1, "snort"); } else if (!z[7]) zWound.delete(z[0]); }
     if (d < 750) near.push([z, d]);
   }
   if (t < moanNext || !near.length) return;
   moanNext = t + 0.5 + Math.random() * (near.length > 6 ? 0.6 : 1.6);
   const [z, d] = near[(Math.random() * near.length) | 0];
-  sfx("moan", Math.max(0.15, 1 - d / 750), z[1]);
+  sfx("moan", 1, z[1], heard({ x: z[2], y: z[3], far: 900 }) || { vol: 0.05, cut: 900, pan: 0 });
 }
 // [crack length, crack pitch, thump pitch, thump length, thump volume, tail length]
 const SHOT_SND = { pistol: [0.08, 1200, 160, 0.12, 0.5, 0.15], smg: [0.06, 1500, 140, 0.08, 0.32, 0.08], rifle: [0.1, 900, 120, 0.15, 0.6, 0.25], ak: [0.11, 800, 105, 0.16, 0.65, 0.25], shotgun: [0.22, 500, 85, 0.26, 0.7, 0.4], sniper: [0.3, 300, 65, 0.36, 0.7, 0.6], staff: [0.05, 2000, 200, 0.1, 0.2, 0], laser: [0.2, 600, 55, 0.5, 0.7, 0.5], rocket: [0.25, 300, 60, 0.3, 0.7, 0.5] };
-function sfx(kind, vol = 1, sub) {
+// where a sound comes from: it gets quieter and duller with distance, and comes from the side it's on
+// at = { x, y, far }: silent beyond far, half volume at about a third of the way out
+function heard(at) {
+  const dx = at.x - pred.x, dy = at.y - pred.y, d = Math.hypot(dx, dy), far = at.far || 900;
+  if (d >= far) return null;
+  const k = d / far, ref = far * 0.3;
+  return { vol: (1 - k) / (1 + (d / ref) ** 2), cut: 18000 * Math.pow(1 - k, 2.2) + 700, pan: use3d && d > 30 ? Math.max(-0.85, Math.min(0.85, (dx * -Math.sin(yaw) + dy * Math.cos(yaw)) / d)) : 0 };
+}
+function sfxAt(at, kind, vol, sub) { const h = heard(at); if (h) sfx(kind, vol, sub, h); }
+function sfx(kind, vol = 1, sub, h) {
   if (!actx) return;
   const t = actx.currentTime;
   if (kind === "shot") { if (t - lastShotSfx < 0.03) return; lastShotSfx = t; }
-  const g = actx.createGain(); g.connect(actx.destination);
+  const g = actx.createGain();
+  if (h) { // far away: quieter, muffled, and off to one side
+    const lp = actx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = h.cut; g.connect(lp);
+    if (actx.createStereoPanner) { const pn = actx.createStereoPanner(); pn.pan.value = h.pan; lp.connect(pn); pn.connect(actx.destination); } else lp.connect(actx.destination);
+  } else g.connect(actx.destination);
   const tone = (type, f0, f1, dur, v) => {
     const o = actx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
     const gg = actx.createGain(); gg.gain.setValueAtTime(v, t); gg.gain.exponentialRampToValueAtTime(0.001, t + dur); o.connect(gg); gg.connect(g); o.start(t); o.stop(t + dur);
@@ -840,7 +862,7 @@ function sfx(kind, vol = 1, sub) {
     const src = actx.createBufferSource(); src.buffer = b; const f = actx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = hp;
     const gg = actx.createGain(); gg.gain.value = v; src.connect(f); f.connect(gg); gg.connect(g); src.start(t);
   };
-  g.gain.value = 0.35 * OPTS.vol * (T() - deafT < 3 ? 0.35 : 1);
+  g.gain.value = 0.35 * OPTS.vol * (T() - deafT < 3 ? 0.35 : 1) * (h ? h.vol : 1);
   if (kind === "shot" && sub === "rico") { tone("sine", 2600, 900, 0.2, 0.16 * vol); noise(0.04, 0.2 * vol, 3000); }
   else if (kind === "shot") { // a crack, a thump you feel, and a tail that rolls off
     const P = SHOT_SND[sub] || SHOT_SND.pistol;
@@ -958,9 +980,10 @@ function hush() { try { if ("speechSynthesis" in window && !shameSpeaking()) spe
 const shameSpeaking = () => T() - shameT < 4;
 
 // ---------------------------------------------------------------- options
-const OPTS = { vol: 1, music: 0.5, sens: 1, fov: 80, invert: false, shake: true, impact: true, voices: true, crouchHold: false };
+const OPTS = { vol: 1, music: 0.5, sens: 1, fov: 80, invert: false, shake: true, impact: true, voices: true, crouchHold: false, res: 1, fps: false };
 try { Object.assign(OPTS, JSON.parse(localStorage.getItem("slop-opts") || "{}")); } catch {}
 let optsOpen = false;
+if (has3d) R3D.setScale(OPTS.res);
 function saveOpts() { try { localStorage.setItem("slop-opts", JSON.stringify(OPTS)); } catch {} }
 let padView = 0;
 function toggleOptions(force) {
@@ -984,6 +1007,8 @@ function renderOptions() {
     row("music", "Music", 0, 1.5, 0.05, OPTS.music, pct) +
     row("sens", "Mouse sensitivity", 0.2, 3, 0.05, OPTS.sens, (v) => (+v).toFixed(2) + "x") +
     row("fov", "Field of view", 60, 110, 1, OPTS.fov, (v) => v + "°") +
+    row("res", "Resolution (lower = smoother)", 0.5, 1.5, 0.05, OPTS.res, pct) +
+    `<div class="opt"><label><input type="checkbox" id="o-fps"${OPTS.fps ? " checked" : ""}> Show frames per second</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-invert"${OPTS.invert ? " checked" : ""}> Invert mouse Y</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-shake"${OPTS.shake ? " checked" : ""}> Screen shake</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-impact"${OPTS.impact ? " checked" : ""}> Impact frames (a split-second freeze on big hits)</label></div>` +
@@ -994,10 +1019,11 @@ function renderOptions() {
     [["pitch", "Pitch (stick forward/back)"], ["roll", "Roll / strafe (stick left/right)"], ["yaw", "Yaw (twist or rudder)"], ["thr", "Collective (throttle: up = climb)"]].map(([k, l]) =>
       `<div class="opt"><label>${l}</label><button class="cbtn alt bind" data-ax="${k}">Axis ${FLY[k]}</button><label class="inv"><input type="checkbox" data-inv="${k}"${FLY.inv[k] ? " checked" : ""}> invert</label><span id="o-ax-${k}"></span></div>`).join("") +
     `<div class="opt-note">Click an axis button, then push that control all the way. Trigger fires the chain gun, button 2 fires rockets, button 3 gets out. Set the throttle to the middle to hover. A standard gamepad needs no setup.</div>`;
-  for (const id of ["vol", "music", "sens", "fov"]) {
-    const el = $("o-" + id), fmt = id === "vol" || id === "music" ? pct : id === "sens" ? (v) => (+v).toFixed(2) + "x" : (v) => v + "°";
-    el.oninput = () => { OPTS[id] = +el.value; $("o-" + id + "-v").textContent = fmt(OPTS[id]); saveOpts(); if (id === "vol") sfx("hit"); };
+  for (const id of ["vol", "music", "sens", "fov", "res"]) {
+    const el = $("o-" + id), fmt = id === "vol" || id === "music" || id === "res" ? pct : id === "sens" ? (v) => (+v).toFixed(2) + "x" : (v) => v + "°";
+    el.oninput = () => { OPTS[id] = +el.value; $("o-" + id + "-v").textContent = fmt(OPTS[id]); saveOpts(); if (id === "vol") sfx("hit"); if (id === "res" && has3d) R3D.setScale(OPTS.res); };
   }
+  $("o-fps").onchange = (e) => { OPTS.fps = e.target.checked; saveOpts(); };
   $("o-invert").onchange = (e) => { OPTS.invert = e.target.checked; saveOpts(); };
   for (const el of document.querySelectorAll("[data-inv]")) el.onchange = () => { FLY.inv[el.dataset.inv] = el.checked; saveFly(); };
   for (const el of document.querySelectorAll(".bind")) el.onclick = () => {
@@ -1153,9 +1179,11 @@ setInterval(() => {
 // the same physics as the server (move.js), run locally so movement feels instant; the server's answer pulls us back gently
 const pred = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, gr: true, pk: 0, tt: 0, init: false, srv: null, dashCd: 0 };
 let boxCache = { key: "", boxes: [] };
+let builtKeyS = null, builtKeyV = "";
+const builtKey = () => { if (S !== builtKeyS) { builtKeyS = S; builtKeyV = S ? S.b.map((b) => b[0]).join(",") : ""; } return builtKeyV; }; // once per snapshot, not on every ray
 function worldBoxes() { // everything solid within reach of you (the wild has a lot of trees)
   const cx = Math.floor(pred.x / 400), cy = Math.floor(pred.y / 400);
-  const key = (MAP ? MAP.seed + ":" + MAP.walls.length + ":" + (MAP.ver || 0) + ":" + (MAP.cv || 0) : "") + ":" + (S ? S.b.map((b) => b[0]).join(",") : "") + ":" + cx + "," + cy;
+  const key = (MAP ? MAP.seed + ":" + MAP.walls.length + ":" + (MAP.ver || 0) + ":" + (MAP.cv || 0) : "") + ":" + builtKey() + ":" + cx + "," + cy;
   if (key !== boxCache.key) {
     const solid = S ? S.b.filter((b) => PIECES[b[1]] && PIECES[b[1]].solid).map((b) => ({ x: b[2], y: b[3], w: 40, h: 40, z0: 0, z1: PIECES[b[1]].z1 || 10, kind: "built" })) : [];
     const x0 = cx * 400 - 1200, x1 = cx * 400 + 1600, y0 = cy * 400 - 1200, y1 = cy * 400 + 1600;
@@ -1583,7 +1611,8 @@ function render3d(mine, t, dt) {
   watcher = null;
   aimYaw = yaw; aimPitch = pitch;
   // the sniper scope: a real zoom with a little sway; the Steady skill and crouching calm it down
-  const scoped = !!(mine && !mine.d && !mine.vh && mine.w === "sniper" && adsK > 0.85);
+  const scoped = !!(mine && !mine.d && !mine.vh && !mine.air && !mine.out && mine.w === "sniper" && adsK > 0.85); // looks through the scope from either view
+  scopedNow = scoped;
   if (scoped) { const sw = 0.006 * (1 - 0.25 * ((mine.sk && mine.sk.steady) || 0)) * (mine.cro ? 0.35 : 1); aimYaw += Math.sin(t * 1.3) * sw; aimPitch += Math.sin(t * 1.9 + 1) * sw * 0.7; }
   const third = (tx, ty, tz, dist, side, up) => { // over-the-shoulder camera that doesn't go through walls
     const f = dirOf(yaw, pitch), rx = -Math.sin(yaw), ry = Math.cos(yaw);
@@ -1613,7 +1642,7 @@ function render3d(mine, t, dt) {
     const w = smooth("watch", best.x, best.y, dt);
     cam = { x: w.x, y: w.y, z: best.z, look: [pred.x, pred.y, pred.z + 30], fov: 70 };
     watcher = { x: w.x, y: w.y, who: best.who };
-  } else if (fp && !mine.vh && !mine.air) {
+  } else if ((fp || scoped) && !mine.vh && !mine.air) {
     const bob = pred.gr ? Math.sin(t * 11) * Math.min(1, Math.hypot(pred.vx, pred.vy) / 200) * 1.6 : 0;
     const bob2 = sprintK > 0.3 && pred.gr ? Math.sin(t * 15) * 1.4 * sprintK : 0; // sprinting bounces more
     cam = scoped ? { x: eye.x, y: eye.y, z: eye.z, yaw: aimYaw, pitch: aimPitch, fov: 14 } : { x: eye.x, y: eye.y, z: eye.z + bob + bob2, yaw, pitch: pitch - mantleDip * 0.18, fov: OPTS.fov - adsK * 30 + sprintK * 8 + slideK * 10, roll };
@@ -1662,8 +1691,11 @@ function render3d(mine, t, dt) {
   if (mine && document.pointerLockElement !== cv && !menusOpen() && !radial) { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 170, VH / 2 + 80, 340, 34, 8); ctx.fill(); text("Click to look around  ·  T switches view", VW / 2, VH / 2 + 97, 15, "#ffd34d"); }
   if (t - viewT < 2) text(`${VIEW_NAME[viewMode]}  (T to switch)`, VW / 2, Math.max(150, hudTop + 14), 20, "#fff");
   for (const k of disp.keys()) if (disp.get(k).seen < frameNo - 30) disp.delete(k);
+  { const n = performance.now(), ft = (n - fpsLast) / 1000; fpsLast = n; if (ft > 0 && ft < 2) fpsAvg += (1 / ft - fpsAvg) * 0.05; }
+  if (OPTS.fps) text(`${Math.round(fpsAvg)} fps`, VW - 40, VH - 12, 12, fpsAvg < 30 ? "#ff8080" : "#9f9");
 }
-let ghost3d = null;
+let fpsAvg = 60, fpsLast = 0;
+let ghost3d = null, scopedNow = false;
 // names, health bars, damage numbers and the like, drawn flat over the 3D view
 function overlay3d(mine, t, dt) {
   // labels hide behind walls: a quick line-of-sight check from the camera
@@ -2733,9 +2765,9 @@ function drawCrosshair(mine, t) {
   const gap = use3d ? 4 + Math.tan(mine.spr) * (VH / 2) / Math.tan(((camNow && camNow.fov) || 78) * Math.PI / 360) : 4 + Math.tan(mine.spr) * Math.max(60, dist);
   const col = t - hsT < 0.25 ? "#ff9d2e" : mine.hot ? "#7dffb0" : "#ffffff";
   ctx.strokeStyle = "#000a"; ctx.lineWidth = 4;
-  const lines = () => { ctx.beginPath(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(mouseX + dx * gap, mouseY + dy * gap); ctx.lineTo(mouseX + dx * (gap + 8), mouseY + dy * (gap + 8)); } ctx.stroke(); };
-  lines(); ctx.strokeStyle = col; ctx.lineWidth = 2; lines();
-  ctx.fillStyle = col; ctx.fillRect(mouseX - 1, mouseY - 1, 2, 2);
+  const lines = () => { if (scopedNow) return; ctx.beginPath(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(mouseX + dx * gap, mouseY + dy * gap); ctx.lineTo(mouseX + dx * (gap + 8), mouseY + dy * (gap + 8)); } ctx.stroke(); };
+  lines(); ctx.strokeStyle = col; ctx.lineWidth = 2; lines(); // the scope has its own reticle
+  if (!scopedNow) { ctx.fillStyle = col; ctx.fillRect(mouseX - 1, mouseY - 1, 2, 2); }
   if (mine.chg > 0) { ctx.strokeStyle = "#ff2a2a"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(mouseX, mouseY, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * mine.chg); ctx.stroke(); if (mine.chg >= 1) text("FIRE", mouseX, mouseY + 40, 12, "#ff2a2a"); }
   const hk = t - hitT, hdur = hitKind === "kill" ? 0.35 : 0.2;
   if (hk < hdur && OPTS.hitmarkers !== false) {
