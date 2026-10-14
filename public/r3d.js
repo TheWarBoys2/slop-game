@@ -2,7 +2,8 @@
 // Game coordinates are (x, y) on the ground and z for height; three.js is y-up, so a game point (x, y, z) sits at (x, z, y).
 // game.js owns the game state and the camera maths; this file only turns that state into a scene.
 // zombie sizes by the one-letter code the server sends (game.js uses this too)
-var ZR = { b: 48, e: 34, t: 26, r: 12, w: 15, c: 20, f: 13, x: 24, s: 14, d: 16, y: 40 };
+var ZH = { g: 3.2, p: 3.0, k: 2.2, q: 2.4 }; // how tall each is, in radii (3.7 unless it's a bug)
+var ZR = { b: 48, e: 34, t: 26, r: 12, w: 15, c: 20, f: 13, x: 24, s: 14, d: 16, y: 40, g: 14, p: 22, k: 36, q: 56 };
 var R3D = (function () {
   let T = null, R = null, scene = null, cam = null, gl = null, ok = false, vw = 0, vh = 0;
   let level = null, levelKey = "", levelVer = -1;
@@ -757,6 +758,50 @@ var R3D = (function () {
     g.userData.body = body;
     return g;
   }
+  // Bug Night: the bugs. g = warrior, p = spitter, k = tanker, q = the Brain Bug. Six-ish legs, mandibles, a shell.
+  function bugMesh(g, type, glow, arms) {
+    const shell = mat(type === "q" ? 0x7a4a3a : type === "k" ? 0x5a3e22 : type === "p" ? 0x8a7a42 : 0xb07a3a, glow ? 0x3a9a10 : 0);
+    const dark = mat(0x3a2414), legs = [];
+    const s = type === "k" ? 2.1 : type === "p" ? 1.3 : type === "q" ? 1.6 : 1;
+    const leg = (x, side, len) => {
+      const piv = new T.Group(); piv.position.set(x * s, 24 * s, side * 6 * s);
+      const up = mesh(new T.CylinderGeometry(1.8 * s, 1.5 * s, 20 * s, 6), dark, 0, 7 * s, side * 8 * s); up.rotation.x = side * 0.95; piv.add(up);
+      const lo = mesh(new T.CylinderGeometry(1.5 * s, 0.4 * s, len * s, 6), dark, 0, (15 - len / 2) * s, side * 18 * s); lo.rotation.x = -side * 0.18; piv.add(lo);
+      g.add(piv); legs.push(piv);
+    };
+    if (type === "q") { // the Brain Bug: a huge pulsing brain on a squat body, a face full of mouth
+      const body = mesh(new T.SphereGeometry(22, 12, 10), shell, 6, 26, 0); body.scale.set(1.6, 0.8, 1.3); g.add(body);
+      const brain = mesh(new T.SphereGeometry(1, 18, 14), mat(0xe0909a, 0x501830), -10, 82, 0); brain.scale.set(52, 40, 46); g.add(brain); g.userData.pulse = brain;
+      for (let i = 0; i < 5; i++) { const r = mesh(new T.TorusGeometry(1, 0.035, 5, 24), mat(0xb05868), -10, 82, 0); r.scale.set(52, 46, 40); r.rotation.y = i * 0.6; g.add(r); }
+      g.add(mesh(new T.SphereGeometry(14, 12, 10), shell, 40, 38, 0));
+      for (const z2 of [-1, 1]) {
+        g.add(mesh(new T.SphereGeometry(3.2, 8, 6), mat(0x101010, 0x400000), 50, 46, z2 * 7));
+        const m = mesh(new T.ConeGeometry(3, 22, 6), mat(0xe8d8b0), 54, 26, z2 * 6); m.rotation.z = -2.2; arms.push(m); g.add(m);
+      }
+      for (let i = 0; i < 8; i++) { const tn = mesh(new T.CylinderGeometry(2.2, 0.6, 26, 6), mat(0xc07080), 50 + (i % 4) * 2, 22, (i - 3.5) * 3.2); tn.rotation.z = -2.6 + (i % 3) * 0.2; g.add(tn); }
+      for (const x of [-1, 0.6]) for (const side of [-1, 1]) leg(x * 14, side, 30);
+    } else {
+      const abd = mesh(new T.SphereGeometry(1, 12, 10), shell, -14 * s, 24 * s, 0);
+      abd.scale.set(16 * s, (type === "p" ? 12 : 10) * s, 11 * s); g.add(abd);
+      if (type === "p") { // the spitter's glowing plasma sac, cocked up like a mortar
+        const sac = mesh(new T.SphereGeometry(1, 12, 10), mat(0x70ff60, 0x30a020), -18 * s, 40 * s, 0); sac.scale.set(12 * s, 18 * s, 12 * s); sac.rotation.z = 0.5; g.add(sac); g.userData.pulse = sac;
+      }
+      if (type === "k") { // the tanker: plates down its back, and a mouth like a bin
+        for (let i = 0; i < 4; i++) { const pl = mesh(new T.BoxGeometry(9 * s, 3 * s, 20 * s), mat(0x3a2a16), (-24 + i * 9) * s, (33 - Math.abs(i - 1.5) * 1.2) * s, 0); pl.rotation.z = 0.2; g.add(pl); }
+        g.add(mesh(new T.CylinderGeometry(6 * s, 8 * s, 6 * s, 10), mat(0x2a1a10), 16 * s, 22 * s, 0).rotateZ(Math.PI / 2));
+      }
+      g.add(mesh(new T.SphereGeometry(9 * s, 12, 10), shell, 3 * s, 25 * s, 0)); // thorax
+      g.add(mesh(new T.SphereGeometry(6.5 * s, 10, 8), shell, 14 * s, 27 * s, 0)); // head
+      for (const z2 of [-1, 1]) {
+        g.add(mesh(new T.SphereGeometry(1.4 * s, 6, 5), mat(0xff3020, 0xa01000), 19 * s, 30 * s, z2 * 3 * s));
+        const mand = mesh(new T.ConeGeometry(1.6 * s, 10 * s, 5), mat(0xe8d8b0), 22 * s, 24 * s, z2 * 4 * s); mand.rotation.z = -1.9; mand.rotation.x = z2 * 0.4; g.add(mand);
+        // the front claws: big scythes (the "arms" the game swings)
+        const cl = mesh(new T.BoxGeometry(22 * s, 2.4 * s, 2.4 * s), dark, 12 * s, 38 * s, z2 * 9 * s); cl.rotation.z = 0.7; g.add(cl); arms.push(cl);
+      }
+      for (const x of [6, -2, -10]) for (const side of [-1, 1]) leg(x, side, type === "k" ? 30 : 42);
+    }
+    g.userData.legs = legs;
+  }
   const ZCOL = { e: 0x3a6a8a, t: 0x3f6b3a, r: 0xa0d070, w: 0x6fa35a, c: 0x7a5a3a, f: 0x4a3a5a, x: 0x8aa04a, s: 0xd8d0c0, d: 0x7a8a3a, y: 0x5a6a2a };
   function zombieMesh(type, bk, glow) {
     const r = ZR[type] || 15;
@@ -766,7 +811,8 @@ var R3D = (function () {
     const skin = glow ? mat(col, 0x3a9a10) : mat(col);
     const eye = type === "b" ? (bk === "golem" ? 0xff8a20 : 0xff2020) : type === "e" || type === "s" ? 0xbfe8ff : type === "f" ? 0xff3030 : 0xffec40;
     const arms = [];
-    if (type === "f") { // a flying thing: a body, a head and two big leathery wings
+    if (type === "g" || type === "p" || type === "k" || type === "q") bugMesh(g, type, glow, arms);
+    else if (type === "f") { // a flying thing: a body, a head and two big leathery wings
       g.add(mesh(new T.SphereGeometry(10 * k, 10, 8), skin, 0, 24 * k, 0));
       g.add(mesh(new T.SphereGeometry(7 * k, 10, 8), skin, 9 * k, 30 * k, 0));
       for (const s of [-1, 1]) g.add(mesh(new T.SphereGeometry(1.8 * k, 6, 5), mat(eye, eye), 15 * k, 31 * k, s * 3 * k));
@@ -807,6 +853,47 @@ var R3D = (function () {
     if (type === "b" && bk === "golem") for (const s of [-1, 1]) g.add(mesh(new T.CylinderGeometry(7, 7, 40, 8), mat(0x6b5220), -10, 60, s * 30));
     if (type === "e" || (type === "b" && bk === "drowned")) { const c = mesh(new T.TorusGeometry(10 * k, 1.5 * k, 6, 20), mat(0xffd34d, 0x806010), 4 * k, 32 * k, 0); c.rotation.y = Math.PI / 2; c.rotation.x = 0.4; g.add(c); }
     g.userData.arms = arms; g.userData.skin = skin; g.userData.r = r;
+    return g;
+  }
+  // a mech, built from whatever parts are bolted on: "core,legs,armR,armL,head" (bugs.js)
+  function mechMesh(code) {
+    const [core, legsK, armR, armL, head] = String(code || "").split(",");
+    const g = new T.Group(), body = new T.Group(); g.add(body);
+    const hull = mat(core === "fusion" ? 0x4a6a8a : 0x5a6a4a), dk = mat(0x2a2e30), trim = mat(legsK === "jet" ? 0xff8a20 : 0xd8c040);
+    const legs = [], jets = [];
+    for (const s of [-1, 1]) { // legs swing from the hip; the knee bends backwards like a chicken's
+      const leg = new T.Group(); leg.position.set(0, 62, s * 17); g.add(leg); legs.push(leg);
+      const th = mesh(new T.BoxGeometry(13, 32, 11), hull, 3, -14, 0); th.rotation.z = -0.25; leg.add(th);
+      leg.add(mesh(new T.SphereGeometry(7, 10, 8), dk, 7, -30, 0)); // knee
+      const sh = mesh(new T.BoxGeometry(10, 32, 10), hull, 2, -46, 0); sh.rotation.z = 0.2; leg.add(sh);
+      leg.add(mesh(new T.BoxGeometry(28, 6, 18), dk, 3, -61, 0)); // foot
+      leg.add(mesh(new T.BoxGeometry(14, 3, 11.4), trim, 3, -10, 0));
+      if (legsK === "jet") {
+        leg.add(mesh(new T.CylinderGeometry(4.5, 5.5, 14, 10), dk, -9, -42, 0));
+        const fl = mesh(new T.ConeGeometry(5, 26, 8, 1, true), new T.MeshBasicMaterial({ color: 0x80c8ff, transparent: true, opacity: 0.8, depthWrite: false }), -9, -60, 0); fl.rotation.x = Math.PI; fl.visible = false; leg.add(fl); jets.push(fl);
+      }
+    }
+    body.add(mesh(new T.BoxGeometry(46, 34, 48), hull, 0, 84, 0)); // the hull
+    body.add(mesh(new T.BoxGeometry(48, 4, 50), trim, 0, 70, 0));
+    body.add(mesh(new T.BoxGeometry(16, 14, 30), mat(0x9fd0e8, 0x18384a), 21, 90, 0)); // cockpit glass
+    body.add(mesh(new T.BoxGeometry(14, 22, 30), dk, -26, 86, 0)); // backpack
+    if (core === "fusion") { const c = mesh(new T.SphereGeometry(6, 12, 10), new T.MeshBasicMaterial({ color: 0x40ffb0 }), 23, 76, 0); body.add(c); g.userData.glow = c; }
+    else body.add(mesh(new T.CylinderGeometry(4, 4, 18, 8), mat(0x888888), -32, 98, 8));
+    if (head === "sensor") { body.add(mesh(new T.BoxGeometry(16, 10, 18), hull, 4, 106, 0)); const dish = mesh(new T.CylinderGeometry(10, 2, 4, 14), mat(0xcccccc), -6, 116, -10); dish.rotation.z = 0.8; body.add(dish); body.add(mesh(new T.CylinderGeometry(0.8, 0.8, 26, 5), dk, -10, 120, 12)); body.add(mesh(new T.SphereGeometry(2, 6, 5), new T.MeshBasicMaterial({ color: 0xff3030 }), -10, 133, 12)); }
+    else if (head === "ram") { body.add(mesh(new T.BoxGeometry(18, 10, 22), hull, 6, 106, 0)); for (const s of [-1, 1]) { const h = mesh(new T.ConeGeometry(4, 24, 6), mat(0xe8e0c8), 18, 108, s * 10); h.rotation.z = -1.2; h.rotation.x = s * 0.4; body.add(h); } }
+    else body.add(mesh(new T.CylinderGeometry(7, 8, 6, 10), dk, -4, 104, 0));
+    const arm = (kind, s) => {
+      if (!kind) return;
+      const a = new T.Group(); a.position.set(2, 92, s * 30); body.add(a);
+      a.add(mesh(new T.SphereGeometry(9, 10, 8), dk)); // shoulder
+      if (kind === "cannon") { a.add(mesh(new T.BoxGeometry(30, 12, 12), hull, 10, -8, 0)); for (const z of [-3, 3]) { const b = mesh(new T.CylinderGeometry(2.2, 2.2, 34, 8), dk, 40, -6, z); b.rotation.z = Math.PI / 2; a.add(b); } a.add(mesh(new T.BoxGeometry(10, 14, 8), mat(0x6a5a3a), 4, -18, s * 6)); }
+      else if (kind === "rockets") { a.add(mesh(new T.BoxGeometry(26, 20, 18), hull, 8, 2, 0)); for (let i = 0; i < 6; i++) { const tb = mesh(new T.CylinderGeometry(2.6, 2.6, 4, 8), mat(0xb03a2a), 21.5, -4 + (i % 2) * 8, -6 + Math.floor(i / 2) * 6); tb.rotation.z = Math.PI / 2; a.add(tb); } }
+      else if (kind === "flamer") { const b = mesh(new T.CylinderGeometry(4, 5, 30, 10), dk, 18, -8, 0); b.rotation.z = Math.PI / 2; a.add(b); a.add(mesh(new T.SphereGeometry(4, 8, 6), new T.MeshBasicMaterial({ color: 0x40a0ff }), 34, -8, 0)); a.add(mesh(new T.CylinderGeometry(6, 6, 16, 10), mat(0xc04020), -4, -12, s * 6)); }
+      else if (kind === "sword") { a.add(mesh(new T.BoxGeometry(22, 10, 10), hull, 8, -8, 0)); a.add(mesh(new T.BoxGeometry(6, 18, 6), dk, 20, -8, 0)); const bl = mesh(new T.BoxGeometry(70, 9, 2.5), mat(0xd8e4f0, 0x304050), 56, -8, 0); a.add(bl); a.add(mesh(new T.BoxGeometry(70, 1.5, 2.8), new T.MeshBasicMaterial({ color: 0x9fe8ff }), 56, -12.5, 0)); }
+      return a;
+    };
+    g.userData.armR = arm(armR, 1); g.userData.armL = arm(armL, -1);
+    g.userData.legs = legs; g.userData.jets = jets; g.userData.body = body;
     return g;
   }
   function vehicleMesh(kind) {
@@ -1061,7 +1148,21 @@ var R3D = (function () {
       if (kind === "lamp") lamps.push([bx + 20, by + 20]);
     }
     // vehicles (and the celebrity's limo)
-    for (const [id, kind, vx, vy, va, , pilot, , spd, vz] of S.vh) {
+    for (const [id, kind, vx, vy, va, , pilot, , spd, vz, parts, jetting] of S.vh) {
+      if (kind === "mech") { // walks, so the legs swing; the jets light up when it jumps
+        const e = pooled(`mech:${id}:${parts}`, () => mechMesh(parts));
+        const px = e.x;
+        smoothTo(e, vx, vy, vz || 0, dt); e.a = e.a === undefined ? va : angLerp(e.a, va, Math.min(1, dt * 12));
+        const mv = px === undefined ? 0 : Math.hypot(e.x - px, e.y - (e.py ?? e.y)) / Math.max(dt, 0.001); e.py = e.y;
+        e.walk = (e.walk || 0) + dt * Math.min(9, (spd || 0) / 22);
+        const air = (vz || 0) > 4 && jetting, sw = (spd || 0) > 15 && !air ? Math.sin(e.walk) : 0;
+        at(e.obj, e.x, e.y, e.z + Math.abs(sw) * 3); e.obj.rotation.y = -e.a;
+        e.obj.userData.legs.forEach((l, i) => { l.rotation.z = (i ? 1 : -1) * sw * 0.45 + (air ? 0.25 : 0); });
+        e.obj.userData.body.rotation.z = -Math.min(0.12, (spd || 0) / 2000);
+        for (const j of e.obj.userData.jets) { j.visible = !!jetting; if (jetting) j.scale.y = 0.8 + Math.random() * 0.5; }
+        if (e.obj.userData.glow) e.obj.userData.glow.scale.setScalar(1 + Math.sin(t * 6) * 0.15);
+        continue;
+      }
       const e = pooled(`veh:${id}`, () => { const o = vehicleMesh(kind); o.rotation.order = "YZX"; return o; });
       const pa = e.a ?? va;
       smoothTo(e, vx, vy, vz || 0, dt); e.a = e.a === undefined ? va : angLerp(e.a, va, Math.min(1, dt * 14));
@@ -1075,6 +1176,22 @@ var R3D = (function () {
         e.obj.userData.rotor.rotation.y += e.spin * dt; e.obj.userData.tail.rotation.z += e.spin * 1.6 * dt;
         e.obj.rotation.set(e.roll, -e.a, e.tilt);
       } else e.obj.rotation.set(0, -e.a, 0);
+    }
+    // Bug Night: the holes (and the Brain Bug's hive)
+    if (S.g.bug) for (const [id, hx, hy, hp] of S.g.bug.h) {
+      const hive = hp < 0;
+      const e = pooled(`bhole:${id}`, () => {
+        const g = new T.Group(), R = hive ? 70 : 44;
+        const ring = mesh(new T.TorusGeometry(R, R * 0.32, 8, 24), mat(0x5a4028), 0, 4, 0); ring.rotation.x = Math.PI / 2; ring.scale.z = 0.55; g.add(ring);
+        const pit = mesh(new T.CircleGeometry(R * 0.85, 24), new T.MeshBasicMaterial({ color: 0x0c0604 }), 0, 1.5, 0); pit.rotation.x = -Math.PI / 2; g.add(pit);
+        const goo = mesh(new T.RingGeometry(R * 0.7, R * 0.86, 24), new T.MeshBasicMaterial({ color: hive ? 0xc060ff : 0x9fd040, transparent: true, opacity: 0.6, depthWrite: false }), 0, 2, 0); goo.rotation.x = -Math.PI / 2; g.add(goo); g.userData.goo = goo;
+        for (let i = 0; i < (hive ? 9 : 6); i++) { const a = i / (hive ? 9 : 6) * Math.PI * 2, sp = mesh(new T.ConeGeometry(5, hive ? 46 : 26, 5), mat(0x3a2a1a), Math.cos(a) * R * 1.1, hive ? 18 : 10, Math.sin(a) * R * 1.1); sp.rotation.x = Math.sin(a) * 0.5; sp.rotation.z = -Math.cos(a) * 0.5; g.add(sp); }
+        const crack = mesh(new T.CircleGeometry(R * 0.6, 20), new T.MeshBasicMaterial({ color: 0xff7020, transparent: true, opacity: 0, depthWrite: false }), 0, 2.5, 0); crack.rotation.x = -Math.PI / 2; g.add(crack); g.userData.crack = crack;
+        return g;
+      });
+      at(e.obj, hx, hy, 0);
+      e.obj.userData.goo.material.opacity = 0.45 + Math.sin(t * 3 + id) * 0.15;
+      e.obj.userData.crack.material.opacity = hive ? 0 : (1 - hp / 100) * (0.5 + Math.sin(t * 10) * 0.2); // damaged: it glows where it's about to cave in
     }
     // townsfolk
     if (MAP.npcs && S.g.mode !== "royale") for (const n2 of MAP.npcs) {
@@ -1127,6 +1244,7 @@ var R3D = (function () {
       e.obj.userData.ice.visible = !!frozen;
       if (e.obj.userData.legs && mv > 0.05 && !frozen) e.obj.userData.legs.forEach((l, i) => { l.rotation.z = Math.sin(t * 10 + id + i * Math.PI) * 0.6; });
       const fr = e.obj.userData.fire; fr.visible = !!burn; if (burn) { fr.scale.set(1, 0.8 + Math.sin(t * 20 + id) * 0.2, 1); fr.rotation.y = t * 3; }
+      if (e.obj.userData.pulse) { const pu = e.obj.userData.pulse; pu.userData.base = pu.userData.base || pu.scale.clone(); pu.scale.copy(pu.userData.base).multiplyScalar(1 + Math.sin(t * (type === "q" ? 3 : 6) + id) * 0.06); }
       if (e.obj.userData.wings) e.obj.userData.wings.forEach((w, i) => { w.rotation.x = (i ? 1 : -1) * Math.sin(t * 14 + id) * 0.7; });
       if (e.hp !== undefined && zhp < e.hp) e.hitT = t; // took a hit: rock back and squash for a moment
       e.hp = zhp;
@@ -1137,7 +1255,7 @@ var R3D = (function () {
       if (e.kdK > 0.01) e.obj.rotation.z = e.kdK * 1.45;
       // armour plates, and the weak spot that glows red (the head; on a charger, its back)
       if (armd && !e.obj.userData.plate) {
-        const r = ZR[type] || 15, h = r * 3.7, g = new T.Group(), steel = mat(0x7a828a);
+        const r = ZR[type] || 15, h = r * (ZH[type] || 3.7), g = new T.Group(), steel = mat(0x7a828a);
         g.add(mesh(new T.BoxGeometry(r * 1.5, h * 0.35, r * 1.7), steel, 0, h * 0.5, 0));
         g.add(mesh(new T.BoxGeometry(r * 1.1, h * 0.12, r * 1.9), steel, 0, h * 0.72, 0));
         const weak = mesh(new T.SphereGeometry(r * 0.38, 10, 8), new T.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.85, depthWrite: false }), type === "c" ? -r * 0.9 : 0, type === "c" ? h * 0.55 : h * 0.92, 0);
@@ -1162,7 +1280,8 @@ var R3D = (function () {
     for (const [id, kind, x, y, z] of S.pr || []) {
       const e = pooled(`pr:${id}`, () => {
         const g = new T.Group();
-        if (kind === "rocket") { const b = mesh(new T.CylinderGeometry(2.5, 2.5, 16, 8), mat(0x5a6a3a)); b.rotation.z = Math.PI / 2; g.add(b); const tail = mesh(new T.SphereGeometry(5, 8, 6), new T.MeshBasicMaterial({ color: 0xffb040 }), -10, 0, 0); g.add(tail); }
+        if (kind === "plasma") { g.add(mesh(new T.SphereGeometry(6, 10, 8), new T.MeshBasicMaterial({ color: 0xc8ff90 }))); g.add(mesh(new T.SphereGeometry(11, 10, 8), new T.MeshBasicMaterial({ color: 0x60ff30, transparent: true, opacity: 0.4, depthWrite: false }))); }
+        else if (kind === "rocket") { const b = mesh(new T.CylinderGeometry(2.5, 2.5, 16, 8), mat(0x5a6a3a)); b.rotation.z = Math.PI / 2; g.add(b); const tail = mesh(new T.SphereGeometry(5, 8, 6), new T.MeshBasicMaterial({ color: 0xffb040 }), -10, 0, 0); g.add(tail); }
         else if (kind === "molo") { g.add(mesh(new T.CylinderGeometry(3, 3.5, 11, 8), mat(0x6a4a1a))); g.add(mesh(new T.SphereGeometry(3, 6, 5), new T.MeshBasicMaterial({ color: 0xff9a20 }), 0, 8, 0)); }
         else { g.add(mesh(new T.SphereGeometry(4.5, 10, 8), mat(0x3a5a2a))); g.add(mesh(new T.BoxGeometry(2, 3, 2), mat(0x999999), 0, 5, 0)); }
         return g;
@@ -1344,7 +1463,12 @@ var R3D = (function () {
         else if (f.kind === "boom") o = mesh(new T.SphereGeometry(1, 14, 10), new T.MeshBasicMaterial({ color: f.col ?? (f.dust ? 0xc8b48c : 0xff8a28), transparent: true, depthWrite: false }));
         else if (f.kind === "shout") o = mesh(new T.TorusGeometry(1, 0.08, 6, 32), new T.MeshBasicMaterial({ color: f.col ?? 0xc8e6ff, transparent: true, depthWrite: false }));
         else if (f.kind === "burn") o = mesh(new T.SphereGeometry(4, 6, 5), new T.MeshBasicMaterial({ color: 0xff9a20, transparent: true, depthWrite: false }));
-        else if (f.kind === "slash") { o = mesh(new T.TorusGeometry(56, 3, 4, 20, 2.2), new T.MeshBasicMaterial({ color: f.m ? 0xff6a6a : 0xf0f6ff, transparent: true, depthWrite: false, side: T.DoubleSide })); }
+        else if (f.kind === "flame" || f.kind === "acid") { // a cone of fire (a mech's flamer) or acid (a tanker bug), out along f.a
+          o = new T.Group(); const len = f.kind === "acid" ? 200 : 190;
+          const c = mesh(new T.ConeGeometry(f.kind === "acid" ? 60 : 50, len, 10, 1, true), new T.MeshBasicMaterial({ color: f.kind === "acid" ? 0x9fe040 : 0xff8a20, transparent: true, depthWrite: false, side: T.DoubleSide }), len / 2, 0, 0); c.rotation.z = Math.PI / 2; o.add(c);
+          const c2 = mesh(new T.ConeGeometry(f.kind === "acid" ? 30 : 24, len * 0.7, 8, 1, true), new T.MeshBasicMaterial({ color: f.kind === "acid" ? 0xe0ff80 : 0xffe060, transparent: true, depthWrite: false, side: T.DoubleSide }), len * 0.35, 0, 0); c2.rotation.z = Math.PI / 2; o.add(c2);
+        }
+        else if (f.kind === "slash") { o = mesh(new T.TorusGeometry(f.big ? 140 : 56, f.big ? 6 : 3, 4, 20, 2.2), new T.MeshBasicMaterial({ color: f.m ? 0xff6a6a : 0xf0f6ff, transparent: true, depthWrite: false, side: T.DoubleSide })); }
         else if (f.kind === "zap") { // chain lightning: a jagged line through every target
           const v = [];
           f.pts.forEach(([x, y, z], i) => { if (i) { const [px, py, pz] = f.pts[i - 1]; for (let j = 1; j < 5; j++) { const q = j / 5; v.push(px + (x - px) * q + (Math.random() - 0.5) * 22, pz + (z - pz) * q + (Math.random() - 0.5) * 22, py + (y - py) * q + (Math.random() - 0.5) * 22); } } v.push(x, z, y); });
@@ -1358,9 +1482,10 @@ var R3D = (function () {
       else if (f.kind === "boom") { const r = f.r * (f.dust ? 0.5 + k * 1.5 : 0.4 + k * 0.8); at(o, f.x, f.y, f.z ?? 20); o.scale.setScalar(r); o.material.opacity = (f.dust ? 0.6 : 1) * (1 - k); }
       else if (f.kind === "shout") { const r = f.full ? 60 + k * 200 : (f.r || 280) * Math.min(1, k * 2); at(o, f.x, f.y, (f.z || 0) + 30); o.rotation.x = Math.PI / 2; o.scale.set(r, r, r); o.material.opacity = 0.6 * (1 - k); }
       else if (f.kind === "burn") { at(o, f.x, f.y, (f.z || 0) + 10 + k * 30); o.material.opacity = 1 - k; }
+      else if (f.kind === "flame" || f.kind === "acid") { at(o, f.x, f.y, (f.z || 0) + (f.kind === "acid" ? 20 : 0)); o.rotation.y = -f.a; o.scale.setScalar(0.6 + k * 0.5); for (const c of o.children) c.material.opacity = 0.7 * (1 - k); }
       else if (f.kind === "slash") { at(o, f.x, f.y, f.z + 32); o.rotation.set(Math.PI / 2, 0, f.a - 1.1 + k * 0.4); o.material.opacity = 0.8 * (1 - k); }
     }
-    for (const [f, o] of fxObjs) if ((t - f.t0) / f.dur >= 1 || !st.fx.includes(f)) { scene.remove(o); if (o.geometry) o.geometry.dispose(); o.material.dispose(); fxObjs.delete(f); }
+    for (const [f, o] of fxObjs) if ((t - f.t0) / f.dur >= 1 || !st.fx.includes(f)) { scene.remove(o); o.traverse((c) => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }); fxObjs.delete(f); }
     sweep();
 
     // camera

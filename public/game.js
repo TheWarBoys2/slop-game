@@ -171,7 +171,18 @@ function handleEvent(e) {
   else if (e.k === "shout") { const el = ELEMS[e.el] || ELEMS.force; fx.push({ kind: "shout", t0: t, dur: 0.7, ...e, text: e.text || el.word + "!", col: el.hex, c2: el.rgb }); nearShake(e, 10); sfxAt({ x: e.x, y: e.y, far: 1400 }, "shout", 1, e.el); }
   else if (e.k === "burn") fx.push({ kind: "burn", t0: t, dur: 0.8, x: e.x + (Math.random() - 0.5) * 20, y: e.y });
   else if (e.k === "trample") fx.push({ kind: "text", t0: t, dur: 1, x: e.x, y: e.y, text: e.burnt ? "burnt!" : "trampled!", color: e.burnt ? "#f84" : "#c96" });
-  else if (e.k === "roar") { fx.push({ kind: "shout", t0: t, dur: 0.8, x: e.x, y: e.y, a: 0, full: true, ...(e.rex ? { col: 0xc8a040, c2: "200,160,64" } : {}) }); shake = Math.max(shake, e.rex ? 18 : 12); if (e.rex) sfxAt({ x: e.x, y: e.y, far: 1600 }, "rex"); }
+  else if (e.k === "roar") { fx.push({ kind: "shout", t0: t, dur: e.psy ? 1.4 : 0.8, x: e.x, y: e.y, a: 0, full: true, ...(e.rex ? { col: 0xc8a040, c2: "200,160,64" } : e.psy ? { col: 0xc060ff, c2: "192,96,255" } : {}) }); shake = Math.max(shake, e.rex || e.psy ? 18 : 12); if (e.rex) sfxAt({ x: e.x, y: e.y, far: 1600 }, "rex"); if (e.psy) sfxAt({ x: e.x, y: e.y, far: 2000 }, "psy"); }
+  // Bug Night and mechs
+  else if (e.k === "bugs") { sfx("bugs"); bugNightT = t; }
+  else if (e.k === "bughole") { fx.push({ kind: "boom", t0: t, dur: 0.6, x: e.x, y: e.y, r: 50, dust: true, col: 0x6a4a2a }); sfxAt({ x: e.x, y: e.y, far: 1100 }, "chitter"); }
+  else if (e.k === "sealed") { fx.push({ kind: "text", t0: t, dur: 2, x: e.x, y: e.y, z: 70, text: "HOLE SEALED", color: "#c0ff80", big: true }); sfxAt({ x: e.x, y: e.y, far: 2000 }, "perfect"); }
+  else if (e.k === "part") { fx.push({ kind: "text", t0: t, dur: 2.5, x: e.x, y: e.y, z: 50, text: "MECH PART", color: "#ffc030", big: true }); }
+  else if (e.k === "mechcall") { fx.push({ kind: "shout", t0: t, dur: 4, x: e.x, y: e.y, a: 0, full: true, col: 0xff3030, c2: "255,48,48" }); sfxAt({ x: e.x, y: e.y, far: 1500 }, "siren", 0.25); }
+  else if (e.k === "mechland") { fx.push({ kind: "boom", t0: t, dur: 0.9, x: e.x, y: e.y, r: 120, dust: true }); fx.push({ kind: "boom", t0: t, dur: 0.4, x: e.x, y: e.y, r: 60 }); nearShake(e, 20); sfxAt({ x: e.x, y: e.y, far: 3000 }, "boom"); }
+  else if (e.k === "slam") { nearShake(e, 16); sfxAt({ x: e.x, y: e.y, far: 2000 }, "boom", 0.8); }
+  else if (e.k === "jet") { sfxAt({ x: e.x, y: e.y, far: 1200 }, "boost"); }
+  else if (e.k === "spit") { sfxAt({ x: e.x, y: e.y, far: 1300 }, "bile", 0.6); }
+  else if (e.k === "flame" || e.k === "acid") { fx.push({ kind: e.k, t0: t, dur: 0.3, ...e }); if (Math.random() < 0.35) sfxAt({ x: e.x, y: e.y, far: 900 }, e.k === "acid" ? "bile" : "fireburst"); }
   else if (e.k === "hhit") { hearthHitT = t; }
   else if (e.k === "feed") pushLim(feed, { text: e.text, color: e.color, t }, 6);
   else if (e.k === "chat") pushLim(chatLog, { from: e.from, text: e.text, color: e.color, t }, 8);
@@ -257,6 +268,7 @@ function handlePersonal(e) {
   else if (e.k === "love") { const n = MAP.npcs && MAP.npcs.find((q) => q.id === e.npc); pushLim(toasts, { text: `${n ? n.name : ""}  ${hearts(e.v)}`, color: e.d === "hate" ? "#ff8080" : "#ff8fc8", t }, 4); sfx(e.d === "hate" ? "jam" : "perfect"); }
   else if (e.k === "kick") { pred.vx += e.vx; pred.vy += e.vy; pred.vz = Math.max(pred.vz, 0) + e.vz; if (e.vz > 0) pred.gr = false; }
   else if (e.k === "deaf") { deafT = t; shake = Math.max(shake, 8); }
+  else if (e.k === "psy") { psyT = t; }
   else if (e.k === "wasted") { wasted = t; wastedPlace = e.place || 0; }
   else if (e.k === "dlg") showDlg(e);
   else if (e.k === "inv") { INV = e; if (invOpen) renderInv(); if (cardsOpen && !cgState) renderCards(); if (mktOpen) renderMarket(); }
@@ -316,6 +328,7 @@ function drawImpact() { // one held, high-contrast frame: the screen stops for a
   for (const s of [1, -1]) { ctx.beginPath(); ctx.moveTo(cx - 22, cy - 22 * s); ctx.lineTo(cx - 8, cy - 8 * s); ctx.moveTo(cx + 8, cy + 8 * s); ctx.lineTo(cx + 22, cy + 22 * s); ctx.stroke(); }
 }
 function nearShake(e, amt) { if (Math.hypot(e.x - pred.x, e.y - pred.y) < 500) shake = Math.max(shake, amt); }
+let psyT = -99, bugNightT = -99; // the Brain Bug in your head; when Bug Night started
 let shameT = -99, shameWho = null, deafT = -99, cleanOpen = false, hackOpen = false;
 let hitT = -9, hitKind = "body";
 let hudTop = 84, nukeBottom = 0; // how far down the top-centre HUD reaches this frame
@@ -416,6 +429,7 @@ addEventListener("keydown", (e) => {
   if (k === "4") send({ t: "throw", k: "molo" });
   if (k === "z") send({ t: "elem" });
   if (k === "l") openClean();
+  if (k === "p") { const mine = S?.p.find((p) => p.id === me); if (mine && mine.inf !== "keys") send({ t: "mech" }); } // call your mech down
 });
 addEventListener("keyup", (e) => { if (fixOpen) fixKey(e, false); const k = e.key.toLowerCase(); keys.delete(k); if (radial && radial.key === k) pickRadial(radial.sel); if (k === "alt") e.preventDefault(); if (k === "tab") showScores = false; });
 // CTRL is crouch now, and CTRL+W closes a browser tab; ask before leaving mid-game
@@ -533,6 +547,8 @@ const MODE_INFO = {
   adventure: ["Adventure (RPG)", "No Hearth, no waves. Five towns out past the hedge, each with a notice board of work: monster contracts, gigs, breaches and deliveries. Travel, get paid, level up, then take the Legendary Contract."],
 };
 const LOBBY_TIPS = [
+  "Bug Night: seal the bug holes with explosions (or land a jump-jet mech on one), then kill the Brain Bug and every bug dies with it.",
+  "Mechs: click a mech part in your bag to bolt it on, then press P to call your mech down. It repairs itself by the Hearth.",
   "Reloading: press R, then tap R again as the marker crosses the green for an instant, empowered mag.",
   "Natural disasters can be stopped: find the control station on your map and press E at it.",
   "The town votes once a day. Press N to open the ballot any time before dusk.",
@@ -889,8 +905,13 @@ function sfx(kind, vol = 1, sub, h) {
     else if (sub === "x") { noise(0.6, v * 0.7, 120); tone("sine", 70 * r, 40, 0.6, v * 0.6); } // boomer: a gurgle
     else if (sub === "s") { tone("sawtooth", 1300 * r, 1700 * r, 0.6, v * 0.5); } // screamer: a rising scream
     else if (sub === "d") { tone("square", 1100 * r, 1400 * r, 0.12, v * 0.5); tone("square", 1300 * r, 1000 * r, 0.12, v * 0.4); } // raptor: a chirp
+    else if (sub === "g" || sub === "p" || sub === "k" || sub === "q") { for (let i = 0; i < (sub === "g" ? 3 : 5); i++) tone("square", (sub === "k" || sub === "q" ? 500 : 1500) * r + Math.random() * 400, 700 * r, 0.05 + i * 0.04, v * 0.4); noise(0.3, v * 0.5, sub === "g" ? 4000 : 1200); } // bugs: clicking and chittering
     else if (sub === "b" || sub === "e" || sub === "y") { tone("sawtooth", 70 * r, 38, 1.8, v * 1.3); noise(1.2, v * 0.6, 80); } // big things: a roar
   }
+  else if (kind === "bugs") { for (let i = 0; i < 4; i++) setTimeout(() => { tone("square", 640, 640, 0.35, 0.18); tone("square", 480, 480, 0.35, 0.12); }, i * 450); } // the klaxon
+  else if (kind === "chitter") { for (let i = 0; i < 5; i++) tone("square", 1800 + Math.random() * 900, 900, 0.04 + i * 0.03, 0.08 * vol); noise(0.25, 0.25 * vol, 3500); }
+  else if (kind === "psy") { tone("sine", 90, 220, 1.4, 0.35 * vol); tone("sine", 93, 225, 1.4, 0.3 * vol); tone("triangle", 1400, 300, 1.0, 0.08 * vol); }
+  else if (kind === "fireburst") { noise(0.3, 0.3 * vol, 500); }
   else if (kind === "clank") { tone("square", 1250, 900, 0.06, 0.12); noise(0.05, 0.25, 4000); }
   else if (kind === "kill") { tone("sine", 140, 60, 0.18, 0.4); tone("triangle", 1320, 1320, 0.1, 0.12); }
   else if (kind === "armbreak") { noise(0.25, 0.5, 2500); tone("square", 700, 200, 0.2, 0.15); }
@@ -1253,14 +1274,21 @@ function buildDecor() {
 
 
 // ---------------------------------------------------------------- vehicles
-const VEH_NAME = { tractor: "Tractor", buggy: "Slop Buggy", limo: "Limo", heli: "Crop Chopper", gunship: "Slop Gunship" };
+const MECH_NAME = { cannon: "autocannon", rockets: "rockets", flamer: "flamer", sword: "sword" };
+const VEH_NAME = { mech: "Mech", tractor: "Tractor", buggy: "Slop Buggy", limo: "Limo", heli: "Crop Chopper", gunship: "Slop Gunship" };
 function drawVehicle(kind, x, y, a, t, occ, speed, z = 0) {
   ctx.save(); ctx.translate(x, y);
   ctx.fillStyle = "#0004"; ctx.beginPath(); ctx.ellipse(6, 10, kind === "limo" ? 56 : AIR[kind] ? 44 : 34, AIR[kind] ? 26 : 20, a, 0, 7); ctx.fill();
   ctx.translate(0, -z * 0.3);
   ctx.rotate(a);
   const wheel = (wx, wy, w, h) => { ctx.fillStyle = "#1a1a1a"; ctx.fillRect(wx - w / 2, wy - h / 2, w, h); };
-  if (kind === "tractor") {
+  if (kind === "mech") { // top-down: two feet stepping, a hull, and the arms
+    const st = speed > 15 ? Math.sin(t * 9) * 10 : 0;
+    ctx.fillStyle = "#2a2e30"; ctx.fillRect(-8 + st, -26, 22, 14); ctx.fillRect(-8 - st, 12, 22, 14);
+    ctx.fillStyle = "#5a6a4a"; ctx.fillRect(-22, -24, 44, 48);
+    ctx.fillStyle = "#9fd0e8"; ctx.fillRect(12, -12, 10, 24);
+    ctx.fillStyle = "#2a2e30"; ctx.fillRect(4, 24, 38, 9); ctx.fillRect(4, -33, 38, 9);
+  } else if (kind === "tractor") {
     wheel(-16, -20, 22, 9); wheel(-16, 20, 22, 9); wheel(18, -17, 14, 6); wheel(18, 17, 14, 6);
     ctx.fillStyle = "#3f8a3a"; ctx.fillRect(-28, -15, 56, 30);
     ctx.fillStyle = "#2f6a2c"; ctx.fillRect(6, -11, 22, 22);
@@ -1506,6 +1534,12 @@ function drawMinimap(mine, t) {
     ctx.fillStyle = p.id === me ? "#fff" : p.c; ctx.beginPath(); ctx.arc(mx + (x - ox) * k, my + (y - oy) * k, p.id === me ? 3.5 : 2.5, 0, 7); ctx.fill();
   }
   if (S.g.uav) { ctx.fillStyle = "#ff4040"; for (const z of S.z) { const zx = mx + (z[2] - ox) * k, zy = my + (z[3] - oy) * k; if (zx > mx && zy > my && zx < mx + mw && zy < my + mh) ctx.fillRect(zx - 1.5, zy - 1.5, 3, 3); } text(`📡 UAV ${S.g.uav}s`, mx + mw / 2, my + mh + 14, 12, "#7fdcff"); }
+  if (S.g.bug) { // Bug Night: every hole, the hive, and (with a Sensor Helm on your mech) every bug
+    const sensor = mine.vh && S.vh.some((v) => v[0] === mine.vh && v[1] === "mech" && String(v[10]).endsWith(",sensor"));
+    if (sensor) { ctx.fillStyle = "#ffb040"; for (const z of S.z) if ("gpkq".includes(z[1])) ctx.fillRect(mx + (z[2] - ox) * k - 1.5, my + (z[3] - oy) * k - 1.5, 3, 3); }
+    for (const [, hx, hy, hp] of S.g.bug.h) { const sx = mx + (hx - ox) * k, sy = my + (hy - oy) * k; if (hp < 0) text("💀", sx, sy, 13, "#c060ff"); else { ctx.strokeStyle = "#c0ff80"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 7); ctx.stroke(); ctx.fillStyle = "#3a2a14"; ctx.fill(); } }
+    const bb = S.g.bug.b && S.z.find((z) => z[0] === S.g.bug.b); if (bb) { ctx.fillStyle = "#c060ff"; ctx.beginPath(); ctx.arc(mx + (bb[2] - ox) * k, my + (bb[3] - oy) * k, 5, 0, 7); ctx.fill(); }
+  }
   if (S.g.boss) { const bz = S.z.find((z) => z[0] === S.g.boss); if (bz) { ctx.fillStyle = "#f33"; ctx.beginPath(); ctx.arc(mx + (bz[2] - ox) * k, my + (bz[3] - oy) * k, 4, 0, 7); ctx.fill(); } }
   ctx.restore();
 }
@@ -1589,7 +1623,7 @@ function rayWorld(o, d, maxT, skipId, boxesOnly) {
     if (z >= z0 && z <= z1 && tt < best) best = tt;
   };
   if (S) {
-    for (const z of S.z) { const r = ZR[z[1]] || 15; cyl(z[2], z[3], r, z[6] || 0, (z[6] || 0) + r * 3.7); }
+    for (const z of S.z) { const r = ZR[z[1]] || 15; cyl(z[2], z[3], r, z[6] || 0, (z[6] || 0) + r * (ZH[z[1]] || 3.7)); }
     for (const p of S.p) if (p.id !== skipId && !p.d && !p.air) cyl(p.x, p.y, 16, p.z || 0, (p.z || 0) + 56);
   }
   return best;
@@ -1648,7 +1682,8 @@ function render3d(mine, t, dt) {
     cam = scoped ? { x: eye.x, y: eye.y, z: eye.z, yaw: aimYaw, pitch: aimPitch, fov: 14 } : { x: eye.x, y: eye.y, z: eye.z + bob + bob2, yaw, pitch: pitch - mantleDip * 0.18, fov: OPTS.fov - adsK * 30 + sprintK * 8 + slideK * 10, roll };
     ownView = true;
   } else {
-    cam = mine.vh ? third(eye.x, eye.y, eye.z + 30, 220, 0, 50) : third(eye.x, eye.y, eye.z, 120 - adsK * 50, 30, 14);
+    const inMech = mine.vh && S.vh.some((v) => v[0] === mine.vh && v[1] === "mech");
+    cam = inMech ? third(eye.x, eye.y, eye.z + 90, 270, 0, 60) : mine.vh ? third(eye.x, eye.y, eye.z + 30, 220, 0, 50) : third(eye.x, eye.y, eye.z, 120 - adsK * 50, 30, 14);
     // aim where the crosshair points, not where the camera is
     const d = dirOf(yaw, pitch), hitT = rayWorld([cam.x, cam.y, cam.z], d, 2500, me);
     const px = cam.x + d[0] * hitT, py = cam.y + d[1] * hitT, pz = cam.z + d[2] * hitT;
@@ -1743,7 +1778,7 @@ function overlay3d(mine, t, dt) {
   if (MAP.keepers) for (const n of MAP.keepers) { if (offDuty(n)) continue; const s = P(n.x, n.y, 72); if (s && s.d < 900) { text(n.name, s.x, s.y, 12, "#ffd34d"); text(n.role, s.x, s.y + 13, 10, "#d8c8a0"); } }
   for (const [, type, zx, zy, hp, , zh] of S.z) {
     if (hp >= 100 || type === "b") continue;
-    const r = ZR[type] || 15, s = P(zx, zy, (zh || 0) + r * 3.9);
+    const r = ZR[type] || 15, s = P(zx, zy, (zh || 0) + r * ((ZH[type] || 3.7) + 0.2));
     if (s && s.d < 900) bar(s.x - 16, s.y, 32, 4, hp / 100, "#e44");
   }
   const hw = MAP.hearth, hs = P(hw.x + hw.w / 2, hw.y + hw.h / 2, 190);
@@ -2112,7 +2147,8 @@ function render() {
     else { ctx.fillStyle = "#3a5a2a"; ctx.beginPath(); ctx.arc(x, yy, 5, 0, 7); ctx.fill(); ctx.fillStyle = Math.floor(t * 8) % 2 ? "#f33" : "#600"; ctx.beginPath(); ctx.arc(x, yy - 4, 1.8, 0, 7); ctx.fill(); }
   }
   // zombies
-  const ZCOL2 = { e: "#3a6a8a", t: "#3f6b3a", r: "#a0d070", w: "#6fa35a", c: "#7a5a3a", f: "#4a3a5a", x: "#8aa04a", s: "#d8d0c0", d: "#7a8a3a", y: "#5a6a2a" };
+  if (S.g.bug) for (const [, hx, hy, hp] of S.g.bug.h) { const R = hp < 0 ? 70 : 44; ctx.fillStyle = "#5a4028"; ctx.beginPath(); ctx.arc(hx, hy, R * 1.25, 0, 7); ctx.fill(); ctx.fillStyle = "#0c0604"; ctx.beginPath(); ctx.arc(hx, hy, R * 0.85, 0, 7); ctx.fill(); ctx.strokeStyle = hp < 0 ? "#c060ff" : "#9fd040"; ctx.lineWidth = 3; ctx.stroke(); } // bug holes
+  const ZCOL2 = { g: "#b07a3a", p: "#8a7a42", k: "#5a3e22", q: "#e0909a", e: "#3a6a8a", t: "#3f6b3a", r: "#a0d070", w: "#6fa35a", c: "#7a5a3a", f: "#4a3a5a", x: "#8aa04a", s: "#d8d0c0", d: "#7a8a3a", y: "#5a6a2a" };
   for (const [id, type, zx, zy, hpPct, burn, zh, charging, frozen, glowZ, armd] of S.z) {
     const d = smooth("z" + id, zx, zy, dt);
     if (armd) { const ar = ZR[type] || 15; ctx.strokeStyle = "#9aa4ad"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(d.x, d.y, ar + 3, 0, 7); ctx.stroke(); ctx.fillStyle = `rgba(255,40,40,${0.6 + Math.sin(t * 8 + id) * 0.3})`; ctx.beginPath(); ctx.arc(d.x, d.y, ar * 0.3, 0, 7); ctx.fill(); }
@@ -2470,6 +2506,16 @@ function drawHud(mine, t) {
   if (!mine.d && t - clueT < 5) { const y = slot(22); text(`NEW EVIDENCE (${g.clues.length}/5): press J`, VW / 2, y + 11, 18, "#e0c0ff"); }
   if (mine.bi) { const y = slot(18); text("BILED: the horde can smell you", VW / 2, y + 9, 16, "#b8e04a"); }
   if (t - deafT < 2.5) { const y = slot(24); text("*EEEEEEEEEE*", VW / 2 + (Math.random() - 0.5) * 8, y + 12, 22, "#ff8080"); }
+  if (t - psyT < 1.4) { ctx.fillStyle = `rgba(150,60,220,${0.3 * (1 - (t - psyT) / 1.4)})`; ctx.fillRect(0, 0, VW, VH); text("THE BRAIN BUG IS IN YOUR HEAD", VW / 2 + (Math.random() - 0.5) * 10, VH * 0.4, 26, "#e0b0ff"); }
+  if (g.bug && g.ph === "night") { // Bug Night: how it's going
+    const y = slot(22), B = g.bug, brain = B.d ? "dead" : B.b ? "OUT (purple skull on your map)" : "in its hive";
+    text(`🐜 BUG NIGHT · holes sealed ${B.s}/${B.n} · Brain Bug ${brain}`, VW / 2, y + 11, 16, B.d ? "#c0ff80" : "#ffb040");
+  }
+  if (mine.mc && !mine.d) { // your mech: armour while you're in it, a reminder when it's ready and Bug Night is on
+    const mv = mine.vh && S.vh.find((v) => v[0] === mine.vh && v[1] === "mech");
+    if (mv && mv[5] < 35) { const y = slot(18); text("MECH ARMOUR LOW: get back to the Hearth to repair it", VW / 2, y + 9, 15, Math.floor(t * 3) % 2 ? "#ff6050" : "#fff"); }
+    else if (!mv && g.bug && g.ph === "night" && mine.mc[3] < 0 && !mine.vh) { const parts = String(mine.mc[0]).split(","), ready = parts[0] && parts[1] && (parts[2] || parts[3]); if (ready || mine.mc[2]) { const y = slot(18); text(mine.mc[1] > 0 ? `Mech wrecked: rebuild in ${mine.mc[1]}s` : "Press P to call your mech", VW / 2, y + 9, 15, Math.floor(t * 2) % 2 ? "#7fdcff" : "#fff"); } }
+  }
   hudTop = top; nukeBottom = 0;
   drawNukeHud(mine, t);
   if (g.dis && g.dis.k === "flood" && g.dis.w > 1 && pred.z < g.dis.w) { ctx.fillStyle = `rgba(40,110,170,${Math.min(0.3, g.dis.w / 100)})`; ctx.fillRect(0, VH * 0.55, VW, VH * 0.45); text("wading", VW / 2, VH * 0.55 + 16, 12, "#bfe0ff"); }
@@ -2574,8 +2620,13 @@ function drawHud(mine, t) {
       hint = sh.hours === "day" && g.ph === "night" ? [`${sh.name} is shut. Back at dawn.`, "#aaa"] : sid === "hearth" ? [`E  the Hearth: repair it${g.dome && g.dome[0] < g.dome[1] ? `, fund the Dome (${g.dome[0]}/${g.dome[1]}g)` : ""}`, "#9fe0ff"] : [`E  ${sh.name}`, "#ffd34d"];
       break;
     }
-    if (!hint && !mine.vh) for (const [, kind, vx, vy, , , drv, pas, , vz] of S.vh) if ((vx - pred.x) ** 2 + (vy - pred.y) ** 2 < (AIR[kind] ? 76 : 62) ** 2 && Math.abs((vz || 0) - pred.z) < 70 && (!drv || !pas)) { hint = [`E  ${drv ? "ride in" : AIR[kind] ? "fly" : "drive"} the ${VEH_NAME[kind]}`, "#9fe0ff"]; break; }
-    if (mine.vh) hint = piloting() ? [pad() ? "Flying with your stick · button 3 gets out" : "W/S pitch · A/D strafe · mouse turns · SPACE up · C down · E out", "#9fe0ff"] : [S.vh.find((v) => v[0] === mine.vh)?.[6] === me ? "WASD drive · E get out" : "E get out", "#9fe0ff"];
+    if (!hint && !mine.vh) for (const [, kind, vx, vy, , , drv, pas, , vz, , , own] of S.vh) {
+      if (kind === "mech") { if ((vx - pred.x) ** 2 + (vy - pred.y) ** 2 < 70 ** 2) { if (own === me && !drv) hint = ["E  climb into your mech", "#7fdcff"]; else if (!pas) hint = ["E  ride on the mech's shoulder", "#7fdcff"]; } if (hint) break; continue; }
+      if ((vx - pred.x) ** 2 + (vy - pred.y) ** 2 < (AIR[kind] ? 76 : 62) ** 2 && Math.abs((vz || 0) - pred.z) < 70 && (!drv || !pas)) { hint = [`E  ${drv ? "ride in" : AIR[kind] ? "fly" : "drive"} the ${VEH_NAME[kind]}`, "#9fe0ff"]; break; }
+    }
+    const mechV = mine.vh && S.vh.find((v) => v[0] === mine.vh && v[1] === "mech");
+    if (mechV) { const pr = String(mechV[10] || "").split(","); hint = mechV[6] === me ? [`WASD walk · click ${MECH_NAME[pr[2]] || "nothing"}${pr[3] ? ` · right-click ${MECH_NAME[pr[3]]}` : ""}${pr[1] === "jet" ? " · SPACE jets" : ""} · E out`, "#7fdcff"] : ["Riding on the shoulder · E hop off", "#7fdcff"]; }
+    else if (mine.vh) hint = piloting() ? [pad() ? "Flying with your stick · button 3 gets out" : "W/S pitch · A/D strafe · mouse turns · SPACE up · C down · E out", "#9fe0ff"] : [S.vh.find((v) => v[0] === mine.vh)?.[6] === me ? "WASD drive · E get out" : "E get out", "#9fe0ff"];
     if (!hint && mine.sw && pred.z < -60 && MAP.walls.some((w) => w.kind === "glyph" && (w.x + 15 - pred.x) ** 2 + (w.y + 15 - pred.y) ** 2 < 60 * 60)) hint = ["E  touch the glyph", "#7dd8ff"];
     if (!hint && g.adv && !dlgOpen) {
       for (const [x, y, kind] of g.adv.pts) if ((x - pred.x) ** 2 + (y - pred.y) ** 2 < 60 * 60) { hint = kind ? ["E  pick up the parcel", "#ffd34d"] : ["E  examine", "#e0c0ff"]; break; }
@@ -3054,7 +3105,7 @@ function renderInv() {
   }
   const mineP = S && S.p.find((q) => q.id === me), mate = mineP && S.p.filter((q) => q.id !== me && !q.d && !q.air).map((q) => [q, Math.hypot(q.x - mineP.x, q.y - mineP.y)]).filter(([, d]) => d < 150).sort((a, b) => a[1] - b[1])[0];
   const giveRow = mate ? `<div class="fine" style="margin-top:6px">Next to <b>${escH(mate[0].n)}</b>: <kbd>Shift</kbd>+click an item to give it. Give gold: ${[10, 50, 100, 500].map((n) => `<button class="tab" data-gold="${n}">${n}g</button>`).join(" ")}</div>` : `<div class="fine" style="margin-top:6px">Stand next to a mate to give them items or gold.</div>`;
-  $("invBody").innerHTML = `<div class="invL">${meter("🍞 Food", INV.food, "#d8a050")}${meter("💧 Drink", INV.water, "#5ab0ff")}${meter("☢ Radiation", INV.rad, INV.rad > 50 ? "#e33" : "#9fff60")}<h3>Wearing</h3>${slots}</div>` +
+  $("invBody").innerHTML = `<div class="invL">${meter("🍞 Food", INV.food, "#d8a050")}${meter("💧 Drink", INV.water, "#5ab0ff")}${meter("☢ Radiation", INV.rad, INV.rad > 50 ? "#e33" : "#9fff60")}<h3>Wearing</h3>${slots}${mechPanel()}</div>` +
     `<div class="invR"><h3>Bag ${INV.bag.length}/${INV.size}</h3><div class="bag">${cells.join("")}</div>${giveRow}<div class="fine">Click to eat, drink, use or wear. Right-click to drop (someone else can pick it up). <kbd>H</kbd> eats or drinks whatever you need most. Cook two turnips at the Hearth [E] for stew. Fill bottles at the lake.</div></div>`;
   for (const el of $("invBody").querySelectorAll(".bslot[data-i]")) {
     el.onclick = (e) => send({ t: "item", a: e.shiftKey ? "give" : "use", i: +el.dataset.i });
@@ -3065,6 +3116,18 @@ function renderInv() {
 }
 $("inv").addEventListener("click", (e) => { if (e.target === $("inv")) toggleInv(false); });
 
+// your mech's parts, in the inventory screen
+const MECH_SLOT = [["core", "Core", "🔋"], ["legs", "Legs", "🦿"], ["armR", "Right arm (click)", "💪"], ["armL", "Left arm (right-click)", "💪"], ["head", "Head", "⛑"]];
+function mechPanel() {
+  const mine = S && S.p.find((q) => q.id === me);
+  if (!mine || !mine.mc || S.g.mode === "royale") return "";
+  const parts = String(mine.mc[0]).split(",");
+  if (!parts.some(Boolean) && !INV.bag.some((b) => String(b.id).startsWith("mp_"))) return "";
+  const ready = parts[0] && parts[1] && (parts[2] || parts[3]);
+  const rows = MECH_SLOT.map(([, lbl, ic], i) => { const d = parts[i] && ITEMS["mp_" + parts[i]]; return `<div class="fine" style="margin:2px 0">${lbl}: ${d ? `<b style="color:#7fdcff">${d.icon} ${escH(d.name)}</b>` : `<span style="color:#888">${ic} nothing</span>`}</div>`; }).join("");
+  const state = mine.mc[3] >= 0 ? `Deployed, ${mine.mc[3]}% armour. P drops it back to you.` : mine.mc[1] > 0 ? `Wrecked. Rebuild in ${mine.mc[1]}s (P).` : mine.mc[2] ? "Wrecked. P rebuilds it (costs gold)." : ready ? "Ready. Press P to call it down." : "Not walking yet: it needs a core, legs and an arm.";
+  return `<h3>Mech</h3><div class="fine">${state} Click a mech part in your bag to bolt it on.</div>${rows}`;
+}
 // ---------------------------------------------------------------- crops
 function drawCrop2d(cr, x, y, t, i) {
   const bob = Math.sin(t * 3 + i) * 2, C = CROPS[cr] || {}, leaf = (lx, ly, a, w = 4, h = 9) => { ctx.beginPath(); ctx.ellipse(lx, ly, w, h, a, 0, 7); ctx.fill(); };
