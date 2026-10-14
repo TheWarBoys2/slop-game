@@ -25,13 +25,15 @@ Only the host installs anything. Everyone else just opens a link in their browse
 | A stock exchange that reacts to everything that happens | Bitlife, GTA V's BAWSAQ |
 | Mayoral elections every five nights, one of the candidates a Posadist | Tropico |
 | Adventure mode: notice-board monster contracts, three signs to find before the beast shows itself, signpost fast travel | The Witcher 3 |
+| Bug Night: alien bug holes all over the valley, plasma artillery bugs, and a Brain Bug that kills them all when it dies | Starship Troopers, Helldivers 2 |
+| Mech suits built from parts that drop off big monsters: autocannon, rocket pod, flamer and sword arms, jump-jet legs | MechWarrior, Titanfall |
 | Adventure mode: gigs from fixers who pay on the spot, breaching data spikes, an open world of towns to work through | Cyberpunk 2077 |
 
 **Modes.** The host picks one in the lobby. **Hearth Defence** is the original game, as a **Story** (described below) or **Endless**. **Adventure** is the RPG mode (see below). **Royale** is last farmer standing.
 
 **How a Hearth Defence match goes:** a short first day, then nights with days in between. Zombies come from the map edges and go for players or straight for the Hearth. If the Hearth's health hits zero you lose. Somebody in town poisoned the well, and it's a different person every game: talk to the townsfolk (follow the orange **?** and the compass), collect three clues, then accuse the culprit. The night after you name them, what they raised comes for the Hearth. Kill it to win. Guess wrong and the dead get angrier. Take too long and the culprit gets found out anyway after night 7. Winner winner, chicken dinner.
 
-**Controls:** WASD move, mouse look and shoot (click the game to lock the mouse), right-click aim down sights, R reload (tap R again as the marker crosses the green window for an instant, empowered reload), E to use, talk, shop, plant, harvest, loot and get in and out of things, Space jump (hold it to bunny hop), CTRL crouch (tap to toggle, or set it to hold in Options; it also dives underwater), Shift dodge, F takes out your hoe (click to till), T switches first person / third person, Q shout, 1/2 or mouse wheel swap weapons, Tab scoreboard, Enter chat, F ready.
+**Controls:** WASD move, mouse look and shoot (click the game to lock the mouse), right-click aim down sights, R reload (tap R again as the marker crosses the green window for an instant, empowered reload), E to use, talk, shop, plant, harvest, loot and get in and out of things, Space jump (hold it to bunny hop), CTRL crouch (tap to toggle, or set it to hold in Options; it also dives underwater), Shift dodge, F takes out your hoe (click to till), T switches first person / third person, P calls your mech down, Q shout, 1/2 or mouse wheel swap weapons, Tab scoreboard, Enter chat, F ready.
 
 Everything else lives on two radial menus. **Hold G** for screens: bag, skills, journal, Slop Snap cards, the stock market, wardrobe and options. **Hold X** for actions: eat or drink, grenade, molotov, clean your gun, build, switch the shout's element, relieve yourself (or just tap X). Flick the mouse at one and let go, or press its number. The old letter keys (I, K, J, Y, M, V, O, H, 3, 4, L, C, Z) still work.
 
@@ -55,6 +57,8 @@ Walk into a town to find it; after that its signpost can take you to any town yo
 **Disasters can be stopped.** When a meteor shower, flood, tornado or earthquake hits, a control station appears near town (⚠ on the map). Press E at it for a minigame: shoot the meteors down on the radar, turn the sluice pipes to drain the flood, time the cloud-seeding rocket into the tornado, or hold the seismic damper steady. Win it and the disaster ends early and pays out.
 
 **Dinosaur Day.** On day 4 of the story (and day 4, then every seventh day, in Endless) nothing but dinosaurs comes out of the well: raptor packs roam all day, and that night is dinosaurs only, fewer of them than a normal night, with one T. rex. They don't turn up any other time.
+
+**Bug Night and mechs.** Story night 3 (and Endless night 3, then every sixth night) is Bug Night: holes open around the town and alien bugs pour out of them. Warrior bugs hunt people wherever they are, spitters plant themselves and lob plasma (at the Hearth if nobody's about), and from night 5 armoured tanker bugs spray acid. An explosion (grenade, rocket, or a mech landing on it) seals a hole. Halfway through the night, or once most holes are shut, the Brain Bug crawls out of its hive; kill it and every bug drops dead (200g and a mech part each). The first Bug Night airdrops everyone a basic mech. More parts drop from elites, bosses, the T. rex, tanker bugs and sealed holes, or Haddock sells them. Parts go in your bag: use one to bolt it on (core, legs, two arms, a head). P calls your mech down; it repairs by the Hearth, and a wrecked one costs 250g to rebuild.
 
 **Features and bugs.** Press F8 (or the 🐞 button) to send a bug or an idea. It's appended to `bug-reports.txt` next to `SlopValley.exe` on the host's PC, along with where you were and what the game was doing, ready to upload.
 
@@ -100,4 +104,4 @@ bun tools/bots.js ws://localhost:7777/ws 4   # 4 bots join and play
 
 `server.js` runs the whole game and serves `public/`. The browser client is `public/game.js`. `story.js` is spoilers.
 
-`SLOP_DMG=30` multiplies player damage, for testing the ending quickly. `SLOP_DISASTER=meteor|flood|tornado|quake|any` forces a disaster every dawn and dusk, and `SLOP_DINO=1` makes every day from day 2 a Dinosaur Day.
+`SLOP_DMG=30` multiplies player damage, for testing the ending quickly. `SLOP_DISASTER=meteor|flood|tornado|quake|any` forces a disaster every dawn and dusk, and `SLOP_DINO=1` makes every day from day 2 a Dinosaur Day. `SLOP_BUGS=1` makes every night Bug Night.

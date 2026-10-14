@@ -20,6 +20,7 @@ import { CANDIDATES, ELECT_EVERY, ballot } from "./politics.js";
 import { CS, makeChunk, BIOMES } from "./world.js";
 import { DUST, inDust, siteXY, routes as dustRoutes, tSpawn, ctSpawn } from "./dust2.js";
 import { CD, SH, placeBig, finishTown, regionOf, segHitsRect } from "./town.js";
+import { MECH_PARTS, MECH_REPAIR, MECH_COOL, BUG_HOLE_HP, BUG_HOLE_R, BRAIN_REWARD, rollPart, mechStats, mechCode } from "./bugs.js";
 import { makeTowns, rollQuest, TOWN_HALF, RENOWN_GOAL, LEGEND, legendText, cap } from "./adventure.js";
 import { CARDS, LOCS, STARTER, OPPONENTS, DECK_SIZE, newMatch, stage as cgStage, resolveTurn as cgResolve, aiPlays, view as cgView, deckFor, packCard } from "./cards.js";
 
@@ -479,6 +480,11 @@ const ZTYPES = {
   screamer: { r: 14, hp: 65,  speed: 105, dmg: 5,  gold: 20, xp: 16, code: "s" }, // keeps its distance and screams for help
   raptor:   { r: 16, hp: 90, speed: 172, dmg: 10, gold: 22, xp: 16, code: "d" }, // hunts in packs and pounces
   rex:      { r: 40, hp: 1100, speed: 78, dmg: 32, gold: 160, xp: 90, code: "y" }, // roars, stomps through fences
+  // Bug Night (see "Bug Night" further down)
+  bug:      { r: 14, hp: 40,  speed: 175, dmg: 8,  gold: 5,  xp: 5,  code: "g" }, // warrior bug: fast, comes in swarms
+  spitter:  { r: 22, hp: 150, speed: 60,  dmg: 6,  gold: 20, xp: 16, code: "p" }, // plants itself and lobs plasma
+  tanker:   { r: 36, hp: 1000, speed: 55, dmg: 28, gold: 90, xp: 60, code: "k" }, // armoured, sprays acid
+  brain:    { r: 56, hp: 5000, speed: 18, dmg: 20, gold: 400, xp: 200, code: "q" }, // the Brain Bug: kill it and they all die
 };
 const zCode = (z) => ZTYPES[z.type].code || z.type[0];
 
@@ -513,6 +519,8 @@ for (const [id, [, cost, name]] of Object.entries(CALL_IN)) SHOP[id] = { name: `
 for (const [id, a] of Object.entries(ATTACH)) SHOP["att_" + id] = { name: a.name, cost: a.cost, cat: "mods", desc: a.desc + " Fits the gun in your hands." };
 for (const [id, k] of Object.entries(SKINS)) SHOP["skin_" + id] = { name: `${k.name} skin`, cost: k.cost, cat: "mods", desc: "Paints the gun in your hands. Purely for looking good." };
 // which counter sells what
+SHOP.mechkit = { name: "Federation mech kit (core, legs, autocannon arm)", cost: 1200, cat: "veh", desc: "Everything a mech needs to walk. Goes in your bag: use each part to bolt it on, then press P." };
+SHOP.mechpart = { name: "Mech part crate (a random part)", cost: 400, cat: "veh", desc: "One random mech part, straight into your bag." };
 for (const [id, it] of Object.entries(SHOP)) it.shop = ["repair", "dome50", "dome250"].includes(id) ? "hearth" : ["case", "gcase"].includes(id) ? "casino" : it.cat === "arms" || it.cat === "gear" || it.cat === "veh" || it.cat === "mods" || id === "enhance" ? "armoury" : "general";
 
 const VEHICLES = {
@@ -520,6 +528,7 @@ const VEHICLES = {
   buggy:   { name: "Slop Buggy", r: 24, max: 480, acc: 430, turn: 3.0, hp: 300, ram: 1.0 },
   heli:    { name: "Crop Chopper", r: 34, max: 520, acc: 0, turn: 1.7, hp: 650, ram: 0, air: true },
   gunship: { name: "Slop Gunship", r: 40, max: 430, acc: 0, turn: 1.4, hp: 1200, ram: 0, air: true, gun: true },
+  mech:    { name: "Mech", r: 30, max: 230, acc: 0, turn: 3.2, hp: 2200, ram: 0, mech: true }, // yours: built from parts (bugs.js), called down with P
 };
 const PIECES = {
   wall:   { name: "Wall",   cost: 25,  hp: 300, solid: true, z1: 70,  desc: "Blocks the dead (and bullets). They will chew through it." },
@@ -557,7 +566,8 @@ function rayCyl(o, d, c, r, z0, z1) {
   }
   return best;
 }
-const zHeight = (z) => z.r * 3.7;
+const ZH = { bug: 3.2, spitter: 3.0, tanker: 2.2, brain: 2.4 }; // bugs are low and wide
+const zHeight = (z) => z.r * (ZH[z.type] || 3.7);
 function freeGround(p) { return MV.floorAt(p.x, p.y, 20, 0, near(p)).h === 0 && !near(p).some((w) => w.kind === "pad" && MV.touches(w, p.x, p.y, 40)); }
 function rayRect(x, y, dx, dy, w) {
   let tmin = 0, tmax = Infinity;
@@ -649,6 +659,7 @@ function resetProgress(p) {
   p.bag = [{ id: "bread", n: 2 }, { id: "water", n: 2 }, { id: "bandage", n: 1 }]; p.gear = {};
   p.food = 85; p.water = 85; p.rad = 0; p.drunk = 0; p.fizz = 0; p.iodine = 0; p.shares = {}; p.basis = {}; if (p.cg) p.pe.push({ k: "cg", close: 1 }); p.cg = null; p.kt = new Set();
   if (p.fix) endFix(p, "reset"); p.hack = null;
+  p.mech = {}; p.mechCd = 0; p.mechWreck = false; p.mechDrop = 0; // mech parts bolted on (bugs.js); they pass down to your heir
   p.st.ateGrown = 0; p.st.ztypes = 0; p.st.sharesBought = 0; p.st.cardWins = 0; p.invDirty = true;
 }
 function resetLoadout(p, fresh) {
@@ -718,7 +729,7 @@ function dmgMult(p, w) {
   if (inAura(p)) m *= 1.2;
   if (p.champion) m *= 1.3;
   if (w.hot) m *= 1.2;
-  return m * TEST_DMG;
+  return m * TEST_DMG * (w.mult || 1); // w.mult: a mech's autocannon
 }
 function price(p, cost) { return Math.round(cost * Math.max(0.2, 1 - 0.1 * sk(p, "haggler") - p.discount - game.mods.discount)); }
 function reloadTime(p, w) { return WEAPONS[w.type].reload * (w.att && w.att.mag ? 1.15 : 1) * (1 - 0.15 * sk(p, "quick")) * (1 - Math.min(0.5, gearSum(p.gear, "reload"))); }
@@ -919,6 +930,8 @@ function hurtZombie(z, dmg, p, kind) {
       if (sk(p, "bloodlust")) p.hp = Math.min(maxHp(p), p.hp + 3 * sk(p, "bloodlust"));
     }
     if (z.type === "boomer") bile(z.x, z.y, z.z || 0, 150);
+    if (["elite", "boss", "rex", "tanker"].includes(z.type) || (z.type === "tank" && Math.random() < 0.04)) dropPart(z); // mech parts
+    if (z.type === "brain") bugsBeaten(p);
     if (z.type === "tank" && Math.random() < 0.15) crates.push({ id: nextId++, x: z.x, y: z.y, w: newWeapon(lootType(), 1 + (Math.random() < 0.4 ? 1 : 0)) });
     if (z.type === "elite") {
       crates.push({ id: nextId++, x: z.x, y: z.y, w: newWeapon(lootType(), 4) });
@@ -947,6 +960,7 @@ function hurtPlayer(v, dmg, attacker, cause) {
     attacker.pe.push({ k: "dmg", x: v.x, y: v.y - 20, z: Math.round(v.z + MV.HGT), v: Math.round(dmg), crit: false, ff: true });
   }
   const veh = vehOf(v);
+  if (veh && veh.kind === "mech" && cause !== "blown up in a vehicle") { hurtVehicle(veh, dmg * (veh.seats[1] === v.id ? 0.5 : 0.8), attacker); return; } // the cockpit's sealed: the mech takes it
   if (veh && cause !== "blown up in a vehicle") { hurtVehicle(veh, dmg * 0.7, attacker); dmg *= 0.35; if (v.dead) return; }
   if (v.armor > 0) { const soak = Math.min(v.armor, dmg * 0.5); v.armor -= soak; dmg -= soak; }
   dmg *= 1 - Math.min(0.6, gearSum(v.gear, "def")); // helmet, vest, boots
@@ -1066,6 +1080,7 @@ function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
   { const d = Math.hypot(BALL.x - x, BALL.y - y, BALL.z - z); if (d < r) { const f = (1 - d / r) * 900; BALL.vx += (BALL.x - x) / (d || 1) * f; BALL.vy += (BALL.y - y) / (d || 1) * f; BALL.vz += f * 0.7; } }
   { const once = new Set(); for (const w of [...WALLS]) if (w.hp && w.kind !== "built") { const d = boxDist(w, x, y, z), key = w.hid && w.kind === "hwall" ? w.hid : w.id; if (d < r && !once.has(key)) { once.add(key); damageWall(w, dmg * 1.4 * (1 - d / r * 0.5)); } } }
   for (const v of vehicles) if ((v.x - x) ** 2 + (v.y - y) ** 2 < (r + VEHICLES[v.kind].r) ** 2 && Math.abs((v.z || 0) + 20 - z) < r + 30) hurtVehicle(v, dmg * 0.5, owner);
+  if (game.bugs && z < 80) bugBlast(x, y, r, dmg, owner);
 }
 const insideWall = (x, y, z) => nearXY(x, y).some((w) => !MV.soft(w) && x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h && z < w.z1 - 2 && z > (w.z0 || 0) - 2);
 function throwIt(p, kind) {
@@ -1090,6 +1105,7 @@ function fireRocket(p, w, mult) {
 function projTick(t, dt) {
   for (const pr of projs) {
     pr.age += dt;
+    if (pr.kind === "plasma") { plasmaTick(pr, dt); continue; } // a spitter bug's shot
     const owner = players.get(pr.owner) || null;
     if (pr.kind === "rocket") {
       const steps = 3; let boom = false;
@@ -1163,7 +1179,7 @@ function fireTick(t, dt) {
     }
     for (const b of builds) if (PIECES[b.bk].solid && b.x < f.x + 20 && b.x + 40 > f.x - 20 && b.y < f.y + 20 && b.y + 40 > f.y - 20) hurtPiece(b, 40 * step);
     for (const pl of PLOTS) if (pl.stage > 0 && Math.abs(pl.x - f.x) < 24 && Math.abs(pl.y - f.y) < 24) { pl.stage = 0; pl.prog = 0; events.push({ k: "trample", x: pl.x, y: pl.y, burnt: 1 }); }
-    for (const v of vehicles) if (Math.abs(v.x - f.x) < 30 && Math.abs(v.y - f.y) < 30 && (v.z || 0) < 30) hurtVehicle(v, 20 * step, owner);
+    for (const v of vehicles) if (v.kind !== "mech" && Math.abs(v.x - f.x) < 30 && Math.abs(v.y - f.y) < 30 && (v.z || 0) < 30) hurtVehicle(v, 20 * step, owner); // mechs are fireproof (they carry flamers)
   }
   for (const [key, until] of scorched) if (until < t) scorched.delete(key);
   // burning things keep burning for a bit after they leave the flames
@@ -1389,7 +1405,7 @@ function interact(p) {
     if (!bagAdd(p.bag, best.it.id, best.it.n || 1, best.it.r || 0)) return toast(p, "Your bag is full. Use or drop something [I].", "#f88");
     crates = crates.filter((c) => c !== best); p.invDirty = true;
     const g = GEAR[best.it.id];
-    toast(p, g ? `Found ${["", "Rare ", "Epic ", "Legendary ", "Mythic "][best.it.r || 0]}${g.name}. Equip it from your bag [I].` : `Found ${best.it.n > 1 ? best.it.n + "x " : ""}${ITEMS[best.it.id].name}`, ["#ddd", "#4da6ff", "#c070ff", "#ffc030", "#ff4b4b"][best.it.r || 0]);
+    toast(p, g ? `Found ${["", "Rare ", "Epic ", "Legendary ", "Mythic "][best.it.r || 0]}${g.name}. Equip it from your bag [I].` : `Found ${best.it.n > 1 ? best.it.n + "x " : ""}${ITEMS[best.it.id].name}${ITEMS[best.it.id].kind === "mech" ? ". A mech part! Use it from your bag [I] to bolt it on." : ""}`, ["#ddd", "#4da6ff", "#c070ff", "#ffc030", "#ff4b4b"][best.it.r || 0]);
     return;
   }
   if (best) {
@@ -1488,6 +1504,7 @@ function buy(p, item) {
   if (item === "hoe" && p.hoe >= 3) return toast(p, "Your Golden Hoe is as good as hoes get.", "#bbb");
   const cost = price(p, item === "hoe" ? HOE_COST[p.hoe] : it.cost);
   if (p.gold < cost) return toast(p, `${it.name} costs ${cost}g. You have ${p.gold}g.`, "#f88");
+  if (item === "mechkit" || item === "mechpart") return buyMech(p, item, cost);
   if (item === "repair" && game.hearth >= game.hearthMax) return toast(p, "Hearth is already at full health", "#bbb");
   if (CALL_IN[item] && p.called && now() < p.called) return toast(p, "Haddock's still on the radio about your last one. Give it a moment.", "#f88");
   if ((ITEMS[item] || GEAR[item]) && !bagAdd(p.bag, item)) return toast(p, "Your bag is full. Use or drop something first [I].", "#f88");
@@ -1590,6 +1607,7 @@ const ELEM_ORDER = Object.keys(ELEMENTS);
 const MATCHUP = { // [weak to, resists]
   walker: ["fire", "frost"], runner: ["frost", "fire"], tank: ["storm", "force"], charger: ["frost", "force"], flyer: ["storm", "frost"],
   boomer: ["fire", "storm"], screamer: ["force", "storm"], elite: ["fire", "frost"], raptor: ["frost", "fire"], rex: ["storm", "fire"],
+  bug: ["fire", "frost"], spitter: ["frost", "storm"], tanker: ["storm", "fire"], brain: ["force", "frost"],
 };
 const BOSS_MATCH = { leshen: ["fire", "frost"], drowned: ["storm", "fire"], golem: ["frost", "force"] };
 function matchOf(z) { if (z.weak) return [z.weak, ""]; return z.type === "boss" ? BOSS_MATCH[game.bossKind] || [] : MATCHUP[z.type] || []; }
@@ -2161,6 +2179,7 @@ function useItem(p, i) {
   const it = p.bag[i]; if (!it || p.dead || p.air) return;
   if (it.gear) return equipGear(p, i);
   const d = ITEMS[it.id]; if (!d) return;
+  if (d.kind === "mech") return mechInstall(p, it.id.slice(3));
   if (d.kind === "gift") return toast(p, "That's a gift. Talk to someone [E] and give it to them.", "#ff8fc8");
   if (d.kind === "pack") { bagTake(p.bag, it.id); return openPack(p); }
   if (d.kind === "seed") { p.seedSel = d.crop; p.invDirty = true; return toast(p, `You'll plant ${CROPS[d.crop].name.toLowerCase()} next. Press E at an empty plot.`, "#8f8"); }
@@ -2584,6 +2603,7 @@ function touchGlyph(p) {
 }
 function vehOf(p) { return p.veh ? vehicles.find((v) => v.id === p.veh) : null; }
 function enterVehicle(p, v) {
+  if (v.kind === "mech") return enterMech(p, v);
   const seat = v.seats[0] ? v.seats[1] ? -1 : 1 : 0;
   if (seat < 0) return false;
   v.seats[seat] = p.id; p.veh = v.id; p.dlg = null;
@@ -2602,6 +2622,7 @@ function exitVehicle(p) {
 }
 function wreck(v, by) {
   vehicles = vehicles.filter((q) => q !== v);
+  if (v.kind === "mech") mechWrecked(v);
   events.push({ k: "boom", x: v.x, y: v.y, r: 130 });
   for (const z of zombies) if (dist2(z, v) < 140 * 140) hurtZombie(z, 150, by);
   for (const id of v.seats) { const p = players.get(id); if (p) { exitVehicle(p); hurtPlayer(p, 40, null, "blown up in a vehicle"); } }
@@ -2659,6 +2680,7 @@ function vehicleTick(t, dt) {
     const def = VEHICLES[v.kind], driver = players.get(v.seats[0]);
     if (driver && (driver.dead || driver.veh !== v.id)) v.seats[0] = 0;
     if (def.air) { flyTick(v, def, players.get(v.seats[0]), t, dt); continue; }
+    if (def.mech) { mechTick(v, def, players.get(v.seats[0]), t, dt); continue; }
     const k = driver && !driver.dead ? driver.keys : 0;
     const thr = ((k & 1) ? 1 : 0) - ((k & 4) ? 1 : 0), steer = ((k & 8) ? 1 : 0) - ((k & 2) ? 1 : 0);
     if (thr) v.v += thr * def.acc * dt * (Math.sign(thr) !== Math.sign(v.v) && Math.abs(v.v) > 20 ? 2 : 1);
@@ -2789,7 +2811,7 @@ function startGame() {
   PLOTS.length = BASE_PLOTS; // tilled plots belong to the last game
   BALL.x = BALL.y = 0;
   generateMap((Math.random() * 1e9) | 0);
-  vehicles = []; builds = []; game.zone = null; game.drop = null; game.countdown = 0; game.skip = new Set(); game.pendingVote = null; game.adv = null; ADV_KEEP = []; game.force = false;
+  vehicles = []; builds = []; game.bugs = null; game.forceBugs = false; game.zone = null; game.drop = null; game.countdown = 0; game.skip = new Set(); game.pendingVote = null; game.adv = null; ADV_KEEP = []; game.force = false;
   game.deeds = freshDeeds(); game.legend = null;
   if (game.mode === "story") placeNpcs(); else NPC_POS = [];
   projs = []; fires.clear(); scorched.clear(); game.disaster = null; game.dino = false; game.dinoDay = false; shrineReset(); game.dust = null;
@@ -3415,6 +3437,357 @@ function advDawn() {
   feed("New work is up on the notice boards.", "#e0c0ff");
 }
 
+// ---------------------------------------------------------------- Bug Night and mech suits (the data is in bugs.js)
+// Bug Night: story night 3, Endless night 3 and every 6th after, and any night Comrade Posad's saucers feel like it.
+// Holes open around the town and bugs pour out of them. Explosions seal a hole. The Brain Bug crawls out of its hive
+// halfway through the night (or once most holes are shut), and killing it kills every bug in the valley.
+// Mechs: parts drop from big things and sealed holes, go in your bag, and bolt on when you use them. P calls it down.
+const BUG_FORCE = !!process.env.SLOP_BUGS; // testing only: every night is Bug Night
+for (const [id, m] of Object.entries(MECH_PARTS)) ITEMS["mp_" + id] = { name: m.name, kind: "mech", icon: m.icon, desc: `Mech part (${m.slot}). ${m.desc} Use it to bolt it on.` };
+const hearthC = () => ({ x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 });
+function isBugNight(n) {
+  if (game.mode !== "story" && game.mode !== "endless") return false;
+  if (BUG_FORCE || game.forceBugs) { game.forceBugs = false; return true; }
+  if (n === 3 || (game.mode === "endless" && n > 3 && (n - 3) % 6 === 0)) return true;
+  return game.mayor === "posad" && n >= 2 && Math.random() < 0.3; // the saucers bring them
+}
+function bugSpot(minD, maxD, avoid) {
+  const hc = hearthC();
+  for (let i = 0; i < 300; i++) {
+    const a = rand(0, Math.PI * 2), d = rand(minD, maxD), c = { x: hc.x + Math.cos(a) * d, y: hc.y + Math.sin(a) * d * 0.8 };
+    if (c.x < 120 || c.y < 120 || c.x > W - 120 || c.y > H - 120) continue;
+    const q = { ...c }; collide(q, 50);
+    if (q.x !== c.x || q.y !== c.y || !freeGround(c) || inHouse(c) || PLOTS.some((pl) => dist2(pl, c) < 80 * 80)) continue;
+    if (avoid.some((h) => dist2(h, c) < 380 * 380) || (LAKE && MV.lakeAt([LAKE], c.x, c.y))) continue;
+    return c;
+  }
+  return null;
+}
+function startBugNight() {
+  const np = Math.max(1, players.size), holes = [];
+  for (let i = 0; i < Math.min(7, 3 + np); i++) { const c = bugSpot(600, 1150, holes); if (c) holes.push({ id: nextId++, x: c.x, y: c.y, hp: BUG_HOLE_HP, next: now() + rand(1, 4) }); }
+  game.bugs = { holes, sealed: 0, total: holes.length, brain: 0, brainAt: now() + NIGHT_LEN * 0.5, dead: false };
+  game.spawnLeft = 0; game.fog = false;
+  events.push({ k: "banner", text: `NIGHT ${game.night}: BUG NIGHT`, sub: "Holes are opening all over the valley. Seal them with explosions: grenades, rockets, or a mech landing on top. Kill the Brain Bug and they all die." });
+  events.push({ k: "bugs" });
+  shock(game.market, "BOOM", 0.08, "Bug sightings in the valley. Arms makers soar.");
+  // Haddock's mate in the Federation: anyone without a mech that walks gets the basic kit bolted on
+  for (const p of players.values()) {
+    const m = p.mech;
+    if (mechStats(m).ready) continue;
+    if (!m.core) m.core = "reactor";
+    if (!m.legs) m.legs = "strider";
+    if (!m.armR && !m.armL) m.armR = "cannon";
+    p.invDirty = true;
+    toast(p, "A Federation drop pod: Haddock's mates sent you a mech. Press P to call it down. More parts drop from big bugs and sealed holes.", "#7fdcff");
+  }
+}
+function spawnBug(type, at) {
+  const z = spawnZombie(type, at);
+  z.bug = true; z.arson = false;
+  if (type === "tanker") z.armHp = z.maxHp * 0.4; // a carapace you have to crack first
+  return z;
+}
+function bugTick(t) {
+  const B = game.bugs;
+  if (!B || game.phase !== "night" || B.dead) return;
+  const np = Math.max(1, players.size), cap = Math.min(60, 14 + 8 * np);
+  let live = 0; for (const z of zombies) if (z.bug) live++;
+  for (const h of B.holes) {
+    if (t < h.next) continue;
+    h.next = t + rand(6, 9) * (h.hive ? 0.8 : 1);
+    if (live >= cap) continue;
+    const r = Math.random();
+    if (r < 0.2) { spawnBug("spitter", h); live++; }
+    else if (r < 0.27 && game.night >= 5) { spawnBug("tanker", h); live++; }
+    else for (let i = 0; i < 1 + Math.ceil(np * 0.6); i++) { spawnBug("bug", h); live++; }
+    events.push({ k: "bughole", x: Math.round(h.x), y: Math.round(h.y) });
+  }
+  if (!B.brain && (t > B.brainAt || B.sealed >= Math.ceil(B.total * 0.6))) brainEmerges();
+}
+function brainEmerges() {
+  const B = game.bugs, n = Math.max(1, players.size);
+  const c = bugSpot(700, 1150, B.holes) || bugSpot(500, 1300, []) || { x: W * 0.2, y: H * 0.25 };
+  const hive = { id: nextId++, x: c.x, y: c.y, hp: BUG_HOLE_HP, next: now() + 2, hive: true };
+  B.holes.push(hive);
+  const b = spawnBug("brain", hive);
+  b.x = hive.x; b.y = hive.y; b.hp = b.maxHp = Math.round(b.maxHp * (0.5 + 0.5 * n)); b.special = now() + 5;
+  B.brain = b.id;
+  events.push({ k: "banner", text: "THE BRAIN BUG", sub: "It's out of its hive (the purple skull on your map). Kill it and every bug in the valley dies with it. Try not to think about it too hard." });
+  events.push({ k: "roar", x: Math.round(b.x), y: Math.round(b.y), psy: 1 });
+}
+function bugsBeaten(by) {
+  const B = game.bugs;
+  if (!B || B.dead) return;
+  B.dead = true;
+  for (const z of zombies) if (z.bug && z.hp > 0) z.burn = true; // they shrivel up where they stand
+  for (const h of B.holes) events.push({ k: "boom", x: Math.round(h.x), y: Math.round(h.y), r: 80, dust: 1 });
+  B.holes = [];
+  for (const q of players.values()) { addGold(q, BRAIN_REWARD, "The Brain Bug is dead"); addXp(q, 120); }
+  for (const q of players.values()) dropPart(q);
+  shock(game.market, "*", 0.06, "The Brain Bug is dead. Markets rally.");
+  events.push({ k: "banner", text: "BUG HUNT COMPLETE", sub: `${by ? fullName(by) : "Somebody"} killed the Brain Bug and every bug in the valley dropped dead. ${BRAIN_REWARD}g and a mech part each.` });
+  feed(`${by ? fullName(by) : "Somebody"} killed the Brain Bug`, "#c080ff");
+  if (game.phase === "night" && game.ends !== Infinity) game.ends = Math.min(game.ends, now() + 12); // and the sun comes up early
+}
+// explosions seal holes: grenades, rockets, a jump-jet landing. Bullets don't.
+function bugBlast(x, y, r, dmg, by) {
+  const B = game.bugs;
+  if (!B) return;
+  for (const h of [...B.holes]) {
+    if (h.hive) continue;
+    const d = Math.max(0, Math.hypot(h.x - x, h.y - y) - BUG_HOLE_R);
+    if (d >= r) continue;
+    h.hp -= dmg * (1 - (d / r) * 0.6);
+    if (h.hp <= 0) sealHole(h, by);
+  }
+}
+function sealHole(h, by) {
+  const B = game.bugs;
+  B.holes = B.holes.filter((q) => q !== h); B.sealed++;
+  events.push({ k: "boom", x: Math.round(h.x), y: Math.round(h.y), r: 90, dust: 1 });
+  events.push({ k: "sealed", x: Math.round(h.x), y: Math.round(h.y) });
+  if (by) { addGold(by, 60, "Bug hole sealed"); addXp(by, 30); }
+  feed(`${by ? fullName(by) : "Someone"} sealed a bug hole (${B.sealed}/${B.total})`, "#c0ff80");
+  if (Math.random() < 0.4) dropPart(h);
+}
+function dropPart(at, id = rollPart()) {
+  const c = { x: at.x + rand(-30, 30), y: at.y + rand(-30, 30) }; collide(c, 20);
+  crates.push({ id: nextId++, ...c, it: { id: "mp_" + id, n: 1, r: 3 } });
+  events.push({ k: "part", x: Math.round(c.x), y: Math.round(c.y) });
+}
+// what the bugs do besides biting. 1 = stand still, -1 = back off, 0 = carry on.
+function bugAct(z, target, bd, t, alive, hc) {
+  if (z.type === "spitter") { // plasma artillery: plants itself and lobs at you, or at the Hearth if nobody's about
+    const aim = target || (Math.hypot(hc.x - z.x, hc.y - z.y) < 560 ? { x: hc.x, y: hc.y, z: 40, hearth: 1 } : null);
+    const d = aim ? Math.hypot(aim.x - z.x, aim.y - z.y) : Infinity;
+    if (aim && d < 560 && t > z.special && !(t < z.stun)) { z.special = t + rand(3.2, 4.5); lobPlasma(z, aim); }
+    if (target && d < 220) return -1;
+    return aim && d < 520 ? 1 : 0;
+  }
+  if (z.type === "tanker" && target && bd < 180 * 180 && t > z.special && Math.abs(target.z - z.z) < 90) { // acid spray in a cone
+    z.special = t + 3.2; z.stun = t + 0.7;
+    const a = Math.atan2(target.y - z.y, target.x - z.x);
+    events.push({ k: "acid", x: Math.round(z.x), y: Math.round(z.y), z: Math.round(z.z || 0), a: +a.toFixed(2) });
+    const inCone = (e, r) => { const d = Math.hypot(e.x - z.x, e.y - z.y) - r; let da = Math.atan2(e.y - z.y, e.x - z.x) - a; da = Math.atan2(Math.sin(da), Math.cos(da)); return d < 200 && Math.abs(da) < 0.55; };
+    for (const q of alive) if (inCone(q, 16) && Math.abs(q.z - z.z) < 90) hurtPlayer(q, 24, null, "dissolved by a tanker bug");
+    for (const v of vehicles) if (inCone(v, VEHICLES[v.kind].r) && (v.z || 0) < 80) hurtVehicle(v, 70, null);
+    return 1;
+  }
+  if (z.type === "brain") { // sits by its hive, reads your mind, and calls its guards
+    if (t > z.special) {
+      z.special = t + 7;
+      events.push({ k: "roar", x: Math.round(z.x), y: Math.round(z.y), psy: 1 });
+      for (const q of alive) if (dist2(q, z) < 650 * 650) { q.frozen = t + 0.6; addStress(q, 12); q.pe.push({ k: "deaf" }); q.pe.push({ k: "psy" }); }
+      let live = 0; for (const o of zombies) if (o.bug) live++;
+      if (live < 24 + 8 * players.size) for (let i = 0; i < 2 + players.size; i++) spawnBug("bug", z);
+    }
+    return 1;
+  }
+  return 0;
+}
+function lobPlasma(z, aim) {
+  const z0 = (z.z || 0) + z.r * 2, dx = aim.x - z.x, dy = aim.y - z.y, d = Math.hypot(dx, dy) || 1;
+  const T = clamp(d / 430, 0.6, 1.5), G = MV.GRAV * 0.5;
+  projs.push({ id: nextId++, kind: "plasma", owner: 0, x: z.x + dx / d * z.r, y: z.y + dy / d * z.r, z: z0, vx: dx / T, vy: dy / T, vz: ((aim.z || 0) + 20 - z0) / T + 0.5 * G * T, age: 0 });
+  events.push({ k: "spit", x: Math.round(z.x), y: Math.round(z.y) });
+}
+function plasmaTick(pr, dt) {
+  pr.vz -= MV.GRAV * 0.5 * dt;
+  pr.x += pr.vx * dt; pr.y += pr.vy * dt; pr.z += pr.vz * dt;
+  let hit = pr.age > 3 || pr.z <= MV.floorAt(pr.x, pr.y, 2, pr.z + 4, near(pr)).h || insideWall(pr.x, pr.y, pr.z);
+  for (const q of players.values()) if (!hit && !q.dead && !q.air && (q.x - pr.x) ** 2 + (q.y - pr.y) ** 2 < 24 * 24 && pr.z > q.z - 6 && pr.z < q.z + MV.HGT + 10) hit = true;
+  for (const v of vehicles) if (!hit && (v.x - pr.x) ** 2 + (v.y - pr.y) ** 2 < VEHICLES[v.kind].r ** 2 && pr.z < (v.z || 0) + (v.kind === "mech" ? 110 : 44)) hit = true;
+  if (!hit && rectHitsCircle(HEARTH, pr, 6) && pr.z < HEARTH.z1 + 10) hit = true;
+  if (!hit) return;
+  pr.dead = true;
+  const x = pr.x, y = pr.y, z = pr.z;
+  events.push({ k: "boom", x: Math.round(x), y: Math.round(y), z: Math.round(z), r: 70, col: 0x7dff4a, c2: "125,255,74" });
+  for (const q of players.values()) if (!q.dead && !q.air && Math.hypot(q.x - x, q.y - y, q.z + 28 - z) < 80) hurtPlayer(q, 16, null, "melted by bug plasma");
+  for (const v of vehicles) if (Math.hypot(v.x - x, v.y - y) < VEHICLES[v.kind].r + 70) hurtVehicle(v, 40, null);
+  for (const b of builds) if ((b.x + 20 - x) ** 2 + (b.y + 20 - y) ** 2 < 70 * 70) hurtPiece(b, 40);
+  if (game.phase !== "over" && rectHitsCircle(HEARTH, { x, y }, 70) && z < HEARTH.z1 + 40) { game.hearth -= 14; events.push({ k: "hhit" }); }
+}
+
+// ---- mech suits
+function buyMech(p, item, cost) {
+  const ids = item === "mechkit" ? ["reactor", "strider", "cannon"] : [rollPart()];
+  const room = BAG_SIZE - p.bag.length - ids.filter((id) => !p.bag.some((b) => b.id === "mp_" + id)).length;
+  if (room < 0) return toast(p, "Your bag is full. Use or drop something first [I].", "#f88");
+  p.gold -= cost;
+  for (const id of ids) bagAdd(p.bag, "mp_" + id);
+  p.invDirty = true;
+  toast(p, `Bought ${ids.map((id) => MECH_PARTS[id].name).join(", ")}. It's in your bag [I]: use a part to bolt it on, then P calls your mech.`, "#8f8");
+}
+function mechMissing(m) {
+  const need = [];
+  if (!m.core) need.push("a core"); if (!m.legs) need.push("legs"); if (!m.armR && !m.armL) need.push("an arm");
+  return need.join(", ");
+}
+function mechOf(p) { return vehicles.find((v) => v.kind === "mech" && v.owner === p.id) || null; }
+function mechInstall(p, id) {
+  const part = MECH_PARTS[id];
+  if (!part || !bagTake(p.bag, "mp_" + id)) return;
+  const m = p.mech;
+  let slot = part.slot, out = null;
+  if (slot === "arm") {
+    if (!m.armR) slot = "armR"; else if (!m.armL) slot = "armL";
+    else { out = m.armL; m.armL = m.armR; m.armR = null; slot = "armR"; } // the right arm moves to the left, the old left one comes off
+  } else out = m[slot] || null;
+  m[slot] = id;
+  if (out && !bagAdd(p.bag, "mp_" + out)) crates.push({ id: nextId++, x: p.x + rand(-20, 20), y: p.y + 30, it: { id: "mp_" + out, n: 1, r: 3 } });
+  p.invDirty = true;
+  const v = mechOf(p);
+  if (v) { const st = mechStats(m); v.parts = { ...m }; v.hp = Math.min(st.hp, v.hp * st.hp / (v.maxHp || st.hp)); v.maxHp = st.hp; }
+  const st = mechStats(m);
+  toast(p, `Bolted on the ${part.name}${out ? ` (the ${MECH_PARTS[out].name} went back in your bag)` : ""}. ${st.ready ? (v ? "Your mech's already updated." : "Press P to call your mech down.") : `It still needs ${mechMissing(m)}.`}`, "#7fdcff");
+  p.pe.push({ k: "fitted" });
+}
+function deployMech(p) {
+  if (game.mode === "royale") return toast(p, "No mechs in the Royale. It wouldn't be fair. It would be hilarious, but it wouldn't be fair.", "#bbb");
+  if (!["day", "night"].includes(game.phase) || p.dead || p.air) return;
+  const st = mechStats(p.mech), t = now();
+  if (!st.ready) return toast(p, `Your mech needs ${mechMissing(p.mech)} before it can walk. Parts drop from big monsters, bug holes and Haddock's armoury.`, "#f88");
+  if (p.veh) return toast(p, "Get out of that first [E].", "#bbb");
+  if (p.z < -20 || inHouse(p)) return toast(p, "Your mech can't land in here. Get outside.", "#f88");
+  if (t < (p.mechCd || 0)) return toast(p, `Your mech's still being welded back together. ${Math.ceil(p.mechCd - t)}s.`, "#f88");
+  if (t < (p.mechDrop || 0)) return;
+  const old = mechOf(p);
+  if (old && old.seats.some(Boolean)) return toast(p, "Somebody's in your mech.", "#f88");
+  let cost = 0;
+  if (!old && p.mechWreck) {
+    cost = price(p, MECH_REPAIR);
+    if (p.gold < cost) return toast(p, `Rebuilding your wrecked mech costs ${cost}g. You have ${p.gold}g.`, "#f88");
+    p.gold -= cost; p.mechWreck = false;
+  }
+  if (old) vehicles = vehicles.filter((v) => v !== old);
+  const hp = old ? old.hp : st.hp;
+  p.mechDrop = t + 4;
+  toast(p, cost ? `Paid ${cost}g to rebuild it. Mech inbound in 4 seconds: stand clear.` : old ? "Your mech is being dropped back to you. 4 seconds." : "Mech inbound. It lands in 4 seconds: stand clear.", "#7fdcff");
+  events.push({ k: "mechcall", x: Math.round(p.x), y: Math.round(p.y) });
+  setTimeout(() => {
+    if (!players.has(p.id) || !["day", "night"].includes(game.phase)) return;
+    let sp = null;
+    for (let i = 0; i < 60 && !sp; i++) { const a = Math.random() * Math.PI * 2, d = 70 + Math.random() * 80, c = { x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d }; const q = { ...c }; collide(q, 44); if (q.x === c.x && q.y === c.y && freeGround(c) && !inHouse(c)) sp = c; }
+    sp = sp || { x: p.x + 70, y: p.y };
+    vehicles.push({ id: nextId++, kind: "mech", x: sp.x, y: sp.y, z: 0, vz: 0, vx: 0, vy: 0, a: p.a, v: 0, hp, maxHp: st.hp, seats: [0, 0], owner: p.id, parts: { ...p.mech }, gr: true });
+    events.push({ k: "mechland", x: Math.round(sp.x), y: Math.round(sp.y) });
+    for (const z of zombies) if (dist2(z, sp) < 100 * 100) hurtZombie(z, 250, p, ""); // squish
+    toast(p, "Your mech has landed. E to climb in.", "#7fdcff");
+  }, 4000);
+}
+function enterMech(p, v) {
+  const seat = !v.seats[0] && v.owner === p.id ? 0 : !v.seats[1] ? 1 : -1;
+  if (seat < 0) return false;
+  v.seats[seat] = p.id; p.veh = v.id; p.dlg = null;
+  const st = mechStats(v.parts);
+  if (seat === 1) toast(p, `Riding on ${players.get(v.owner) ? fullName(players.get(v.owner)) + "'s" : "the"} mech's shoulder. Shoot anything. E to hop off.`, "#9fe0ff");
+  else toast(p, `You're in your mech.${st.jet ? " SPACE fires the jets: land on a bug hole to seal it." : ""} It repairs itself by the Hearth.`, "#9fe0ff");
+  return true;
+}
+function mechWrecked(v) {
+  const p = players.get(v.owner);
+  if (!p) return;
+  p.mechWreck = true; p.mechCd = now() + MECH_COOL;
+  toast(p, `Your mech is scrap. Haddock can rebuild it for ${price(p, MECH_REPAIR)}g: press P again in ${MECH_COOL}s.`, "#ff9d2e");
+}
+function mechTick(v, def, driver, t, dt) {
+  const st = mechStats(v.parts), on = !!(driver && !driver.dead);
+  v.vx = v.vx || 0; v.vy = v.vy || 0; v.z = v.z || 0; v.vz = v.vz || 0;
+  let mx = 0, my = 0;
+  if (on) {
+    const k = driver.keys, f = ((k & 1) ? 1 : 0) - ((k & 4) ? 1 : 0), s = ((k & 8) ? 1 : 0) - ((k & 2) ? 1 : 0);
+    const yaw = driver.rel ? (driver.my ?? driver.a) : driver.a;
+    if (driver.rel) { mx = Math.cos(yaw) * f - Math.sin(yaw) * s; my = Math.sin(yaw) * f + Math.cos(yaw) * s; } else { mx = s; my = -f; }
+    const l = Math.hypot(mx, my); if (l > 1) { mx /= l; my /= l; }
+    let d = driver.a - v.a; d = Math.atan2(Math.sin(d), Math.cos(d));
+    v.a += clamp(d, -def.turn * dt, def.turn * dt); // the torso turns to the crosshair
+  }
+  const sp = st.speed * (wading(v) ? 0.6 : 1), k = Math.min(1, dt * (v.gr ? 6 : 1.2));
+  v.vx += (mx * sp - v.vx) * k; v.vy += (my * sp - v.vy) * k;
+  v.x += v.vx * dt; v.y += v.vy * dt;
+  const hit = MV.pushOut(v, def.r, near(v), BW(), BH(), v.z, 100);
+  if (hit && hit !== "edge" && hit.hp && ["fence", "crate", "tree", "furn", "glass"].includes(hit.kind)) damageWall(hit, 500 * dt); // it walks through the small stuff
+  if (v.z > -8) MV.pushOut(v, def.r, LAKE_SOLID, BW(), BH(), 0, 40);
+  if (on && st.jet && (driver.keys & 16) && v.gr && t > (v.jetAt || 0)) { v.vz = 600; v.gr = false; v.jetAt = t + 1.1; v.jetting = t + 0.5; events.push({ k: "jet", id: v.id, x: Math.round(v.x), y: Math.round(v.y) }); }
+  v.vz -= MV.GRAV * 0.8 * dt; v.z += v.vz * dt;
+  const fl = MV.floorAt(v.x, v.y, def.r * 0.5, v.z + 24, near(v)).h;
+  if (v.z <= fl) { if (!v.gr && v.vz < -380) mechSlam(v, driver, st); v.z = fl; v.vz = 0; v.gr = true; }
+  else v.gr = v.z - fl < 2;
+  if (v.z > 900) { v.z = 900; v.vz = Math.min(0, v.vz); }
+  v.v = Math.hypot(v.vx, v.vy);
+  // stomping: small things underfoot get squashed, bigger things get shoved
+  for (const z of zombies) {
+    if (z.hp <= 0 || dist2(z, v) > (def.r + z.r) ** 2 || Math.abs((z.z || 0) - v.z) > 90) continue;
+    const d = Math.sqrt(dist2(z, v)) || 1, nx = (z.x - v.x) / d, ny = (z.y - v.y) / d;
+    if (z.r <= 22 && v.v > 50 && !((z.rammed || 0) > t)) { z.rammed = t + 0.4; hurtZombie(z, 45 * st.stomp * st.dmg * game.mods.dmg * TEST_DMG, driver || null, ""); }
+    if (z.r < 40) { z.x = v.x + nx * (def.r + z.r); z.y = v.y + ny * (def.r + z.r); }
+  }
+  if (on) { mechArm(v, "armR", driver.firing, driver, st, t); mechArm(v, "armL", driver.ads, driver, st, t); }
+  if (rectHitsCircle(HEARTH, v, 210) && v.hp < v.maxHp) v.hp = Math.min(v.maxHp, v.hp + 60 * dt); // the Hearth patches it up
+  v.seats.forEach((id, i) => { const p = players.get(id); if (p && p.veh === v.id) { p.x = v.x; p.y = v.y; p.z = v.z + (i ? 72 : 0); } });
+}
+function mechSlam(v, driver, st) { // coming down off the jets: everything underneath has a very bad time
+  events.push({ k: "boom", x: Math.round(v.x), y: Math.round(v.y), z: Math.round(v.z), r: 130, dust: 1 });
+  events.push({ k: "slam", x: Math.round(v.x), y: Math.round(v.y) });
+  for (const z of zombies) {
+    if (z.hp <= 0 || dist2(z, v) > 150 * 150 || Math.abs((z.z || 0) - v.z) > 120) continue;
+    hurtZombie(z, 160 * st.dmg * st.stomp * game.mods.dmg * TEST_DMG, driver || null, "");
+    if (z.r < 40) { const d = Math.sqrt(dist2(z, v)) || 1; z.vx += (z.x - v.x) / d * 420; z.vy += (z.y - v.y) / d * 420; if (z.type !== "flyer") { z.vz = 300; z.gr = false; } }
+  }
+  bugBlast(v.x, v.y, 110, 220, driver || null);
+  for (const w of [...nearXY(v.x, v.y)]) if (w.hp && ["fence", "crate", "furn", "glass"].includes(w.kind) && boxDist(w, v.x, v.y, v.z) < 90) damageWall(w, 400);
+}
+function mechArm(v, slot, pressed, p, st, t) {
+  const kind = v.parts[slot];
+  if (!kind || !pressed || t < (v[slot + "At"] || 0)) return;
+  const fx = Math.cos(p.a), fy = Math.sin(p.a);
+  if (kind === "cannon") {
+    v[slot + "At"] = t + 0.13;
+    const g = v[slot + "Gun"] || (v[slot + "Gun"] = newWeapon("rifle", 3));
+    g.ammo = 99; g.bloom = 0.12; g.reloadUntil = 0; g.jam = false; g.dirt = 0; g.mult = 0.8 * st.dmg;
+    shoot(p, g);
+  } else if (kind === "rockets") {
+    v[slot + "At"] = t + 0.9;
+    fireRocket(p, { rarity: 1 }, 1.25 * st.dmg * game.mods.dmg);
+  } else if (kind === "flamer") {
+    v[slot + "At"] = t + 0.1;
+    const ox = v.x + fx * 30, oy = v.y + fy * 30;
+    events.push({ k: "flame", x: Math.round(ox), y: Math.round(oy), z: Math.round(v.z + 60), a: +p.a.toFixed(2) });
+    for (const z of zombies) {
+      if (z.hp <= 0) continue;
+      const dx = z.x - ox, dy = z.y - oy, d = Math.hypot(dx, dy) - z.r;
+      if (d > 210 || Math.abs((z.z || 0) - v.z) > 120) continue;
+      let da = Math.atan2(dy, dx) - p.a; da = Math.atan2(Math.sin(da), Math.cos(da));
+      if (Math.abs(da) > 0.5 && d > 10) continue;
+      hurtZombie(z, 9 * st.dmg * game.mods.dmg * TEST_DMG, p, ""); z.fireUntil = t + 2.5; z.fireBy = p.id;
+    }
+    if (t > (v.igniteAt || 0)) { v.igniteAt = t + 0.35; const d = rand(90, 190); ignite(ox + fx * d, oy + fy * d, v.z + 30, p.id, 3, true); }
+  } else if (kind === "sword") {
+    v[slot + "At"] = t + 0.65;
+    events.push({ k: "slash", id: p.id, x: Math.round(v.x), y: Math.round(v.y), z: Math.round(v.z + 40), a: +p.a.toFixed(2), m: 0, big: 1 });
+    for (const z of zombies) {
+      if (z.hp <= 0) continue;
+      const dx = z.x - v.x, dy = z.y - v.y, d = Math.hypot(dx, dy) - z.r;
+      if (d > 150 || Math.abs((z.z || 0) - v.z) > 130) continue;
+      let da = Math.atan2(dy, dx) - p.a; da = Math.atan2(Math.sin(da), Math.cos(da));
+      if (Math.abs(da) > 1.2 && d > 10) continue;
+      hurtZombie(z, 170 * st.dmg * game.mods.dmg * TEST_DMG, p, "");
+      if (z.r < 40) { const n = Math.hypot(dx, dy) || 1; z.vx += dx / n * 480; z.vy += dy / n * 480; }
+    }
+    if (game.bugs) for (const h of [...game.bugs.holes]) if (!h.hive && Math.hypot(h.x - v.x, h.y - v.y) < 170) { h.hp -= 60; if (h.hp <= 0) sealHole(h, p); }
+  }
+}
+function mechView(p) { // [parts, cooldown, wrecked, deployed mech's hp %]
+  const v = mechOf(p);
+  return [mechCode(p.mech), Math.max(0, Math.ceil((p.mechCd || 0) - now())), p.mechWreck ? 1 : 0, v ? Math.round(100 * v.hp / v.maxHp) : -1];
+}
+function bugView() {
+  const B = game.bugs;
+  if (!B) return null;
+  return { h: B.holes.map((h) => [h.id, Math.round(h.x), Math.round(h.y), h.hive ? -1 : Math.max(0, Math.round(100 * h.hp / BUG_HOLE_HP))]), b: B.brain, s: B.sealed, n: B.total, d: B.dead ? 1 : 0 };
+}
+
 const DISASTERS = {
   meteor: { name: "METEOR SHOWER", sub: "Get out of the red circles. Or get to the defence console and shoot them down [E].", len: 36, station: "orbital defence console", game: "Orbital Defence" },
   flood:  { name: "FLASH FLOOD", sub: "Get to high ground, or get to the sluice gates and drain it [E]. Crops won't survive it.", len: 45, station: "sluice gates", game: "Sluice Gates" },
@@ -3615,6 +3988,9 @@ function startNight() {
   game.fog = !final && !endlessBoss && game.night >= 2 && Math.random() < FOG_NIGHT;
   game.dino = !final && !endlessBoss && !!game.dinoDay; game.dinoRex = false; game.dinoDay = false;
   if (game.dino) { game.fog = false; game.spawnLeft = Math.max(6, Math.round(game.spawnLeft * 0.55)); }
+  const bugNight = !final && !endlessBoss && !game.dino && isBugNight(game.night);
+  game.bugs = null;
+  if (bugNight) startBugNight();
   game.spawnTotal = game.spawnLeft;
   maybeDisaster();
   if (endlessBoss) {
@@ -3632,7 +4008,8 @@ function startNight() {
     b.hp = b.maxHp = Math.round(ZTYPES.boss.hp * B.hp * game.mods.bossHp * (0.5 + 0.5 * n));
     game.bossId = b.id;
     events.push({ k: "banner", text: `THE LAST NIGHT: ${B.name}`, sub: `${culpritOf(game.flags).name} raised it. Slay it to save the valley.` });
-  } else {
+  } else if (bugNight) game.ends = now() + NIGHT_LEN;
+  else {
     game.ends = now() + NIGHT_LEN;
     const sub = game.dino ? "Dinosaur night. Only dinosaurs tonight, and one big one. Frost and storm work best." : game.fog ? "FOG NIGHT. You can't see a thing. Listen for the screamers." : game.night === 1 ? "Protect the Hearth. Don't shoot your friends (much)." : game.mode === "story" && game.night >= LAST_NIGHT ? "The dead won't stop until someone solves the mystery. Check your journal [J]." : "They're getting hungrier.";
     events.push({ k: "banner", text: game.dino ? `NIGHT ${game.night}: DINOSAUR NIGHT` : game.fog ? `NIGHT ${game.night}: THE FOG` : `NIGHT ${game.night}`, sub });
@@ -3652,6 +4029,7 @@ function collectRates() {
 }
 function startDay() {
   resetOffices(); // the office vaults lock again at dawn
+  game.bugs = null; // the holes cave in at dawn (and the sun burns whatever's left above ground)
   game.phase = "day"; game.mods.nightGold = 1; game.ends = now() + (game.mode === "adventure" ? ADV_DAY : DAY_LEN); game.fog = false; game.dino = false; game.duskWarned = false;
   game.dinoDay = isDinoDay(game.night + 1); game.dinoNext = now() + 12;
   if (game.zone) zoneShrinkTo(40000, 20); // the fog lifts off the wild
@@ -3792,6 +4170,7 @@ function tick() {
   if (tickN % 10 === 0) ensureChunks();
   if (tickN % 45 === 0) wildTick(t);
   if (tickN % 10 === 5 && game.mode === "adventure") advTick(t);
+  if (tickN % 10 === 7 && game.bugs) bugTick(t);
   if (game.phase === "day" || game.phase === "night") dustTick(t, dt);
   if (OPEN() && game.phase === "day" && !game.duskWarned && game.ends - t < 25 && game.zone) { // the fog comes for the wild at night
     game.duskWarned = true;
@@ -3877,7 +4256,7 @@ function tick() {
       moveTick(p, t, dt);
       breathe(p, t, dt);
       if (p.z > 1400) p.z = 1400;
-    } else { p.z = (veh.z || 0) + (veh.seats[1] === p.id ? 8 : VEHICLES[veh.kind].air ? 4 : 0); p.vz = 0; p.vx = 0; p.vy = 0; p.gr = !VEHICLES[veh.kind].air || !veh.z; }
+    } else { p.z = (veh.z || 0) + (VEHICLES[veh.kind].mech ? (veh.seats[1] === p.id ? 72 : 0) : veh.seats[1] === p.id ? 8 : VEHICLES[veh.kind].air ? 4 : 0); p.vz = 0; p.vx = 0; p.vy = 0; p.gr = !VEHICLES[veh.kind].air || !veh.z; }
     p.heat = Math.max(0, p.heat - 1.6 * dt);
     const mh = maxHp(p);
     if (sk(p, "wind") && t - p.lastHurt > 3) p.hp = Math.min(mh, p.hp + 1.5 * sk(p, "wind") * dt);
@@ -3921,7 +4300,7 @@ function tick() {
     const def = ZTYPES[z.type];
     if (z.burn) { z.hp -= z.maxHp * 0.35 * dt; if (Math.random() < dt * 3) events.push({ k: "burn", x: z.x, y: z.y }); continue; }
     // 'arson' zombies beeline for the Hearth and only get distracted by players right next to them
-    let target = null, bd = (z.type === "boss" || z.type === "elite" || z.type === "flyer" ? 700 : z.arson ? 110 : 420) ** 2;
+    let target = null, bd = (z.type === "boss" || z.type === "elite" || z.type === "flyer" || z.type === "brain" ? 700 : z.type === "bug" || z.type === "tanker" ? 1e5 : z.type === "spitter" ? 560 : z.arson ? 110 : 420) ** 2; // bugs hunt people, wherever they are
     // bile and screams make you the only thing worth eating
     for (const p of alive) { let d = dist2(p, z); if (p.bile > t || (z.aggro === p.id && t < z.aggroUntil)) d /= 25; if (d < bd) { bd = d; target = p; } }
     if (target) bd = dist2(target, z);
@@ -3967,6 +4346,7 @@ function tick() {
       events.push({ k: "roar", x: z.x, y: z.y, rex: 1 });
       for (const q of alive) if (dist2(q, z) < 340 * 340) { q.frozen = t + 0.8; addStress(q, 12); q.pe.push({ k: "deaf" }); }
     }
+    if (z.bug) { const act = bugAct(z, target, bd, t, alive, hc); if (act === 1) sp = 0; else if (act === -1) { dx = -dx; dy = -dy; } }
     if (t < z.stun) sp = 0;
     else if (t < (z.slowUntil || 0)) sp *= 0.5; // cryo rounds
     if (t < z.frozen) { z.atk = Math.max(z.atk, z.frozen); }
@@ -4023,14 +4403,15 @@ function tick() {
       for (const q of alive) if (dist2(q, z) < 380 * 380) { q.pe.push({ k: "deaf" }); addStress(q, 8); }
     }
     if (t > z.atk) {
-      if (target && Math.sqrt(bd) < z.r + 20 && Math.abs(target.z - z.z) < 60) {
+      const reach = z.r + 20 + (target && target.veh && VEHICLES[(vehOf(target) || {}).kind]?.mech ? 36 : 0); // a mech is wider than you
+      if (target && Math.sqrt(bd) < reach && Math.abs(target.z - z.z) < 60) {
         if (z.glow) addRad(target, 5);
-        hurtPlayer(target, def.dmg, null, z.type === "boss" ? `folded by ${B.name.toLowerCase().replace("the ", "the ")}` : z.type === "tank" ? "smashed by a tank" : "eaten");
+        hurtPlayer(target, def.dmg, null, z.type === "boss" ? `folded by ${B.name.toLowerCase().replace("the ", "the ")}` : z.type === "tank" ? "smashed by a tank" : z.bug ? "torn apart by bugs" : "eaten");
         z.atk = t + 0.8;
         if (z.type === "tank") { const d = Math.sqrt(bd) || 1; kick(target, (target.x - z.x) / d * 420, (target.y - z.y) / d * 420, 240); }
         if (target.id && Math.random() < INFECT) infect(target);
       }
-      else if (!target && touchingHearth && game.phase !== "over") { game.hearth -= def.dmg * (z.type === "boss" ? 1.5 : 0.6); z.atk = t + 0.8; events.push({ k: "hhit" }); }
+      else if (!target && touchingHearth && game.phase !== "over") { game.hearth -= def.dmg * (z.type === "boss" ? 1.5 : z.bug ? 0.25 : 0.6); z.atk = t + 0.8; events.push({ k: "hhit" }); } // bugs would rather eat you than the Hearth
     }
     for (const pl of PLOTS) if (pl.stage > 0 && z.z < 10 && (pl.x - z.x) ** 2 + (pl.y - z.y) ** 2 < 22 * 22) { pl.stage = 0; pl.prog = 0; events.push({ k: "trample", x: pl.x, y: pl.y }); }
     if ((z.type === "boss" || z.type === "elite") && t > z.special && game.phase !== "over") {
@@ -4075,7 +4456,7 @@ function snapshot() {
       drop: game.drop && t - game.drop.t0 < game.drop.dur + 3 ? [r(game.drop.x0), r(game.drop.y0), r(game.drop.x1), r(game.drop.y1), +dropPos(t).k.toFixed(3)] : null,
       clues: [...game.clues].map(clueText), mq: mainQuest(),
       ph: game.phase, n: game.night, uav: game.uav && game.uav > t ? Math.ceil(game.uav - t) : 0, left: game.ends === Infinity ? -1 : Math.max(0, r(game.ends - t)), hh: r(game.hearth), hm: game.hearthMax, res: game.result, boss: game.bossId, bk: game.bossKind, valley: VALLEY, fog: game.fog ? 1 : 0, solved: solved() ? 1 : 0, dino: game.dino ? 1 : 0, dd: game.dinoDay ? 1 : 0,
-      du: dustView(t), adv: game.mode === "adventure" ? advView() : null,
+      du: dustView(t), bug: bugView(), adv: game.mode === "adventure" ? advView() : null,
       mk: SYMS.map((s) => +game.market.px[s].toFixed(2)), news: game.market.news.map((n) => [n.text, n.up ? 1 : 0]),
       mayor: game.mayor, nuke: game.nuke ? [r(game.nuke.x), r(game.nuke.y), Math.max(0, +(game.nuke.at - t).toFixed(1))] : null, dome: game.dome && game.mode !== "royale" ? [game.dome.have, game.dome.cost] : null, waste: game.waste ? 1 : 0, hot: game.hot.map((h) => [r(h.x), r(h.y), r(h.r), h.lake ? 1 : 0]),
       elec: game.elec ? { c: game.elec.cands, v: Object.fromEntries(game.elec.votes), left: Math.max(0, r(game.elec.ends - t)) } : null,
@@ -4093,7 +4474,7 @@ function snapshot() {
         spr: +spreadOf(p, w).toFixed(3), sc: Math.max(0, +(p.shoutCd - t).toFixed(1)), sp: r(speedOf(p)), tr: p.trait, gen: p.gen,
         lv: p.lvl, xp: p.xp, xn: xpNeed(p.lvl), pts: p.pts, sk: p.sk, ch: p.champion ? 1 : 0,
         air: p.air === "plane" || p.air === "wait" ? 1 : p.air === "fall" ? (p.pod ? 4 : 2) : p.air === "bunker" ? 3 : 0, gr: SLOTS.map((k) => (p.gear[k] ? p.gear[k].id : "")), fd: Math.round(p.food), wt: Math.round(p.water), rad: Math.round(p.rad), dr: p.drunk > 5 ? 1 : 0, cg: p.cg ? 1 : 0, rd: p.ready ? 1 : 0, vh: p.veh || 0, trl: p.trail, ttl: p.title ? COSMETICS[p.title].name : "", spn: p.spins, bl: r(p.bl), bw: r(p.bw), inf: p.inf ? p.inf.sym : "", imm: Math.max(0, Math.round((p.immune || 0) - t)), wm: p.warm ? 1 : 0, il: p.inf ? r(p.inf.until - t) : 0, go: t < p.going ? p.goKind : "", ads: p.ads ? 1 : 0, cro: crouched(p) ? 1 : 0, sprt: p.sprint ? 1 : 0, sli: p.slide > 0 ? 1 : 0, wrs: p.wr > 0 ? (p.wn[0] * Math.sin(p.a) - p.wn[1] * Math.cos(p.a) > 0 ? 1 : -1) : 0, sta: Math.round(p.stam ?? 100), out: p.out ? 1 : 0, pk: p.st.pk, ks: p.streak || 0, ss: r(p.stress || 0), br: Math.ceil(p.breath ?? 15), sw: p.swim ? 1 : 0, lo: p.love, ro: [p.dating || "", p.spouse || ""], el: p.elem || "force", els: elemsFor(p).join(","), fz: p.frozen > t ? 1 : 0, dl: p.dlg ? 1 : 0, md: p.meltdown > t ? 1 : 0, hoe: p.hoe || 0, ho: p.hoeOut ? 1 : 0, gn: p.gren, mo: p.molo, bi: p.bile > t ? 1 : 0, sh: p.shame > t ? 1 : 0, fr: p.fireUntil > t ? 1 : 0,
-        nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
+        mc: mechView(p), nt: [...p.talked], qr: questReady(p), q: Object.entries(p.q).map(([id, qs]) => [QUESTS[id].title, QUESTS[id].desc, Math.min(QUESTS[id].goal, npcApi.progress(p, id)), QUESTS[id].goal, qs.done ? 1 : 0, NPCS[QUESTS[id].npc].name]),
         k: p.st.kills, de: p.st.deaths, cr: p.st.crops, tk: p.st.tk, hs: p.st.hs, acc: p.st.shots ? Math.round(p.st.hits / p.st.shots * 100) : 0,
       };
     }),
@@ -4107,7 +4488,7 @@ function snapshot() {
     np: NPC_POS.map((n) => [n.id, r(n.x), r(n.y), +(n.a || 0).toFixed(2)]),
     sh: game.shrine ? [...game.shrine.order, game.shrine.step, game.shrine.open ? 1 : 0] : null,
     cr: crates.map((c) => [c.id, r(c.x), r(c.y), c.w ? c.w.rarity : c.it.r || 0, c.grave ? 1 : 0, c.it ? (GEAR[c.it.id] ? 1 : 2) : 0]),
-    vh: vehicles.map((v) => [v.id, v.kind, r(v.x), r(v.y), +v.a.toFixed(2), r((v.hp / VEHICLES[v.kind].hp) * 100), v.seats[0], v.seats[1], r(v.v), r(v.z || 0)]),
+    vh: vehicles.map((v) => [v.id, v.kind, r(v.x), r(v.y), +v.a.toFixed(2), r((v.hp / (v.maxHp || VEHICLES[v.kind].hp)) * 100), v.seats[0], v.seats[1], r(v.v), r(v.z || 0), v.parts ? mechCode(v.parts) : "", v.jetting > t ? 1 : 0, v.owner || 0]),
     b: builds.map((b) => [b.id, b.bk, b.x, b.y, r((b.hp / b.maxHp) * 100), +b.a.toFixed(2), b.owner]),
     e: events,
     stats: game.phase === "over" ? game.stats : undefined,
@@ -4172,6 +4553,12 @@ function onMessage(ws, raw) {
       if (m.killQ) for (const z of zombies) if (z.qid && z.type !== "boss") hurtZombie(z, z.hp + 1, p); // Adventure's quest monsters
       if (m.killBoss) { const b = zombies.find((z) => z.id === game.bossId); if (b) hurtZombie(b, b.hp + 1, p); }
       if (m.weapon) giveWeapon(p, newWeapon(m.weapon, m.rarity || 0));
+      if (m.mechParts) for (const id of Object.keys(MECH_PARTS)) bagAdd(p.bag, "mp_" + id), p.invDirty = true; // Bug Night and mechs
+      if (m.mechSet && typeof m.mechSet === "object") { for (const k of ["core", "legs", "armR", "armL", "head"]) p.mech[k] = own(MECH_PARTS, m.mechSet[k]) ? m.mechSet[k] : null; p.invDirty = true; }
+      if (m.bugs) game.forceBugs = true;
+      if (m.killBrain && game.bugs) { const b = zombies.find((z) => z.id === game.bugs.brain); if (b) hurtZombie(b, b.hp + 1, p); }
+      if (m.brainNow && game.bugs && !game.bugs.brain) brainEmerges();
+      if (m.sealAll && game.bugs) for (const h of [...game.bugs.holes]) if (!h.hive) sealHole(h, p);
       if (m.mode !== undefined) p.weapons[p.active].mode = m.mode || undefined;
       if (m.enh !== undefined) p.weapons[p.active].enh = m.enh;
       if (m.zinfo) p.pe.push({ k: "test", v: zombies.map((z) => [z.type, Math.round(z.hp), z.frozen > now() ? 1 : 0, (z.fireUntil || 0) > now() ? 1 : 0, (z.slowUntil || 0) > now() ? 1 : 0, Math.round(z.x)]) });
@@ -4217,6 +4604,7 @@ function onMessage(ws, raw) {
     case "elem": cycleElement(p); break;
     case "go": relieve(p); break;
     case "throw": throwIt(p, m.k === "molo" ? "molo" : "gren"); break;
+    case "mech": deployMech(p); break;
     case "dodge": if (game.phase === "intro") game.skip.add(p.id); else if (p.air === "plane") jump(p); else doDodge(p); break;
     case "buy": buy(p, m.item); break;
     case "spin": doSpin(p); break;
