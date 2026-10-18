@@ -18,7 +18,6 @@ export const BIOMES = {
   stones:  { name: "the standing stones", trees: [1, 4], rocks: [1, 3], stones: true, crates: [1, 1] },
   dust:    { name: "Dust II", rocks: [0, 0], crates: [0, 0] }, // a whole Counter-Strike map, out in the desert (dust2.js)
 };
-const BIOME_KEYS = Object.keys(BIOMES);
 export function biomeAt(seed, cx, cy) {
   const r = mulberry(hash(seed, Math.floor(cx / 2) * 7 + 3, Math.floor(cy / 2) * 5 + 1))(); // the region's leaning
   const own = mulberry(hash(seed, cx, cy))();
