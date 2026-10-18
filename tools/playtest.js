@@ -124,7 +124,7 @@ function probeClient(port, probes, mode) {
       send({ t: "tp", x: cx - 160, y: cy, hp: 500, weapon: "rocket", rarity: 3 });
       const gone = await waitFor(() => {
         send({ t: "tp", x: cx - 160, y: cy, hp: 500, ammo: 5 });
-        send({ t: "in", k: 0, a: 0, pt: -0.12, rel: 1, my: 0, f: true });
+        send({ t: "in", k: 0, a: 0, pt: -0.12, my: 0, f: true });
         return goneIds.has(target.id);
       }, 15000);
       send({ t: "in", k: 0, a: 0, f: false });

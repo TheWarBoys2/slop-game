@@ -416,7 +416,7 @@
 <div id="elect" class="hidden"></div>
 
 <script type="module">
-  // three.js powers the 3D views; if it can't load, the game still runs in the classic top-down view
+  // three.js draws the game; if it can't load, game.js says so on screen
   const go = () => { const s = document.createElement("script"); s.src = "/game.js"; document.body.appendChild(s); };
   import("/three.js").then((T) => { window.THREE = T; }).catch((e) => console.warn("No 3D:", e)).finally(go);
 </script>

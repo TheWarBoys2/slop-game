@@ -9,6 +9,7 @@ Auto = a playtest scenario fails if it breaks. Bots = the bots exercise it, and 
 | Feature | Check |
 | --- | --- |
 | Lobby, mode pick, ready up, countdown, intro | Auto: every scenario |
+| Opening cutscene (3D camera shots per mode), pre-join fly-around, WebGL-missing message | Manual (headless screenshot) |
 | Story: days, nights, the Hearth, story votes | Auto: story (reaches night 2+) |
 | Endless | Auto: endless |
 | Royale: drop, ring, last one standing | Auto: royale |

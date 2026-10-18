@@ -67,12 +67,9 @@ var MV = (function () {
     }
     return null;
   }
-  // wish direction from the key mask: yaw-relative in 3D, screen-relative in the classic view
-  function wishDir(keys, yaw, rel) {
+  function wishDir(keys, yaw) { // WASD relative to where you're looking
     const f = ((keys & KEY.F) ? 1 : 0) - ((keys & KEY.B) ? 1 : 0), s = ((keys & KEY.R) ? 1 : 0) - ((keys & KEY.L) ? 1 : 0);
-    let x, y;
-    if (rel) { const c = Math.cos(yaw), n = Math.sin(yaw); x = c * f - n * s; y = n * f + c * s; }
-    else { x = s; y = -f; }
+    const c = Math.cos(yaw), n = Math.sin(yaw), x = c * f - n * s, y = n * f + c * s;
     const l = Math.hypot(x, y);
     return l ? { x: x / l, y: y / l } : { x: 0, y: 0 };
   }
@@ -81,7 +78,7 @@ var MV = (function () {
   // landing tick skips friction), jump pads, stairs and ledges.
   // swimming: water drag, slow strokes, Space swims up, CTRL dives, and you float back to the surface
   function swim(e, inp, dt, env) {
-    const keys = inp.keys | 0, w = env.frozen ? { x: 0, y: 0 } : wishDir(keys, inp.yaw, inp.rel), sp = env.sp * SWIM;
+    const keys = inp.keys | 0, w = env.frozen ? { x: 0, y: 0 } : wishDir(keys, inp.yaw), sp = env.sp * SWIM;
     const up = !env.frozen && (keys & KEY.JUMP), down = !env.frozen && (keys & KEY.DOWN);
     const k = Math.min(1, dt * 4);
     e.vx += (w.x * sp - e.vx) * k; e.vy += (w.y * sp - e.vy) * k;
@@ -104,7 +101,7 @@ var MV = (function () {
   function step(e, inp, dt, env) {
     if (inWater(e, env.boxes) && !(e.vz > 200)) { e.swim = true; return swim(e, inp, dt, env); }
     e.swim = false;
-    const keys = inp.keys | 0, pk = e.pk || 0, w = env.frozen ? { x: 0, y: 0 } : wishDir(keys, inp.yaw, inp.rel);
+    const keys = inp.keys | 0, pk = e.pk || 0, w = env.frozen ? { x: 0, y: 0 } : wishDir(keys, inp.yaw);
     const jump = !env.frozen && (keys & KEY.JUMP) && e.gr;
     const jumpFresh = !env.frozen && (keys & KEY.JUMP) && !(pk & KEY.JUMP), crouchFresh = !env.frozen && (keys & KEY.CROUCH) && !(pk & KEY.CROUCH);
     let ev = null;

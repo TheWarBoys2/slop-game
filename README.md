@@ -1,6 +1,6 @@
 # Slop Valley
 
-A top-down multiplayer party game for one evening with up to 5 friends. Farm by day, hold the Hearth against the dead by night, and blame your heir when it goes wrong.
+A 3D multiplayer party game for one evening with up to 5 friends. Farm by day, hold the Hearth against the dead by night, and blame your heir when it goes wrong.
 
 Only the host installs anything. Everyone else just opens a link in their browser.
 
