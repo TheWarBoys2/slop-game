@@ -1,5 +1,5 @@
 // SLOP VALLEY — the game's core tables, in one place. The server plays by these numbers, and it bundles this whole
-// module into game.js as DATA (see server.js), so the browser shows the same names and text instead of its own copies.
+// module into game.js as DATA (see CLIENT_DATA in server/net.js), so the browser shows the same names and text instead of its own copies.
 // A description sits next to the numbers it describes: change one, change the other.
 
 // ---------------------------------------------------------------- weapons
@@ -120,7 +120,7 @@ export const ZTYPES = {
   screamer: { r: 14, hp: 65,  speed: 105, dmg: 5,  gold: 20, xp: 16, code: "s" }, // keeps its distance and screams for help
   raptor:   { r: 16, hp: 90, speed: 172, dmg: 10, gold: 22, xp: 16, code: "d" }, // hunts in packs and pounces
   rex:      { r: 40, hp: 1100, speed: 78, dmg: 32, gold: 160, xp: 90, code: "y", big: true, parts: 1 }, // roars, stomps through fences
-  // Bug Night (see "Bug Night" in server.js)
+  // Bug Night (see server/bugnight.js)
   bug:      { r: 14, hp: 40,  speed: 175, dmg: 8,  gold: 5,  xp: 5,  code: "g", h: 3.2 }, // warrior bug: fast, comes in swarms
   spitter:  { r: 22, hp: 150, speed: 60,  dmg: 6,  gold: 20, xp: 16, code: "p", h: 3.0 }, // plants itself and lobs plasma
   tanker:   { r: 36, hp: 1000, speed: 55, dmg: 28, gold: 90, xp: 60, code: "k", h: 2.2, big: true, parts: 1 }, // armoured, sprays acid

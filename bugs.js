@@ -1,4 +1,4 @@
-// Bug Night and mech suits: the data. The rules live in server.js (search "Bug Night").
+// Bug Night and mech suits: the data. The rules live in server/bugnight.js and server/mechs.js.
 //
 // Bug Night: holes open around the valley and alien bugs pour out of them. Seal a hole with an explosion
 // (grenade, rocket, a mech landing on it) and it stops. Halfway through the night, or once enough holes are

@@ -1,6 +1,6 @@
 // SLOP VALLEY — Dust II, the whole thing, out in the wild. Rebuilt from memory at about half scale, in sandstone boxes.
 // Long A, the pit, A site and the goose, catwalk, mid and its doors, CT spawn, B doors, upper and lower tunnels, B site, T spawn.
-// The rounds themselves (zombie terrorists carrying a bomb to a site) live in server.js; this file is the map and the routes.
+// The rounds themselves (zombie terrorists carrying a bomb to a site) live in server/dust.js; this file is the map and the routes.
 
 export const DC = 64; // one cell
 const COLS = 32, ROWS = 30;

@@ -1,6 +1,6 @@
 // SLOP VALLEY — the town's bigger buildings: office blocks, two-storey houses with cellars, and the tunnels that join the cellars up.
 // Everything here is boxes like the rest of the map ({ x, y, w, h, z0, z1, kind }), so move.js walks on it unchanged.
-// It also builds a small waypoint graph (doors, stairs, tunnels) so the dead can follow you inside: see zombieNav in server.js.
+// It also builds a small waypoint graph (doors, stairs, tunnels) so the dead can follow you inside: see navGoal in server/actions.js.
 
 export const CD = 120; // how deep the cellars and tunnels go
 export const HS = 110; // one storey of a house
@@ -230,7 +230,7 @@ export function finishTown(big, { walls, W, H, lake }) {
       for (const r of minus({ x: 0, y: 0, w, h }, opening)) push({ ...R(r.x, r.y, r.w, r.h), kind: "slab", look: k === n ? "roof" : "carpet", ...own, z0: k * OS - 8, z1: k * OS });
     }
     for (const r of [R(0, 0, w, FD), R(0, h - FD, w, FD), R(0, FD, FD, h - 2 * FD), R(w - FD, FD, FD, h - 2 * FD)]) push({ ...r, kind: "pillar", look: "parapet", ...own, z0: topZ, z1: topZ + 24 });
-    // the vault: a steel room in the front corner of the lobby, shut until enough of the building's terminals are hacked (server.js)
+    // the vault: a steel room in the front corner of the lobby, shut until enough of the building's terminals are hacked (server/hacking.js)
     const VZ = OS - 8, VX = 84, VY = 92, DW = 44;
     for (const [lx, ly, lw, lh] of [[FD, FD, VX - FD, 8], [FD, FD + 8, 8, VY - FD - 8], [VX - 8, FD + 8, 8, VY - FD - 8], [FD + 8, VY - 8, 8, 8], [22 + DW, VY - 8, VX - 8 - 22 - DW, 8]]) push({ ...R(lx, ly, lw, lh), kind: "vwall", ...own, noclimb: 1, z0: 0, z1: VZ });
     push({ ...R(22, VY - 8, DW, 8), kind: "vdoor", ...own, noclimb: 1, z0: 0, z1: VZ });

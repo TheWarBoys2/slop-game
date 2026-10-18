@@ -1,7 +1,7 @@
 // The valley watches what you actually do, not just what you vote for.
 // Four kinds of deed pile up over the run. Whichever the valley notices most becomes your legend,
 // and the legend bends the story: the Reckoning on day 3, the Trial, the last day's plan and the epilogue.
-// `api` is provided by the server (see legendApi in server.js).
+// `api` is provided by the server (see storyApi in server/social.js).
 
 export const LEGENDS = {
   blood: { title: "the Butchers", color: "#ff6a5a", blurb: "You kill things. A lot of things. Sometimes each other." },

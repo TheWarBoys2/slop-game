@@ -1,7 +1,7 @@
 // SLOP VALLEY — Adventure mode: an open world of towns past the hedge, each with a notice board of work.
 // No Hearth to defend and no waves. You pick up contracts, gigs, deliveries and breaches, travel between towns,
 // get paid, level up, and build renown until the valley's worst beast comes out of hiding.
-// This file is the pure part (making towns, rolling quests, the words); server.js runs it.
+// This file is the pure part (making towns, rolling quests, the words); server/adventure.js runs it.
 
 export const TOWN_HALF = 700; // a town's patch, from its middle to its palisade and a bit beyond
 export const RENOWN_GOAL = 8; // quests the party finishes before the Legendary Contract goes up
