@@ -39,7 +39,7 @@ Make it obvious to the other Claude (and to Jay) what moved:
 
 ## Builds and releases
 
-- `.github/workflows/release.yml` runs on **every push to `main`** that changes game files: it smoke-tests the server, compiles `SlopValley.exe`, and publishes a GitHub release tagged `build-<N>`, where N is the workflow's GitHub `run_number`. Hosts pick it up automatically next time they run `SlopValley.bat`.
+- `.github/workflows/release.yml` runs on **every push to `main`** that changes game files: it smoke-tests the server, compiles `SlopValley.exe` (Windows) and `SlopValley-linux`, and publishes a GitHub release tagged `build-<N>`, where N is the workflow's GitHub `run_number`. Hosts pick it up automatically next time they run `SlopValley.bat` or `SlopValley.sh`.
 - So **a merge to `main` is a release.** That's why merges go through the checks above, and why two batches shouldn't be merged seconds apart without a re-test in between.
 - Build numbers are assigned by GitHub, not by you. Never hard-code or promise a build number in code, a PR title or a message before it exists. After your merge, wait for the release workflow to finish and read the real tag (latest release / `list_releases`) before telling anyone "build-N is out". If two merges land close together, each gets its own number and the later one is the latest release.
 - Changes that only touch Markdown (like this file) don't trigger a build.
