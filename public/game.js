@@ -103,6 +103,12 @@ function connect() {
     if (m.t === "hello") { WHEEL = m.wheel || []; COSM = m.cosmetics || {}; FREE_HATS = m.freeHats || []; SHOP = m.shop; SHOPS = m.shops || {}; DOME_R = m.domeR || 1000; ENH_COST = m.enhCost; ENH_CHANCE = m.enhChance; PIECES = m.pieces || {}; VEH = m.vehicles || {}; LEGENDS = m.legends || {}; ITEMS = m.items || {}; CROPS = m.crops || {}; CROP_KEYS = Object.keys(CROPS); SEED_PACK = m.seedPack || 3; GEAR = m.gear || {}; CARDS = m.cards || {}; LOCS = m.locs || {}; STOCKS = m.stocks || {}; CANDS = m.cands || {}; DUSTR = m.dust || null; renderBuildBar(); if (joined) send({ t: "join", ...choice }); return; }
     if (m.t === "map") { const fresh = !MAP || MAP.seed !== m.map.seed; if (fresh) { CHUNK_WALLS = []; CHUNK_BIO = {}; } MAP = m.map; MAP.bio = CHUNK_BIO; MAP.walls = MAP.walls.concat(CHUNK_WALLS); MAP.cv = chunkVer; if (fresh) { buildDecor(); disp.clear(); } return; }
     if (m.t === "ck") { if (m.reset) { CHUNK_WALLS = []; for (const k in CHUNK_BIO) delete CHUNK_BIO[k]; } CHUNK_WALLS.push(...m.walls); for (const [cx, cy, kind] of m.bio || []) CHUNK_BIO[cx + "," + cy] = kind; chunkVer++; if (MAP && MAP.seed === m.seed) { MAP.walls = MAP.walls.filter((w) => !w.ck).concat(CHUNK_WALLS); MAP.cv = chunkVer; } return; }
+    if (m.t === "wd") { // walls knocked down since the last tick (wild ones too), and any rubble they left
+      const gone = new Set(m.gone);
+      CHUNK_WALLS = CHUNK_WALLS.filter((w) => !gone.has(w.id));
+      if (MAP) { MAP.walls = MAP.walls.filter((w) => !gone.has(w.id)).concat(m.add || []); MAP.ver = m.ver; }
+      return;
+    }
     if (m.t === "s") onSnap(m);
     if (m.t === "kicked") kicked = true;
   };
