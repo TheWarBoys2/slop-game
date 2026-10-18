@@ -23,8 +23,8 @@ export function hurtZombie(z, dmg, p, kind) {
   if (p) { p.st.dmg += dmg; p.pe.push({ k: "dmg", x: z.x, y: z.y - z.r, z: Math.round((z.z || 0) + zHeight(z)), v: Math.round(dmg), crit: kind === "crit", hs: kind === "hs", wk: kind === "wk" ? 1 : 0, arm: kind === "arm" ? 1 : 0, kill: z.hp <= 0 ? 1 : 0, big: ZTYPES[z.type].big ? 1 : 0 }); }
   if (z.hp <= 0) {
     const def = ZTYPES[z.type];
-    if (p) deed("blood", z.type === "boss" || z.type === "elite" ? 20 : 0.4);
-    shock(game.market, "BOOM", 0.0015);
+    if (p) deed("blood", def.big && z.type !== "tank" ? 20 : 0.4); // the named monsters make legends; tanks are just big
+    if (kind !== "nuke") shock(game.market, "BOOM", 0.0015); // the bomb moves the market on its own
     if (p) {
       if (!p.kt.has(z.type)) { p.kt.add(z.type); p.st.ztypes = p.kt.size; }
       p.st.kills++;
@@ -46,6 +46,7 @@ export function hurtZombie(z, dmg, p, kind) {
       world.crates.push({ id: world.nextId++, x: z.x, y: z.y, w: newWeapon(lootType(), 4) });
       feed(`The Drowned Mayor is dead. He dropped something MYTHIC.`, "#ff4b4b");
     }
+    if (z.type === "rex") feed(`${p ? fullName(p) : "Something"} brought down the T. rex.`, "#ffb347");
     if (z.type === "boss") {
       feed(`${p ? fullName(p) : "Someone"} slew ${BOSSES[game.bossKind].name}`, "#ffd34d");
       for (const q of players.values()) { addGold(q, 150, "Contract reward"); addXp(q, 100); if (bagAdd(q.bag, "pack")) { q.invDirty = true; toast(q, "The beast dropped a Slop Snap card pack. It's in your bag [I].", "#ffd34d"); } }
@@ -141,7 +142,7 @@ export function podLand(p) {
   p.pod = false;
   world.events.push({ k: "boom", x: p.x, y: p.y, r: POD_R, col: 0xff7a20 }); world.events.push({ k: "podland", x: p.x, y: p.y });
   let n = 0;
-  for (const z of world.zombies) if (z.hp > 0 && dist2(z, p) < (POD_R + z.r) ** 2) { hurtZombie(z, z.type === "boss" ? 300 : 900, p); n++; }
+  for (const z of world.zombies) if (z.hp > 0 && dist2(z, p) < (POD_R + z.r) ** 2) { hurtZombie(z, ZTYPES[z.type].big ? 300 : 900, p); n++; }
   for (const q of players.values()) if (q !== p && !q.dead && !q.air && dist2(q, p) < 45 * 45) hurtPlayer(q, 999, p, "landed on by a hellpod");
   if (n) toast(p, `Hellpod landing: ${n} squashed.`, "#ff9a40");
 }
@@ -173,10 +174,12 @@ export function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
     const hd = Math.hypot(zb.x - x, zb.y - y) || 1;
     if (!ZTYPES[zb.type].big) { zb.vx += (zb.x - x) / hd * 320 * f; zb.vy += (zb.y - y) / hd * 320 * f; if (zb.type !== "flyer") { zb.vz = Math.max(zb.vz, 260 * f); zb.gr = false; } }
   }
+  const rode = new Set(); // vehicles whose riders were hit: hurtPlayer already passed the damage on to them
   for (const q of players.values()) {
     if (q.dead || q.air || otherSide(q)) continue;
     const cz = q.z + MV.HGT / 2, d = d3(q.x, q.y, cz);
     if (d >= r + 16) continue;
+    if (q.veh) rode.add(vehOf(q));
     const f = 1 - (Math.max(0, d - 16) / r) * 0.7;
     if (q === owner) hurtPlayer(q, dmg * f * selfMult, null, cause);
     else hurtPlayer(q, dmg * f * (owner && game.mode !== "royale" ? 0.4 : 0.6), owner, cause);
@@ -187,7 +190,7 @@ export function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
   for (const b of world.builds) if ((b.x + 20 - x) ** 2 + (b.y + 20 - y) ** 2 < (r + 20) ** 2) hurtPiece(b, dmg * 0.5);
   { const d = Math.hypot(BALL.x - x, BALL.y - y, BALL.z - z); if (d < r) { const f = (1 - d / r) * 900; BALL.vx += (BALL.x - x) / (d || 1) * f; BALL.vy += (BALL.y - y) / (d || 1) * f; BALL.vz += f * 0.7; } }
   { const once = new Set(); for (const w of [...world.WALLS]) if (w.hp && w.kind !== "built") { const d = boxDist(w, x, y, z), key = w.hid && w.kind === "hwall" ? w.hid : w.id; if (d < r && !once.has(key)) { once.add(key); damageWall(w, dmg * 1.4 * (1 - d / r * 0.5)); } } }
-  for (const v of world.vehicles) if ((v.x - x) ** 2 + (v.y - y) ** 2 < (r + VEHICLES[v.kind].r) ** 2 && Math.abs((v.z || 0) + 20 - z) < r + 30) hurtVehicle(v, dmg * 0.5, owner);
+  for (const v of world.vehicles) if (!rode.has(v) && (v.x - x) ** 2 + (v.y - y) ** 2 < (r + VEHICLES[v.kind].r) ** 2 && Math.abs((v.z || 0) + 20 - z) < r + 30) hurtVehicle(v, dmg * 0.5, owner);
   if (game.bugs && z < 80) bugBlast(x, y, r, dmg, owner);
 }
 export const insideWall = (x, y, z) => nearXY(x, y).some((w) => !MV.soft(w) && x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h && z < w.z1 - 2 && z > (w.z0 || 0) - 2);
@@ -251,7 +254,7 @@ export function projTick(t, dt) {
 // fire lives on a grid of ground cells. Every cell can light its neighbours, weaker each generation, so a molotov
 // makes a proper blaze without eating the whole valley. Barricades and crops are fuel.
 export function ignite(x, y, zHint, ownerId, gen, force) {
-  if (x < 0 || y < 0 || x > W || y > H) return;
+  if (!OPEN() && (x < 0 || y < 0 || x > W || y > H)) return; // the open world (Dust II, Adventure's towns) burns too
   const cx = Math.floor(x / FIRE_CELL), cy = Math.floor(y / FIRE_CELL), key = cx + "," + cy, t = now();
   const mx = (cx + 0.5) * FIRE_CELL, my = (cy + 0.5) * FIRE_CELL;
   const z = MV.floorAt(mx, my, 4, zHint, nearXY(mx, my)).h;

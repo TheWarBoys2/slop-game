@@ -202,7 +202,7 @@ export function startDay() {
   maybeNuke();
   radioNews();
   for (const p of players.values()) { p.talked.clear(); cure(p, "The sunrise burns the infection out of you."); }
-  for (const z of world.zombies) if (!ZTYPES[z.type].sunProof && !z.keep) z.burn = true; // Adventure's quest monsters don't mind the sun
+  for (const z of world.zombies) if (!ZTYPES[z.type].sunProof && !z.keep && !z.dust) z.burn = true; // Adventure's quest monsters don't mind the sun, and a Dust II round plays out
   spawnCrates();
   if (game.mode === "story" && !game.flags.finalAt && game.night >= UNMASK_AFTER) unmask();
   if (game.mode === "adventure") advDawn();

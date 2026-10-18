@@ -11,7 +11,7 @@ import { boostZombies, elemsFor, moveTick, navGoal, till } from "./actions.js";
 import { advTick, advView } from "./adventure.js";
 import { bugAct, bugTick } from "./bugnight.js";
 import { buildTick, hurtPiece, rectHitsCircle } from "./building.js";
-import { DIRT, bile, fireTick, fires, hurtPlayer, kick, killPlayer, podLand, projTick, reloadTick, respawnHeir, shoot, solved, startReload } from "./combat.js";
+import { DIRT, bile, fireTick, fires, hurtPlayer, hurtZombie, kick, killPlayer, podLand, projTick, reloadTick, respawnHeir, shoot, solved, startReload } from "./combat.js";
 import { COUNTDOWN, FAST, H, HEARTH, INFECT, INTRO_LEN, MV, NIGHT_LEN, SNAP_EVERY, STORY_ZONE_R, TICK_RATE, W, clamp, dist2, now, rand } from "./config.js";
 import { disasterTick } from "./disasters.js";
 import { dustTick, dustView } from "./dust.js";
@@ -248,7 +248,7 @@ export function tick() {
     // the dead climb: walls, roofs, towers. Not trees, not the Hearth, not your barricades (those they chew).
     const hit = MV.pushOut(z, z.r, near(z), BW(), BH(), z.z, zHeight(z));
     if (z.type !== "flyer" && (z.z || 0) > -8 && LAKE_SOLID.length) MV.pushOut(z, z.r, LAKE_SOLID, BW(), BH(), 0, 10); // the dead don't swim
-    if ((z.z || 0) < -60 && z.type !== "boss" && LAKE && MV.lakeAt([LAKE], z.x, z.y)) z.hp -= z.maxHp * 0.04 * dt; // ...but they do drown, slowly (in the lake; the tunnels are dry)
+    if ((z.z || 0) < -60 && z.type !== "boss" && LAKE && MV.lakeAt([LAKE], z.x, z.y)) hurtZombie(z, z.maxHp * 0.04 * dt, null, ""); // ...but they do drown, slowly (in the lake; the tunnels are dry)
     if (hit && hit.kind === "glass") damageWall(hit, 5); // and they come through windows
     if ((z.type === "charger" || z.type === "boss" || z.type === "rex") && t < z.charge && hit && hit !== "edge") damageWall(hit, z.type === "charger" ? 90 : 220);
     if (z.type === "charger" && t < z.charge && hit && hit !== "edge") { z.charge = 0; z.stun = t + 1.6; world.events.push({ k: "boom", x: z.x, y: z.y, z: z.z, r: 40, dust: 1 }); }

@@ -79,7 +79,7 @@ function wreck(v, by) {
   if (v.kind === "mech") mechWrecked(v);
   world.events.push({ k: "boom", x: v.x, y: v.y, r: 130 });
   for (const z of world.zombies) if (dist2(z, v) < 140 * 140) hurtZombie(z, 150, by);
-  for (const id of v.seats) { const p = players.get(id); if (p) { exitVehicle(p); hurtPlayer(p, 40, null, "blown up in a vehicle"); } }
+  for (const id of v.seats) { const p = players.get(id); if (p) { exitVehicle(p); hurtPlayer(p, 40, by && by !== p ? by : null, "blown up in a vehicle"); } }
   for (const p of players.values()) if (!p.dead && !p.veh && dist2(p, v) < 110 * 110) hurtPlayer(p, 35, by && by !== p ? by : null, "caught in a vehicle explosion");
   feed(`The ${VEHICLES[v.kind].name} exploded`, "#ff9d2e");
 }

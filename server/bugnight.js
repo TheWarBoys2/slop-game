@@ -146,7 +146,7 @@ export function bugAct(z, target, bd, t, alive, hc) {
     const a = Math.atan2(target.y - z.y, target.x - z.x);
     world.events.push({ k: "acid", x: Math.round(z.x), y: Math.round(z.y), z: Math.round(z.z || 0), a: +a.toFixed(2) });
     const inCone = (e, r) => { const d = Math.hypot(e.x - z.x, e.y - z.y) - r; let da = Math.atan2(e.y - z.y, e.x - z.x) - a; da = Math.atan2(Math.sin(da), Math.cos(da)); return d < 200 && Math.abs(da) < 0.55; };
-    for (const q of alive) if (inCone(q, 16) && Math.abs(q.z - z.z) < 90) hurtPlayer(q, 24, null, "dissolved by a tanker bug");
+    for (const q of alive) if (!q.veh && inCone(q, 16) && Math.abs(q.z - z.z) < 90) hurtPlayer(q, 24, null, "dissolved by a tanker bug"); // riders: the vehicle takes it
     for (const v of world.vehicles) if (inCone(v, VEHICLES[v.kind].r) && (v.z || 0) < 80) hurtVehicle(v, 70, null);
     return 1;
   }
@@ -179,7 +179,7 @@ export function plasmaTick(pr, dt) {
   pr.dead = true;
   const x = pr.x, y = pr.y, z = pr.z;
   world.events.push({ k: "boom", x: Math.round(x), y: Math.round(y), z: Math.round(z), r: 70, col: 0x7dff4a, c2: "125,255,74" });
-  for (const q of players.values()) if (!q.dead && !q.air && Math.hypot(q.x - x, q.y - y, q.z + 28 - z) < 80) hurtPlayer(q, 16, null, "melted by bug plasma");
+  for (const q of players.values()) if (!q.dead && !q.air && !q.veh && Math.hypot(q.x - x, q.y - y, q.z + 28 - z) < 80) hurtPlayer(q, 16, null, "melted by bug plasma"); // riders: the vehicle takes it
   for (const v of world.vehicles) if (Math.hypot(v.x - x, v.y - y) < VEHICLES[v.kind].r + 70) hurtVehicle(v, 40, null);
   for (const b of world.builds) if ((b.x + 20 - x) ** 2 + (b.y + 20 - y) ** 2 < 70 * 70) hurtPiece(b, 40);
   if (game.phase !== "over" && rectHitsCircle(HEARTH, { x, y }, 70) && z < HEARTH.z1 + 40) { game.hearth -= 14; world.events.push({ k: "hhit" }); }
