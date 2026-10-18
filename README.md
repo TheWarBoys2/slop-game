@@ -60,7 +60,7 @@ Walk into a town to find it; after that its signpost can take you to any town yo
 
 **Bug Night and mechs.** Story night 3 (and Endless night 3, then every sixth night) is Bug Night: holes open around the town and alien bugs pour out of them. Warrior bugs hunt people wherever they are, spitters plant themselves and lob plasma (at the Hearth if nobody's about), and from night 5 armoured tanker bugs spray acid. An explosion (grenade, rocket, or a mech landing on it) seals a hole. Halfway through the night, or once most holes are shut, the Brain Bug crawls out of its hive; kill it and every bug drops dead (200g and a mech part each). The first Bug Night airdrops everyone a basic mech. More parts drop from elites, bosses, the T. rex, tanker bugs and sealed holes, or Haddock sells them. Parts go in your bag: use one to bolt it on (core, legs, two arms, a head). P calls your mech down; it repairs by the Hearth, and a wrecked one costs 250g to rebuild.
 
-**Features and bugs.** Press F8 (or the 🐞 button) to send a bug or an idea. It's appended to `bug-reports.txt` next to `SlopValley.exe` on the host's PC, along with where you were and what the game was doing, ready to upload.
+**Features and bugs.** Press F8 (or the 🐞 button) to send a bug or an idea. It's appended to `bug-reports.txt` next to `SlopValley.exe` (or `SlopValley-linux`) on the host's PC, along with where you were and what the game was doing, ready to upload.
 
 **The town.** The town is the same every game now (only the wild beyond it is procedural), so it's worth learning your way around. Among the cottages there are office blocks four and five storeys high, with glass fronts, a lobby and a staircase that goes all the way up to the roof, and bigger houses with an upstairs and a cellar. The cellars are joined to each other by tunnels, and two concrete shelters out in the open are the other way down. Doors, stairs and tunnels work for the dead too: they come in after you. A nuke can't reach you underground.
 
@@ -76,6 +76,15 @@ Helicopters fly with W/S (nose down/up), A/D (bank), the mouse (turn) and Space/
    - If Windows Firewall asks, tick **both** Private and Public and click **Allow**.
 3. The window prints the addresses to share. Open `http://localhost:7777` yourself.
 
+## Hosting on Linux (the host only)
+
+1. Download **SlopValley.sh** from the [latest release](https://github.com/TheWarBoys2/slop-game/releases/latest) and put it in its own folder, for example `~/SlopValley`.
+2. Make it runnable and start it: `chmod +x SlopValley.sh && ./SlopValley.sh`. It downloads the game (`SlopValley-linux`) the first time and updates itself on every launch after that. It needs `curl` or `wget`.
+3. If you run a firewall, open the port: `sudo ufw allow 7777/tcp` (or your distro's equivalent).
+4. The terminal prints the addresses to share. Open `http://localhost:7777` yourself. Ctrl+C stops the server.
+
+It's built for 64-bit x86 Linux. To use a different port, start it with `PORT=7778 ./SlopValley.sh`. Port forwarding works the same as on Windows (below).
+
 ### Letting friends in over the internet (port forward)
 
 1. Give your PC a fixed local IP, or reserve it in your router (the window shows it, like `192.168.1.23`).
@@ -90,7 +99,7 @@ If it doesn't work, check with a friend first (many port checker websites only w
 
 ## Updating
 
-Every push to `main` builds a new `SlopValley.exe` and publishes it as the latest GitHub release. The host just re-runs `SlopValley.bat`.
+Every push to `main` builds a new `SlopValley.exe` (Windows) and `SlopValley-linux` and publishes them as the latest GitHub release. The host just re-runs `SlopValley.bat` or `SlopValley.sh`.
 
 ## Running from source / developing
 

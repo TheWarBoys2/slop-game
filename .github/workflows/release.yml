@@ -24,13 +24,23 @@ jobs:
           curl -sf http://localhost:7777/game.js > /dev/null
       - name: Build SlopValley.exe
         run: bun build --compile --minify --target=bun-windows-x64 server.js --outfile SlopValley.exe
+      - name: Build SlopValley-linux
+        run: bun build --compile --minify --target=bun-linux-x64 server.js --outfile SlopValley-linux
+      - name: Smoke test the Linux build boots
+        run: |
+          ./SlopValley-linux 7778 &
+          sleep 2
+          curl -sf http://localhost:7778/ > /dev/null
+          curl -sf http://localhost:7778/game.js > /dev/null
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Slop Valley build ${{ github.run_number }}
-          body: Automatic build of ${{ github.sha }}. Hosts running SlopValley.bat pick this up on next launch.
+          body: Automatic build of ${{ github.sha }}. Hosts running SlopValley.bat (Windows) or SlopValley.sh (Linux) pick this up on next launch.
           make_latest: true
           files: |
             SlopValley.exe
             SlopValley.bat
+            SlopValley-linux
+            SlopValley.sh
