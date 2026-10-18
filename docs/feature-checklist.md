@@ -1,0 +1,72 @@
+# Feature checklist
+
+Every feature the game has, and what checks it still works. V2 (Restructure and Cohesion) removes no feature, so every refactor PR ticks this list: the **Auto** rows are covered by `bun tools/playtest.js` (and CI on every PR); the **Manual** rows need a quick look in a browser before merging a PR that touches them.
+
+Auto = a playtest scenario fails if it breaks. Bots = the bots exercise it, and a crash would fail the run, but nothing asserts the result.
+
+## Modes and special days
+
+| Feature | Check |
+| --- | --- |
+| Lobby, mode pick, ready up, countdown, intro | Auto: every scenario |
+| Story: days, nights, the Hearth, story votes | Auto: story (reaches night 2+) |
+| Endless | Auto: endless |
+| Royale: drop, ring, last one standing | Auto: royale |
+| Adventure: towns, boards, signposts | Auto: adventure (home + 5 towns) |
+| Adventure jobs: contracts, gigs, breaches, deliveries, Legendary Contract | Manual |
+| Dinosaur Day | Auto: dino-day |
+| Bug Night, holes, Brain Bug | Auto: bug-night (bugs appear) · Manual: sealing holes, Brain Bug death |
+| Disasters and their control-station minigames | Auto: disasters (strikes) · Bots: minigames |
+| Nukes, siren, Hearth Dome, bunker | Manual (`SLOP_NUKE=1`) |
+| Mystery: clues, accusation, Last Night boss, ending cutscene | Manual (tp `clues`, `killBoss`) |
+| Elections, daily ballot, mayor policies | Bots |
+| Town meetings | Bots |
+
+## Combat and movement
+
+| Feature | Check |
+| --- | --- |
+| Guns, rarities, enhancing, firing modes, attachments, skins | Bots (buy, enhance) · Manual: modes, attachments |
+| Active reload, jams, gun cleaning | Bots |
+| Sword, grenades, molotovs, rockets | Bots |
+| Thu'um shouts and elements | Bots |
+| Dodge, crouch, sprint, slide, double jump, wall-run, ledge climb, boost pads | Bots (jumps) · Manual: the rest |
+| Friendly fire, wanted stars, bounties | Manual |
+| UAV killstreak | Manual (tp `streak`) |
+| Hellpod respawn, heirs, traits, inheritance tax | Bots (deaths) |
+| Mechs: parts, building, call-in | Auto: story mech probe |
+| Vehicles, helicopters, gunship, call-ins | Manual (tp `heli`) |
+| Building pieces (walls, spikes, turrets, lamps) | Bots |
+| Zombie types incl. charger, flyer, boomer, screamer | Auto: story/endless (types seen) |
+
+## Town, economy and social
+
+| Feature | Check |
+| --- | --- |
+| Walk-in shops: Vex, Haddock (range, attachments), Giles's stall | Bots (buying) · Manual: walking in |
+| Crops, hoe, tilling, fertiliser | Bots |
+| Casino: wheel, slots, blackjack, poker, cases, cosmetics | Bots |
+| Stock market | Manual |
+| Office blocks, vault hacking, caches | Bots (hacking) |
+| Dust II rounds | Auto: story Dust II probe |
+| Club Slop | Manual |
+| Houses, cellars, tunnels, shelters, zombie pathing indoors | Manual |
+| Lake, swimming, sunken shrine | Manual |
+| The wild: chunks, biomes | Bots (chunks load as they wander) |
+| NPC dialogue, quests, celebrity cameos | Bots (dialogue) |
+| Romance, gifts, dates, weddings | Manual (tp `love`) |
+| Slop Snap card game | Manual |
+| Hunger, thirst, bladder, radiation, stress, football | Bots |
+| Infection symptoms and antidote | Manual (`SLOP_INFECT=1`, `SLOP_SYM`) |
+| F8 bug reports to bug-reports.txt | Auto: every scenario (bots file one) |
+| Host kick and force start | Manual |
+
+## Client (browser)
+
+| Feature | Check |
+| --- | --- |
+| First and third person 3D view, HUD, minimap, compass | Manual (headless screenshot, see the memory note on the camera rig) |
+| Radial menus, every screen (bag, skills, journal, cards, market, wardrobe, options) | Manual |
+| Positional audio, music, NPC voices | Manual |
+| Gamepad and flight stick | Manual |
+| Windows and Linux builds | Auto: the release workflow smoke-tests both |

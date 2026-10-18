@@ -4,3 +4,4 @@ node_modules/
 bug-reports.txt
 *.log
 SlopValley-linux
+playtest-report.json
