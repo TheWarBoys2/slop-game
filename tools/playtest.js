@@ -14,7 +14,7 @@ const PARALLEL = Number(process.env.PLAYTEST_PARALLEL || 3);
 
 // each scenario: env for the server and bots, how long to play, and what must have happened
 const SCENARIOS = [
-  { name: "story", secs: 70, probes: ["mech", "dust"],
+  { name: "story", secs: 70, probes: ["walls", "mech", "dust"],
     expect: (s) => [need(s.night >= 2, "reached night 2"), need(s.adv == null, "no Adventure state in Story")] },
   { name: "endless", secs: 55, env: { ENDLESS: "1" },
     expect: (s) => [need(s.night >= 2, "reached night 2")] },
@@ -52,24 +52,43 @@ async function lines(stream, onLine) {
   if (buf) onLine(buf);
 }
 
+// A TCP pass-through in front of the server that counts the bytes it sends, as they go over the wire (compressed).
+function wireCounter(port, serverPort) {
+  const c = { down: 0 };
+  c.listener = Bun.listen({ hostname: "localhost", port, socket: {
+    open(s) {
+      s.data = { q: [] };
+      Bun.connect({ hostname: "localhost", port: serverPort, socket: { data(_, b) { c.down += b.length; s.write(b); }, close() { s.end(); } } })
+        .then((up) => { s.data.up = up; for (const b of s.data.q) up.write(b); }, () => s.end());
+    },
+    data(s, b) { if (s.data.up) s.data.up.write(b); else s.data.q.push(Buffer.from(b)); },
+    close(s) { if (s.data.up) s.data.up.end(); },
+  } });
+  return c;
+}
+
 // A scripted player: joins, readies up, measures what the server sends it, and runs probes once the game is on.
 function probeClient(port, probes, mode) {
-  const out = { bytes: 0, t0: 0, t1: 0, maxSnap: 0, results: {} };
-  const ws = new WebSocket(`ws://localhost:${port}/ws`);
+  const out = { bytes: 0, t0: 0, t1: 0, maxSnap: 0, wire0: 0, wire1: 0, results: {} };
+  const wire = wireCounter(port + 50, port);
+  const ws = new WebSocket(`ws://localhost:${port + 50}/ws`);
   let S = null, me = 0;
   const radios = [];
   const waitFor = async (check, ms) => { const until = Date.now() + ms; while (Date.now() < until) { const v = check(); if (v) return v; await sleep(200); } return null; };
   const send = (m) => { try { ws.send(JSON.stringify(m)); } catch {} };
   const mine = () => S && S.p.find((q) => q.id === me);
-  const events = [], toasts = [];
+  const events = [], toasts = [], goneIds = new Set(), counts = { map: 0 };
+  let mapWalls = [];
   ws.onopen = () => send({ t: "join", name: "Probe", color: "#ffffff", hat: "crown", cls: "fighter", bg: "soldier", trait: "Lucky", eyes: "dot" });
   ws.onmessage = (ev) => {
     const raw = ev.data; if (out.t0) out.bytes += raw.length;
     const m = JSON.parse(raw);
     if (m.t === "ck") for (const w of m.walls || []) if (w.kind === "radio") radios.push(w);
+    if (m.t === "map") { counts.map++; mapWalls = m.map.walls; }
+    if (m.t === "wd") for (const id of m.gone) goneIds.add(id);
     if (m.t !== "s") return;
     S = m; me = m.me;
-    if (["day", "night", "royale"].includes(m.g.ph)) { if (!out.t0) out.t0 = Date.now(); out.t1 = Date.now(); out.maxSnap = Math.max(out.maxSnap, raw.length); }
+    if (["day", "night", "royale"].includes(m.g.ph)) { if (!out.t0) { out.t0 = Date.now(); out.bytes = 0; out.wire0 = wire.down; } out.t1 = Date.now(); out.wire1 = wire.down; out.maxSnap = Math.max(out.maxSnap, raw.length); }
     for (const e of m.e) events.push(e);
     for (const e of m.pe || []) if (e.k === "toast") toasts.push(e.text);
     if (events.length > 500) events.splice(0, events.length - 500);
@@ -90,6 +109,23 @@ function probeClient(port, probes, mode) {
       send({ t: "mech" }); // once: calling it again picks the landed mech back up and drops it anew
       const landed = await waitFor(() => S.vh.some((v) => v[12] === me && v[10]), 12000);
       return landed ? null : `the mech never landed (last message: ${toasts.at(-1) || "none"})`;
+    },
+    // blow up a crate in town: everyone should get a small "wd" message for it, not the whole map again
+    async walls() {
+      if (!await waitFor(playing, 30000)) return "the game never started for the probe";
+      const me0 = mine(), target = mapWalls.filter((w) => w.kind === "crate").sort((a, b) => Math.hypot(a.x - me0.x, a.y - me0.y) - Math.hypot(b.x - me0.x, b.y - me0.y))[0];
+      if (!target) return "no crates in town to shoot";
+      const cx = target.x + target.w / 2, cy = target.y + target.h / 2, maps0 = counts.map;
+      send({ t: "tp", x: cx - 160, y: cy, hp: 500, weapon: "rocket", rarity: 3 });
+      const gone = await waitFor(() => {
+        send({ t: "tp", x: cx - 160, y: cy, hp: 500, ammo: 5 });
+        send({ t: "in", k: 0, a: 0, pt: -0.12, rel: 1, my: 0, f: true });
+        return goneIds.has(target.id);
+      }, 15000);
+      send({ t: "in", k: 0, a: 0, f: false });
+      if (!gone) return "the crate never came down in a wall-change message";
+      if (counts.map > maps0) return "a crate breaking still resent the whole map";
+      return null;
     },
     // walk into Dust II's CT spawn, find the radio and start a round
     async dust() {
@@ -112,7 +148,7 @@ function probeClient(port, probes, mode) {
       try { out.results[name] = await PROBES[name](); } catch (err) { out.results[name] = String(err); }
     }
   })();
-  out.close = () => { try { ws.close(); } catch {} };
+  out.close = () => { try { ws.close(); } catch {} wire.listener.stop(true); };
   return out;
 }
 
@@ -159,7 +195,7 @@ async function runScenario(sc, port) {
   return {
     name: sc.name, ok: fails.length === 0, fails,
     tick: ticks.length ? { avgMs: +(ticks.reduce((a, t) => a + t.avg * t.n, 0) / ticks.reduce((a, t) => a + t.n, 0)).toFixed(2), maxMs: Math.max(...ticks.map((t) => t.max)) } : null,
-    net: secs ? { kbPerSec: +(probe.bytes / secs / 1024).toFixed(1), maxSnapKb: +(probe.maxSnap / 1024).toFixed(1) } : null,
+    net: secs ? { kbPerSec: +((probe.wire1 - probe.wire0) / secs / 1024).toFixed(1), jsonKbPerSec: +(probe.bytes / secs / 1024).toFixed(1), maxSnapKb: +(probe.maxSnap / 1024).toFixed(1) } : null,
     seen: seen && { phases: seen.phases, night: seen.night, maxZ: seen.maxZ, zt: seen.zt, dis: seen.dis, adv: seen.adv },
     log: fails.length ? log.slice(-40) : undefined,
   };
@@ -176,7 +212,7 @@ await Promise.all(Array.from({ length: Math.min(PARALLEL, todo.length) }, async 
     const sc = todo[next++];
     const r = await runScenario(sc, BASE_PORT + lane);
     results.push(r);
-    const stats = [r.tick && `tick ${r.tick.avgMs}ms avg / ${r.tick.maxMs}ms worst`, r.net && `${r.net.kbPerSec} KB/s per player`].filter(Boolean).join(", ");
+    const stats = [r.tick && `tick ${r.tick.avgMs}ms avg / ${r.tick.maxMs}ms worst`, r.net && `${r.net.kbPerSec} KB/s per player on the wire (${r.net.jsonKbPerSec} uncompressed)`].filter(Boolean).join(", ");
     console.log(`${r.ok ? "PASS" : "FAIL"}  ${r.name}${stats ? `  (${stats})` : ""}`);
     for (const f of r.fails) console.log(`      - ${f}`);
     if (!r.ok && r.log) console.log(r.log.map((l) => "      | " + l).join("\n"));

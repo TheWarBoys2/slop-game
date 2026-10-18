@@ -143,11 +143,18 @@ function damageWall(w, dmg) {
     events.push({ k: "glass", id: w.id, x: Math.round(w.x + w.w / 2), y: Math.round(w.y + w.h / 2), z: Math.round((w.z0 + w.z1) / 2) });
     return;
   }
-  WALLS = WALLS.filter((o) => o !== w && !(w.kind === "house" && o.hid === w.id));
+  WALLS = WALLS.filter((o) => { const gone = o === w || (w.kind === "house" && o.hid === w.id); if (gone) wallsGone.push(o.id); return !gone; });
   events.push({ k: "collapse", x: Math.round(w.x + w.w / 2), y: Math.round(w.y + w.h / 2), w: Math.round(w.w), h: Math.round(w.h), z: w.z1 || 40, kind: w.kind });
-  if (w.kind === "house") WALLS.push({ id: wallId++, x: w.x + 10, y: w.y + 10, w: w.w - 20, h: w.h - 20, kind: "rubble", roof: w.roof, z0: 0, z1: 22 });
+  if (w.kind === "house") { const rubble = { id: wallId++, x: w.x + 10, y: w.y + 10, w: w.w - 20, h: w.h - 20, kind: "rubble", roof: w.roof, z0: 0, z1: 22 }; WALLS.push(rubble); wallsAdded.push(rubble); }
   if (w.kind === "crate" && Math.random() < 0.15) crates.push({ id: nextId++, x: w.x + w.w / 2, y: w.y + w.h / 2, w: newWeapon(lootType(), lootRarity(game.night)) });
-  mapVer++; mapDirty = true;
+  mapVer++; // clients hear about it in the next "wd" message, not a whole-map resend
+}
+// walls knocked down (and rubble left behind) since the last tick: sent as one small "wd" message
+let wallsGone = [], wallsAdded = [];
+function sendWallChanges() {
+  if (!wallsGone.length && !wallsAdded.length) return;
+  broadcastRaw(JSON.stringify({ t: "wd", ver: mapVer, gone: wallsGone, add: wallsAdded }));
+  wallsGone = []; wallsAdded = [];
 }
 // the distance from a point to a box, in 3D
 function boxDist(w, x, y, z) {
@@ -4439,6 +4446,7 @@ function tick() {
   }
   if ((game.phase === "night" || game.phase === "day") && game.hearth <= 0) { game.hearth = 0; endGame(false); }
 
+  sendWallChanges();
   if (mapDirty && tickN % 6 === 0) { mapDirty = false; broadcastRaw(JSON.stringify(mapMsg())); }
   if (tickN % SNAP_EVERY === 0) broadcast();
 }
@@ -4497,18 +4505,18 @@ function snapshot() {
   };
 }
 function broadcastRaw(s) {
-  for (const p of players.values()) { try { p.ws.send(s); } catch {} }
-  for (const ws of spectators) { try { ws.send(s); } catch {} }
+  for (const p of players.values()) { try { p.ws.send(s, true); } catch {} }
+  for (const ws of spectators) { try { ws.send(s, true); } catch {} }
 }
 function broadcast() {
   const base = JSON.stringify(snapshot()).slice(1);
   events = [];
   for (const p of players.values()) {
     if (p.invDirty || tickN % 30 === 0) { p.invDirty = false; p.pe.push(invMsg(p)); } // the bag, gear, needs and shares
-    try { p.ws.send(`{"me":${p.id},"pe":${JSON.stringify(p.pe)},${base}`); } catch {}
+    try { p.ws.send(`{"me":${p.id},"pe":${JSON.stringify(p.pe)},${base}`, true); } catch {}
     p.pe = [];
   }
-  for (const ws of spectators) { try { ws.send(`{"me":0,"pe":[],${base}`); } catch {} }
+  for (const ws of spectators) { try { ws.send(`{"me":0,"pe":[],${base}`, true); } catch {} }
 }
 
 // ---------------------------------------------------------------- network
@@ -4660,11 +4668,12 @@ const server = Bun.serve({
     return new Response("Not found", { status: 404 });
   },
   websocket: {
+    perMessageDeflate: true, // with send(..., true): snapshots shrink about 3x on the wire, map messages about 7x
     open(ws) {
       spectators.add(ws);
-      ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, shops: SHOPS, domeR: DOME_R, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS, items: ITEMS, crops: CROPS, seedPack: SEED_PACK, gear: GEAR, cards: CARDS, locs: LOCS, stocks: STOCKS, cands: CANDIDATES, dust: DUST }));
-      ws.send(JSON.stringify(mapMsg()));
-      ws.send(JSON.stringify({ t: "ck", reset: 1, seed: MAP_SEED, walls: WALLS.filter((w) => w.ck), bio: [...CHUNKS].filter(([, c]) => c.kind !== "town").map(([k, c]) => [...k.split(",").map(Number), c.kind]) }));
+      ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, shops: SHOPS, domeR: DOME_R, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS, items: ITEMS, crops: CROPS, seedPack: SEED_PACK, gear: GEAR, cards: CARDS, locs: LOCS, stocks: STOCKS, cands: CANDIDATES, dust: DUST }), true);
+      ws.send(JSON.stringify(mapMsg()), true);
+      ws.send(JSON.stringify({ t: "ck", reset: 1, seed: MAP_SEED, walls: WALLS.filter((w) => w.ck), bio: [...CHUNKS].filter(([, c]) => c.kind !== "town").map(([k, c]) => [...k.split(",").map(Number), c.kind]) }), true);
     },
     // one bad message (a stale client, a typo'd field) used to throw out of here and stop the whole server
     message(ws, raw) { try { onMessage(ws, raw); } catch (err) { console.error(err); if (now() - msgErrAt > 30) { msgErrs = 0; msgErrAt = now(); } if (msgErrs++ < 3) bugLog(`SERVER ERROR (message)\n${String(raw).slice(0, 200)}\n${err && err.stack || err}`); } },
