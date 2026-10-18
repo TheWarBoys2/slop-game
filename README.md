@@ -15,7 +15,7 @@ Only the host installs anything. Everyone else just opens a link in their browse
 | Pick your colour and hat, a plumbob over your head, "Sul sul!" | The Sims 4 |
 | **Q** = FUS RO DAH, plus Fire, Frost and Storm shouts (Z to switch) | Skyrim |
 | Zombie nights, flashlights in the dark, "This is how you died" | Project Zomboid |
-| When you die your heir takes over with a random trait and 50% inheritance tax | Crusader Kings 3, Kenshi |
+| When you die your heir takes over with a random trait and 25% inheritance tax | Crusader Kings 3, Kenshi |
 | Post-match ratings out of 10 and Player of the Match; the Gaffer class | Football Manager |
 | Classes (Fighter, Rogue, Wizard, Farmer, Gaffer) | Baldur's Gate 3 |
 | Friendly fire earns wanted stars; kill a wanted player to collect the bounty. WASTED. | GTA V |

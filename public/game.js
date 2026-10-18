@@ -12,10 +12,9 @@ function resize() {
 addEventListener("resize", resize); resize();
 
 // ---------------------------------------------------------------- constants
-const RARITY_COL = ["#d8d8d8", "#4da6ff", "#c070ff", "#ffc030", "#ff4b4b"];
-const RARITY = ["Common", "Rare", "Epic", "Legendary", "Mythic"];
-const ENH = ["", "PRI", "DUO", "TRI", "TET", "PEN"];
-const WNAME = { pistol: "Pistol", smg: "SMG", shotgun: "Shotgun", rifle: "Rifle", sniper: "Sniper", staff: "Fire Staff", ak: "AK-Maybe", laser: "Spartan Laser", sword: "Slop Sword", rocket: "Rocket Launcher" };
+// the game's tables come from the server's data.js, bundled in front of this file as DATA
+const RARITY_COL = DATA.RARITY_COL, RARITY = DATA.RARITY, ENH = DATA.ENH_NAMES;
+const WNAME = Object.fromEntries(Object.entries(DATA.WEAPONS).map(([k, w]) => [k, w.name]));
 const TRACER = { rico: "#aee8ff", laser: "#ff2a2a", pistol: "#ffe9a0", smg: "#ffe9a0", shotgun: "#ffcf70", rifle: "#fff3b0", sniper: "#ffffff", staff: "#ff7a2a", ak: "#ffb0ff", rocket: "#ffb040" };
 // ---------------------------------------------------------------- view: first or third person
 const VIEWS = ["fp", "tp"], VIEW_NAME = { fp: "First person", tp: "Third person" };
@@ -26,31 +25,13 @@ let yaw = 0, pitch = 0, yawInit = false, aimYaw = 0, aimPitch = 0, playView = fa
 const slashT = new Map();
 const COLORS = ["#e0b050", "#e05050", "#50a0e0", "#60c060", "#c070e0", "#f08040", "#f0f0f0", "#40d0c0"];
 const HATS = [["none", "None"], ["crown", "Crown"], ["cowboy", "Cowboy"], ["wizard", "Wizard"], ["horns", "Iron Helmet"], ["flower", "Flower"]];
-const CLASSES = [
-  ["fighter", "Fighter", "150 HP. Starts with an SMG. Hits things until they stop moving."],
-  ["rogue", "Rogue", "Fast and fragile. 25% crit chance for double damage. Quicker dodge."],
-  ["wizard", "Wizard", "Fire Staff: explosive bolts. Also explodes friends (30%)."],
-  ["farmer", "Farmer", "Shotgun, 6 seeds, crops grow twice as fast and sell for more."],
-  ["gaffer", "Gaffer", "The Manager. Teammates near you deal +20% dmg and move faster. You take a 10% agent fee on everyone's earnings."],
-];
-const BACKGROUNDS = [
-  ["soldier", "Soldier", "Starts with a rank of Steady Hands."], ["farmhand", "Farmhand", "Starts with a rank of Green Thumb."],
-  ["noble", "Noble", "Starts with +100 gold. Insufferable."], ["outlander", "Outlander", "Starts with a rank of Fleet."],
-  ["acolyte", "Acolyte", "Starts with a rank of Thu'um."], ["urchin", "Urchin", "Starts with a rank of Scavenger."],
-];
+const CLASSES = Object.entries(DATA.CLASSES).map(([id, c]) => [id, c.name, c.desc]);
+const BACKGROUNDS = Object.entries(DATA.BACKGROUNDS).map(([id, b]) => [id, b.name, b.desc]);
 const EYES = [["dot", "Dots"], ["angry", "Angry"], ["sleepy", "Sleepy"], ["googly", "Googly"], ["shades", "Shades"]];
-const TREES = ["Marksman", "Survivor", "Homesteader", "Voice"];
-const SKILL_INFO = {
-  deadeye: ["Deadeye", 0, "Headshots deal +25% more damage per rank."], steady: ["Steady Hands", 0, "Spray bloom -20% per rank."], quick: ["Quick Hands", 0, "Reload 15% faster per rank."],
-  tough: ["Tough as Boots", 1, "+20 max HP per rank."], wind: ["Second Wind", 1, "Regenerate 1.5 HP/s per rank after 3s unhurt."], fleet: ["Fleet", 1, "+6% move speed per rank."],
-  green: ["Green Thumb", 2, "Crops you plant grow 25% faster per rank."], haggler: ["Haggler", 2, "Shop prices -10% per rank."], scavenger: ["Scavenger", 2, "20% chance per rank to upgrade crate loot a tier."],
-  thuum: ["Thu'um", 3, "Shout recharges 15% faster and reaches 15% further per rank."], rally: ["Rally", 3, "Allies near you regenerate 0.8 HP/s per rank."], bloodlust: ["Bloodlust", 3, "Heal 3 HP per rank on every kill."],
-};
-const BOSS_NAME = { leshen: "THE SLOP LESHEN", drowned: "THE DROWNED MAYOR", golem: "VEX'S BRASS GOLEM" };
-const TRAIT_DESC = {
-  Strong: "+25 max HP", Swift: "+12% speed", Greedy: "+25% gold", Craven: "+20% speed, -15% damage", Wrathful: "+20% damage, -15 HP",
-  Bald: "No effect. Just bald.", Genius: "Shout recharges 40% faster", Drunkard: "+20 HP, terrible aim", Inbred: "-10 HP", Lucky: "Better crits, cases & enhancing",
-};
+const TREES = DATA.SKILL_TREES;
+const SKILL_INFO = Object.fromEntries(Object.entries(DATA.SKILLS).map(([id, k]) => [id, [k.name, k.tree, k.desc, k.max]]));
+const BOSS_NAME = DATA.BOSS_NAMES;
+const TRAIT_DESC = Object.fromEntries(Object.entries(DATA.TRAITS).map(([k, t]) => [k, t.desc]));
 
 // ---------------------------------------------------------------- join form
 const saved = (() => { try { return JSON.parse(localStorage.getItem("slop-profile") || "{}"); } catch { return {}; } })();
@@ -693,7 +674,7 @@ function toggleShop(force, sid) {
   if (shopOpen) { if (casinoOpen) toggleCasino(false); if (wardOpen) toggleWardrobe(false); toggleStall(false); keys.clear(); mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); renderShop(true); }
 }
 let shopTab = null, shopList = [], shopAt = null;
-const GUN_TYPES = new Set(["pistol", "smg", "shotgun", "rifle", "sniper", "ak"]);
+const GUN_TYPES = new Set(DATA.GUN_TYPES);
 const SHOP_TABS = [["arms", "Weapons"], ["mods", "Attachments & skins 🔧"], ["gear", "Gear"], ["food", "Food & medicine"], ["gift", "Gifts 💐"], ["veh", "Vehicles 🚁"], ["farm", "Farm & fun"], ["dome", "The Dome"]];
 const SHOP_VOICE = { general: "vex", armoury: "haddock", casino: "lou", produce: "giles" };
 const SHOP_BLURB = {
@@ -732,7 +713,7 @@ function renderShop(force) {
     if (id === "hoe" && mine) {
       const h = mine.hoe || 0;
       if (h >= 3) { label = "Golden Hoe (maxed): till 12 plots, two at a time"; cost = "MAX"; }
-      else { label = h ? `Upgrade to ${["", "Hoe", "Steel Hoe", "Golden Hoe"][h + 1]}: ${3 + 3 * (h + 1)} plots, faster crops, better harvests` : "Hoe: press F to hold it, then click open ground to till new plots"; cost = Math.round([40, 90, 160][h] * disc) + "g"; }
+      else { label = h ? `Upgrade to ${DATA.HOES[h + 1]}: ${3 + 3 * (h + 1)} plots, faster crops, better harvests` : "Hoe: press F to hold it, then click open ground to till new plots"; cost = Math.round(DATA.HOE_COST[h] * disc) + "g"; }
     }
     if (it.cat === "mods" && mine) { // what's already on the gun in your hands
       const on = id.startsWith("att_") ? (mine.wat || "").split(",").includes(id.slice(4)) : mine.wsk === id.slice(5);
@@ -768,9 +749,9 @@ function renderSkills() {
   if (sig === skillSig) return;
   skillSig = sig;
   $("skillpts").textContent = `Level ${mine.lv} · ${mine.pts} skill point${mine.pts === 1 ? "" : "s"} to spend. Your heirs keep everything you learn.`;
-  $("skilltrees").innerHTML = TREES.map((tn, ti) => `<div class="tree"><h3>${tn}</h3>` + Object.entries(SKILL_INFO).filter(([, v]) => v[1] === ti).map(([id, [name, , desc]]) => {
-    const r = mine.sk[id] || 0, can = mine.pts > 0 && r < 3;
-    return `<div class="skill${can ? " can" : ""}${r ? " has" : ""}" data-s="${id}"><b>${name}</b> <span class="pips">${"●".repeat(r)}${"○".repeat(3 - r)}</span><small>${desc}</small></div>`;
+  $("skilltrees").innerHTML = TREES.map((tn, ti) => `<div class="tree"><h3>${tn}</h3>` + Object.entries(SKILL_INFO).filter(([, v]) => v[1] === ti).map(([id, [name, , desc, max]]) => {
+    const r = mine.sk[id] || 0, can = mine.pts > 0 && r < max;
+    return `<div class="skill${can ? " can" : ""}${r ? " has" : ""}" data-s="${id}"><b>${name}</b> <span class="pips">${"●".repeat(r)}${"○".repeat(max - r)}</span><small>${desc}</small></div>`;
   }).join("") + "</div>").join("");
   for (const el of $("skilltrees").querySelectorAll(".skill")) el.onclick = () => send({ t: "learn", s: el.dataset.s });
 }
@@ -1594,7 +1575,7 @@ function render3d(mine, t, dt) {
     let best = null, bd = 900 * 900;
     const far = (x, y) => { const d2 = (x - pred.x) ** 2 + (y - pred.y) ** 2; return d2 > 160 * 160 && d2 < bd ? d2 : 0; };
     for (const q of S.p) { if (q.id === me || q.d) continue; const d2 = far(q.x, q.y); if (d2) { bd = d2; best = { x: q.x, y: q.y, z: (q.z || 0) + 46, who: q.n }; } }
-    for (const z of S.z) { const d2 = far(z[2], z[3]); if (d2) { bd = d2; const r = z[1] === "b" ? 48 : 15; best = { x: z[2], y: z[3], z: (z[6] || 0) + r * 3, who: z[1] === "b" ? "the boss" : "a zombie" }; } }
+    for (const z of S.z) { const d2 = far(z[2], z[3]); if (d2) { bd = d2; const r = ZR[z[1]] || 15; best = { x: z[2], y: z[3], z: (z[6] || 0) + r * (ZH[z[1]] || 3.7) * 0.8, who: z[1] === "b" ? "the boss" : "a zombie" }; } }
     if (!best) { const a = t * 0.15; best = { x: pred.x + Math.cos(a) * 320, y: pred.y + Math.sin(a) * 320, z: 60, who: "something in the bushes" }; }
     const w = smooth("watch", best.x, best.y, dt);
     cam = { x: w.x, y: w.y, z: best.z, look: [pred.x, pred.y, pred.z + 30], fov: 70 };
@@ -2216,12 +2197,8 @@ function drawCrosshair(mine, t) {
 }
 
 // ---------------------------------------------------------------- the Thu'um's elements
-const ELEMS = {
-  force: { name: "Force", word: "FUS RO DAH", color: "#c8e6ff", hex: 0xc8e6ff, rgb: "200,230,255", icon: "💨" },
-  fire: { name: "Fire", word: "YOL TOOR SHUL", color: "#ff8a2a", hex: 0xff8a2a, rgb: "255,138,42", icon: "🔥" },
-  frost: { name: "Frost", word: "FO KRAH DIIN", color: "#8fe0ff", hex: 0x8fe0ff, rgb: "143,224,255", icon: "❄" },
-  storm: { name: "Storm", word: "STRUN BAH QO", color: "#e0d0ff", hex: 0xe0d0ff, rgb: "224,208,255", icon: "⚡" },
-};
+const ELEM_ICON = { force: "💨", fire: "🔥", frost: "❄", storm: "⚡" };
+const ELEMS = Object.fromEntries(Object.entries(DATA.ELEMENTS).map(([k, e]) => { const n = parseInt(e.color.slice(1), 16); return [k, { ...e, hex: n, rgb: `${n >> 16},${(n >> 8) & 255},${n & 255}`, icon: ELEM_ICON[k] }]; }));
 
 // ---------------------------------------------------------------- field strip & clean (L)
 // take it apart in the right order, scrub, oil, put it back together in the right order. Every wrong move leaves it dirtier.
@@ -2440,7 +2417,7 @@ function renderHack() {
 // ---------------------------------------------------------------- the bag (I)
 const GEAR_ICON = { head: "⛑", body: "🦺", hands: "🧤", feet: "🥾" };
 const SLOT_NAME = { head: "Head", body: "Body", hands: "Hands", feet: "Feet" };
-const RAR_COL = ["#ddd", "#4da6ff", "#c070ff", "#ffc030", "#ff4b4b"], RAR_NAME = ["Common", "Rare", "Epic", "Legendary", "Mythic"], GEAR_MULT = [1, 1.25, 1.5, 1.8, 2.2];
+const RAR_COL = RARITY_COL, RAR_NAME = RARITY, GEAR_MULT = DATA.GEAR_RAR;
 function gearDesc(g, r = 0) {
   const m = GEAR_MULT[r] || 1, pc = (v) => Math.round(v * (v > 0 ? m : 1) * 100) + "%";
   const out = [];

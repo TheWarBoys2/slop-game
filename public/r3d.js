@@ -1,9 +1,9 @@
 // SLOP VALLEY — the 3D view (first and third person). Uses three.js, which index.html loads onto window.THREE.
 // Game coordinates are (x, y) on the ground and z for height; three.js is y-up, so a game point (x, y, z) sits at (x, z, y).
 // game.js owns the game state and the camera maths; this file only turns that state into a scene.
-// zombie sizes by the one-letter code the server sends (game.js uses this too)
-var ZH = { g: 3.2, p: 3.0, k: 2.2, q: 2.4 }; // how tall each is, in radii (3.7 unless it's a bug)
-var ZR = { b: 48, e: 34, t: 26, r: 12, w: 15, c: 20, f: 13, x: 24, s: 14, d: 16, y: 40, g: 14, p: 22, k: 36, q: 56 };
+// zombie sizes by the one-letter code the server sends, from the server's data.js (game.js uses these too)
+var ZR = {}, ZH = {}; // radius, and height in radii
+for (const z of Object.values(DATA.ZTYPES)) { ZR[z.code] = z.r; ZH[z.code] = z.h; }
 var R3D = (function () {
   let T = null, R = null, scene = null, cam = null, gl = null, ok = false, vw = 0, vh = 0;
   let level = null, levelKey = "", levelVer = -1;

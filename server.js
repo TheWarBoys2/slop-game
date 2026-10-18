@@ -14,7 +14,7 @@ import { SUSPECTS, SLOTS as CLUE_FROM, pickCulprit, culpritOf, WRONG } from "./m
 import { COSMETICS, FREE_HATS, rollCosmetic, WHEEL, spinWheel, deck, bjValue, pokerScore, handName, compareHands, dealerHolds } from "./casino.js";
 import { LEGENDS, legendOf, legendName, reckoning, legendLines } from "./legend.js";
 import { GIFTS, TASTE, SAYS, RING } from "./romance.js";
-import { ITEMS, GEAR, SLOTS, GEAR_KEYS, BAG_SIZE, gearSum, bagAdd, bagCount, bagTake, itemName, CROPS, CROP_KEYS, SEED_PACK } from "./items.js";
+import { ITEMS, GEAR, GEAR_RAR, SLOTS, GEAR_KEYS, BAG_SIZE, gearSum, bagAdd, bagCount, bagTake, itemName, CROPS, CROP_KEYS, SEED_PACK } from "./items.js";
 import { STOCKS, SYMS, FEE, newMarket, shock, marketTick } from "./market.js";
 import { CANDIDATES, ELECT_EVERY, ballot } from "./politics.js";
 import { CS, makeChunk, BIOMES } from "./world.js";
@@ -22,10 +22,14 @@ import { DUST, inDust, siteXY, routes as dustRoutes, tSpawn, ctSpawn } from "./d
 import { CD, SH, placeBig, finishTown, regionOf, segHitsRect } from "./town.js";
 import { MECH_PARTS, MECH_REPAIR, MECH_COOL, BUG_HOLE_HP, BUG_HOLE_R, BRAIN_REWARD, rollPart, mechStats, mechCode } from "./bugs.js";
 import { makeTowns, rollQuest, TOWN_HALF, RENOWN_GOAL, LEGEND, legendText, cap } from "./adventure.js";
+import * as DATA from "./data.js";
+import { WEAPONS, MYTHIC, LOOT_TYPES, GUN_TYPES, RARITY, RARITY_MULT, ENH_NAMES, ENH_COST, ENH_CHANCE, MODES, ATTACH, SKINS, CLASSES, BACKGROUNDS, TRAITS, SKILLS, ELEMENTS, HOES, HOE_COST, ZTYPES } from "./data.js";
 import { CARDS, LOCS, STARTER, OPPONENTS, DECK_SIZE, newMatch, stage as cgStage, resolveTurn as cgResolve, aiPlays, view as cgView, deckFor, packCard } from "./cards.js";
 
 const MV = new Function(moveJs + "\nreturn MV;")(); // the same movement code the browser predicts with
-const gameJs = moveJs + "\n" + r3dJs + "\n" + gameSrc;
+// the browser gets the same tables the server plays by (data.js), plus a few names from the other data modules
+const CLIENT_DATA = { ...DATA, GEAR_RAR, BOSS_NAMES: Object.fromEntries(Object.entries(BOSSES).map(([k, b]) => [k, b.name])) };
+const gameJs = "var DATA = " + JSON.stringify(CLIENT_DATA) + ";\n" + moveJs + "\n" + r3dJs + "\n" + gameSrc;
 const PORT = Number(process.argv[2] || process.env.PORT || 7777);
 const TICK_RATE = 30;
 const SNAP_EVERY = 2; // 15 snapshots/sec
@@ -121,8 +125,6 @@ function takeSeed(p) { // the packet you picked in your bag, else the cheapest y
   return id;
 }
 // the hoe: till new plots anywhere on open ground. Each upgrade lets you till more, grows faster and sells for more.
-const HOES = ["", "Hoe", "Steel Hoe", "Golden Hoe"];
-const HOE_COST = [40, 90, 160];
 const hoeLimit = (lvl) => 3 + 3 * lvl;
 
 const bunkerWall = () => WALLS.find((w) => w.kind === "bunker");
@@ -391,109 +393,14 @@ function npcList() { if (game.mode === "adventure") return advFolk(); return gam
 const WELL = { x: 1775, y: 1145 };
 function mapMsg() { return { t: "map", map: { W, H, ver: mapVer, walls: WALLS.filter((w) => w.kind !== "built" && !w.ck), hearth: HEARTH, well: WELL, pitch: PITCH, plots: PLOTS.map((p) => ({ x: p.x, y: p.y })), seed: MAP_SEED, valley: VALLEY, npcs: npcList(), keepers: game.mode === "royale" ? [] : KEEPERS } }; }
 
-// ---------------------------------------------------------------- data
-const WEAPONS = {
-  pistol:  { name: "Pistol",     dmg: 22,  rate: 3.5, spread: 0.05,  range: 700,  pellets: 1, mag: 12, reload: 1.2, bloom: 0.35 },
-  smg:     { name: "SMG",        dmg: 14,  rate: 11,  spread: 0.10,  range: 600,  pellets: 1, mag: 30, reload: 2.0, bloom: 0.12 },
-  shotgun: { name: "Shotgun",    dmg: 13,  rate: 1.1, spread: 0.22,  range: 380,  pellets: 8, mag: 6,  reload: 2.4, bloom: 0.2 },
-  rifle:   { name: "Rifle",      dmg: 30,  rate: 7,   spread: 0.08,  range: 900,  pellets: 1, mag: 30, reload: 2.3, bloom: 0.2 },
-  sniper:  { name: "Sniper",     dmg: 130, rate: 0.8, spread: 0.01,  range: 1600, pellets: 1, mag: 5,  reload: 3.0, bloom: 0, pierce: true },
-  staff:   { name: "Fire Staff", dmg: 45,  rate: 1.5, spread: 0.03,  range: 700,  pellets: 1, mag: 10, reload: 2.0, bloom: 0.3, boom: 90 },
-  ak:      { name: "AK-Maybe",   dmg: 26,  rate: 9,   spread: 0.09,  range: 820,  pellets: 1, mag: 30, reload: 2.2, bloom: 0.18, gamble: true }, // every shot re-rolls the ammo count
-  sword:   { name: "Slop Sword", dmg: 70,  rate: 1.8, spread: 0,     range: 92,   pellets: 1, mag: 1,  reload: 0,   bloom: 0, melee: true, arc: 1.1 }, // no ammo, lunges, hits harder falling
-  rocket:  { name: "Rocket Launcher", dmg: 120, rate: 1.1, spread: 0.01, range: 1600, pellets: 1, mag: 1, reload: 1.3, bloom: 0, proj: "rocket", boom: 125 }, // aim at your feet and jump
-  laser:   { name: "Spartan Laser", dmg: 650, rate: 0.5, spread: 0, range: 2400, pellets: 1, mag: 4, reload: 4.0, bloom: 0, pierce: true, charge: 1.2 }, // hold to charge, then it cuts through everything in a line. Everything.
-};
-const MYTHIC = {
-  smg: "The Hive", shotgun: "Farmer's Wrath", rifle: "Kingmaker", sniper: "The Last Word", staff: "Morwen's Spite", pistol: "Grubb's Gavel", ak: "Lady Luck", sword: "Excalibutt", rocket: "The Moon Unit", laser: "The Final Word",
-};
+// ---------------------------------------------------------------- data (the tables themselves are in data.js)
 const lootType = () => (Math.random() < 0.03 ? "laser" : pick(LOOT_TYPES)); // the Spartan Laser is a rare find
-const LOOT_TYPES = ["smg", "shotgun", "rifle", "sniper", "staff", "smg", "shotgun", "rifle", "sniper", "staff", "ak", "sword", "rocket"]; // the AK is rarer
-const RARITY = ["Common", "Rare", "Epic", "Legendary", "Mythic"];
-const RARITY_MULT = [1, 1.2, 1.4, 1.7, 2.0];
-const ENH_NAMES = ["", "PRI", "DUO", "TRI", "TET", "PEN"];
-const ENH_COST = [40, 80, 140, 220, 320];
-const ENH_CHANCE = [0.9, 0.7, 0.5, 0.3, 0.15];
-// Legendary and Mythic guns roll a firing mode. Enhancing to TET or PEN overcharges it.
-const GUNS = new Set(["pistol", "smg", "shotgun", "rifle", "sniper", "ak"]);
-const MODES = {
-  ricochet: { name: "Ricochet", desc: "bullets bounce on to the next zombie" },
-  fire:     { name: "Incendiary", desc: "sets whatever it hits on fire" },
-  frost:    { name: "Cryo", desc: "slows what it hits, and enough hits freeze it solid" },
-  storm:    { name: "Shock", desc: "lightning arcs to two more zombies" },
-  boom:     { name: "Explosive", desc: "every hit goes off with a small bang" },
-};
+const GUNS = new Set(GUN_TYPES);
 const MODE_KEYS = Object.keys(MODES);
-// Haddock bolts these onto the gun in your hands. One of each kind per gun.
-const ATTACH = {
-  dot:  { slot: "sight", name: "Red dot sight", cost: 120, desc: "Much tighter aim down sights." },
-  mag:  { slot: "mag", name: "Extended mag", cost: 150, desc: "+50% rounds, but reloads take 15% longer." },
-  comp: { slot: "muzzle", name: "Compensator", cost: 110, desc: "Less bloom and less kick when you spray." },
-};
-const SKINS = {
-  camo:  { name: "Camo", cost: 80 },
-  slop:  { name: "Slop Green", cost: 120 },
-  tiger: { name: "Tiger Stripe", cost: 160 },
-  pink:  { name: "Hot Pink", cost: 160 },
-  gold:  { name: "Gold", cost: 400 },
-};
 function magOf(w) { const m = WEAPONS[w.type].mag; return w.att && w.att.mag ? Math.ceil(m * 1.5) : m; }
 function attList(w) { return w.att ? Object.values(w.att).join(",") : ""; }
-
-const CLASSES = {
-  fighter: { name: "Fighter", hp: 150, speed: 1.0,  start: "smg" },
-  rogue:   { name: "Rogue",   hp: 90,  speed: 1.2,  start: null },
-  wizard:  { name: "Wizard",  hp: 90,  speed: 1.0,  start: "staff" },
-  farmer:  { name: "Farmer",  hp: 110, speed: 1.0,  start: "shotgun" },
-  gaffer:  { name: "Gaffer",  hp: 100, speed: 1.05, start: null },
-};
-const BACKGROUNDS = {
-  soldier:   { name: "Soldier",   sk: { steady: 1 } },
-  farmhand:  { name: "Farmhand",  sk: { green: 1 } },
-  noble:     { name: "Noble",     gold: 100 },
-  outlander: { name: "Outlander", sk: { fleet: 1 } },
-  acolyte:   { name: "Acolyte",   sk: { thuum: 1 } },
-  urchin:    { name: "Urchin",    sk: { scavenger: 1 } },
-};
-const TRAITS = {
-  Strong:   { epithet: "the Strong", hp: 25 },
-  Swift:    { epithet: "the Swift", speed: 0.12 },
-  Greedy:   { epithet: "the Greedy", gold: 0.25 },
-  Craven:   { epithet: "the Craven", speed: 0.2, dmg: -0.15 },
-  Wrathful: { epithet: "the Wrathful", dmg: 0.2, hp: -15 },
-  Bald:     { epithet: "the Bald" },
-  Genius:   { epithet: "the Wise", shout: 0.4 },
-  Drunkard: { epithet: "the Drunk", hp: 20, spread: 0.6 },
-  Inbred:   { epithet: "the Inbred", hp: -10 },
-  Lucky:    { epithet: "the Lucky", luck: 1 },
-};
 const TRAIT_KEYS = Object.keys(TRAITS);
-const SKILLS = {
-  deadeye:    { tree: 0, max: 3 }, steady:  { tree: 0, max: 3 }, quick:   { tree: 0, max: 3 },
-  tough:      { tree: 1, max: 3 }, wind:    { tree: 1, max: 3 }, fleet:   { tree: 1, max: 3 },
-  green:      { tree: 2, max: 3 }, haggler: { tree: 2, max: 3 }, scavenger: { tree: 2, max: 3 },
-  thuum:      { tree: 3, max: 3 }, rally:   { tree: 3, max: 3 }, bloodlust: { tree: 3, max: 3 },
-};
-
-const ZTYPES = {
-  walker: { r: 15, hp: 60,  speed: 70,  dmg: 10, gold: 10, xp: 8 },
-  runner: { r: 12, hp: 35,  speed: 145, dmg: 7,  gold: 12, xp: 10 },
-  tank:   { r: 26, hp: 350, speed: 50,  dmg: 25, gold: 35, xp: 25 },
-  elite:  { r: 34, hp: 1400, speed: 75, dmg: 30, gold: 150, xp: 80 },
-  boss:   { r: 48, hp: 3000, speed: 58, dmg: 35, gold: 500, xp: 200 },
-  charger:  { r: 20, hp: 170, speed: 80,  dmg: 26, gold: 25, xp: 18, code: "c" }, // winds up, then charges in a straight line
-  flyer:    { r: 13, hp: 40,  speed: 150, dmg: 8,  gold: 14, xp: 12, code: "f" }, // circles overhead and dives
-  boomer:   { r: 24, hp: 80,  speed: 55,  dmg: 6,  gold: 18, xp: 14, code: "x" }, // pops in a cloud of bile that makes the horde hunt you
-  screamer: { r: 14, hp: 65,  speed: 105, dmg: 5,  gold: 20, xp: 16, code: "s" }, // keeps its distance and screams for help
-  raptor:   { r: 16, hp: 90, speed: 172, dmg: 10, gold: 22, xp: 16, code: "d" }, // hunts in packs and pounces
-  rex:      { r: 40, hp: 1100, speed: 78, dmg: 32, gold: 160, xp: 90, code: "y" }, // roars, stomps through fences
-  // Bug Night (see "Bug Night" further down)
-  bug:      { r: 14, hp: 40,  speed: 175, dmg: 8,  gold: 5,  xp: 5,  code: "g" }, // warrior bug: fast, comes in swarms
-  spitter:  { r: 22, hp: 150, speed: 60,  dmg: 6,  gold: 20, xp: 16, code: "p" }, // plants itself and lobs plasma
-  tanker:   { r: 36, hp: 1000, speed: 55, dmg: 28, gold: 90, xp: 60, code: "k" }, // armoured, sprays acid
-  brain:    { r: 56, hp: 5000, speed: 18, dmg: 20, gold: 400, xp: 200, code: "q" }, // the Brain Bug: kill it and they all die
-};
-const zCode = (z) => ZTYPES[z.type].code || z.type[0];
+const zCode = (z) => ZTYPES[z.type].code;
 
 const SHOP = {
   medkit:  { name: "Medkit (goes in your bag)", cost: 40 },
@@ -573,8 +480,7 @@ function rayCyl(o, d, c, r, z0, z1) {
   }
   return best;
 }
-const ZH = { bug: 3.2, spitter: 3.0, tanker: 2.2, brain: 2.4 }; // bugs are low and wide
-const zHeight = (z) => z.r * (ZH[z.type] || 3.7);
+const zHeight = (z) => z.r * ZTYPES[z.type].h; // bugs are low and wide
 function freeGround(p) { return MV.floorAt(p.x, p.y, 20, 0, near(p)).h === 0 && !near(p).some((w) => w.kind === "pad" && MV.touches(w, p.x, p.y, 40)); }
 function rayRect(x, y, dx, dy, w) {
   let tmin = 0, tmax = Infinity;
@@ -918,7 +824,7 @@ function bombsAway(p, kind) {
 function hurtZombie(z, dmg, p, kind) {
   if (z.hp <= 0) return;
   z.hp -= dmg;
-  if (p) { p.st.dmg += dmg; p.pe.push({ k: "dmg", x: z.x, y: z.y - z.r, z: Math.round((z.z || 0) + zHeight(z)), v: Math.round(dmg), crit: kind === "crit", hs: kind === "hs", wk: kind === "wk" ? 1 : 0, arm: kind === "arm" ? 1 : 0, kill: z.hp <= 0 ? 1 : 0, big: z.r >= 26 ? 1 : 0 }); }
+  if (p) { p.st.dmg += dmg; p.pe.push({ k: "dmg", x: z.x, y: z.y - z.r, z: Math.round((z.z || 0) + zHeight(z)), v: Math.round(dmg), crit: kind === "crit", hs: kind === "hs", wk: kind === "wk" ? 1 : 0, arm: kind === "arm" ? 1 : 0, kill: z.hp <= 0 ? 1 : 0, big: ZTYPES[z.type].big ? 1 : 0 }); }
   if (z.hp <= 0) {
     const def = ZTYPES[z.type];
     if (p) deed("blood", z.type === "boss" || z.type === "elite" ? 20 : 0.4);
@@ -937,7 +843,7 @@ function hurtZombie(z, dmg, p, kind) {
       if (sk(p, "bloodlust")) p.hp = Math.min(maxHp(p), p.hp + 3 * sk(p, "bloodlust"));
     }
     if (z.type === "boomer") bile(z.x, z.y, z.z || 0, 150);
-    if (["elite", "boss", "rex", "tanker"].includes(z.type) || (z.type === "tank" && Math.random() < 0.04)) dropPart(z); // mech parts
+    if (Math.random() < (ZTYPES[z.type].parts || 0)) dropPart(z); // mech parts
     if (z.type === "brain") bugsBeaten(p);
     if (z.type === "tank" && Math.random() < 0.15) crates.push({ id: nextId++, x: z.x, y: z.y, w: newWeapon(lootType(), 1 + (Math.random() < 0.4 ? 1 : 0)) });
     if (z.type === "elite") {
@@ -1070,7 +976,7 @@ function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
     const f = 1 - (d / r) * 0.6;
     hurtZombie(zb, dmg * f, owner, "");
     const hd = Math.hypot(zb.x - x, zb.y - y) || 1;
-    if (zb.type !== "boss" && zb.type !== "elite" && zb.type !== "rex") { zb.vx += (zb.x - x) / hd * 320 * f; zb.vy += (zb.y - y) / hd * 320 * f; if (zb.type !== "flyer") { zb.vz = Math.max(zb.vz, 260 * f); zb.gr = false; } }
+    if (!ZTYPES[zb.type].big) { zb.vx += (zb.x - x) / hd * 320 * f; zb.vy += (zb.y - y) / hd * 320 * f; if (zb.type !== "flyer") { zb.vz = Math.max(zb.vz, 260 * f); zb.gr = false; } }
   }
   for (const q of players.values()) {
     if (q.dead || q.air || otherSide(q)) continue;
@@ -1599,12 +1505,6 @@ function learn(p, s) {
   unlucky(p);
 }
 // The Thu'um: four elements, unlocked as you level. Every kind of monster is weak to one and shrugs off another.
-const ELEMENTS = {
-  force: { name: "Force", word: "FUS RO DAH", lvl: 1, color: "#c8e6ff" },
-  fire:  { name: "Fire",  word: "YOL TOOR SHUL", lvl: 2, color: "#ff8a2a" },
-  frost: { name: "Frost", word: "FO KRAH DIIN", lvl: 3, color: "#8fe0ff" },
-  storm: { name: "Storm", word: "STRUN BAH QO", lvl: 4, color: "#e0d0ff" },
-};
 const ELEM_ORDER = Object.keys(ELEMENTS);
 const MATCHUP = { // [weak to, resists]
   walker: ["fire", "frost"], runner: ["frost", "fire"], tank: ["storm", "force"], charger: ["frost", "force"], flyer: ["storm", "frost"],
@@ -1699,7 +1599,7 @@ function moveTick(p, t, dt) {
   if (p.slide > 0 && Math.hypot(p.vx, p.vy) > 200) { // sliding into the dead takes their legs out
     for (const z of zombies) {
       if (z.hp <= 0 || (z.kd || 0) > t || Math.abs((z.z || 0) - p.z) > 30 || dist2(z, p) > (20 + z.r) ** 2) continue;
-      const big = z.r >= 26;
+      const big = ZTYPES[z.type].big;
       z.stun = Math.max(z.stun || 0, t + (big ? 0.35 : 1.1)); if (!big) z.kd = t + 1.1;
       z.vx += p.vx * (big ? 0.15 : 0.6); z.vy += p.vy * (big ? 0.15 : 0.6);
       hurtZombie(z, 12, p, "");
@@ -2333,7 +2233,7 @@ function nukeBlast() {
     if (underground(p)) { toast(p, "The ground shakes and dust pours from the ceiling. The tunnels hold.", "#c8b48c"); addRad(p, 20); continue; }
     killPlayer(p, null, "vaporised by a nuclear bomb");
   }
-  for (const z of zombies) if (underground(z)) continue; else if (z.type === "boss" || z.type === "elite") z.hp *= 0.5; else z.hp = 0;
+  for (const z of zombies) if (underground(z)) continue; else if (ZTYPES[z.type].nukeProof) z.hp *= 0.5; else z.hp = 0;
   zombies = zombies.filter((z) => z.hp > 0);
   for (const w of [...WALLS]) if (WOODEN.has(w.kind) && w.kind !== "hwall" && !safe({ x: w.x + w.w / 2, y: w.y + w.h / 2 })) damageWall(w, w.kind === "house" ? 500 : 9999);
   for (const v of [...vehicles]) hurtVehicle(v, VEHICLES[v.kind].hp * 0.6, null);
@@ -2704,7 +2604,7 @@ function vehicleTick(t, dt) {
         z.rammed = t + 0.35; z.stun = t + 0.5;
         z.vx += Math.cos(v.a) * speed * 0.9; z.vy += Math.sin(v.a) * speed * 0.9;
         hurtZombie(z, speed * 0.3 * def.ram * game.mods.dmg * TEST_DMG, driver || null, "");
-        if (z.type === "tank" || z.type === "elite" || z.type === "boss") { v.v *= 0.4; hurtVehicle(v, 25, null); if (!vehicles.includes(v)) break; }
+        if (ZTYPES[z.type].big) { v.v *= 0.4; hurtVehicle(v, 25, null); if (!vehicles.includes(v)) break; }
       }
     }
     if (speed > 140 && vehicles.includes(v)) for (const q of players.values()) {
@@ -3140,7 +3040,6 @@ const ADV_ACTIVE = 4; // jobs the party can have on at once
 const ADV_TRAVEL = 25; // what the coach costs between signposts
 const ADV_DAY = FAST ? 6 : 240, ADV_NIGHT = FAST ? 8 : 150; // longer days: there's walking to do
 let ADV_KEEP = []; // the towns' patches, which the wild leaves alone
-const isAdv = () => game.mode === "adventure";
 const bossName = (k) => BOSSES[k].name.toLowerCase().replace(/(^|\s)\w/g, (c) => c.toUpperCase()); // "The Drowned Mayor", not shouting it
 const advTowns = () => (game.adv ? game.adv.towns : []);
 function setupAdventure() {
@@ -3939,7 +3838,7 @@ function disasterTick(t, dt) {
         if (d < 90 && e.gr) { kick(e, tx * 300, ty * 300, 650); hurtPlayer(e, 8, null, "carried off by a tornado"); }
       } else {
         e.vx += (dx / d * 400 + tx * 600) * k * dt; e.vy += (dy / d * 400 + ty * 600) * k * dt;
-        if (d < 90 && e.gr && e.type !== "boss" && e.type !== "rex") { e.vz = 600; e.gr = false; e.hp -= 6; }
+        if (d < 90 && e.gr && !(ZTYPES[e.type] && ZTYPES[e.type].big)) { e.vz = 600; e.gr = false; e.hp -= 6; }
       }
     };
     for (const p of players.values()) pull(p, true);
@@ -4052,7 +3951,7 @@ function startDay() {
   maybeNuke();
   radioNews();
   for (const p of players.values()) { p.talked.clear(); cure(p, "The sunrise burns the infection out of you."); }
-  for (const z of zombies) if (z.type !== "elite" && !z.keep) z.burn = true; // Adventure's quest monsters don't mind the sun
+  for (const z of zombies) if (!ZTYPES[z.type].sunProof && !z.keep) z.burn = true; // Adventure's quest monsters don't mind the sun
   spawnCrates();
   if (game.mode === "story" && !game.flags.finalAt && game.night >= UNMASK_AFTER) unmask();
   if (game.mode === "adventure") advDawn();
@@ -4123,7 +4022,6 @@ function armourChance(type, n) {
   return 0;
 }
 const ARM_SOAK = 0.3, WEAK_MULT = 2.6;
-function spawnRaptors(at) { for (let i = 0; i < 3; i++) spawnZombie("raptor", at); }
 function spawnZombie(type, at) { const z = spawnZombie0(type, at); if (game.waste && z) z.glow = true; if (z && game.mode === "adventure") z.wild = 1; return z; } // no Hearth to walk to in Adventure
 function spawnZombie0(type, at) {
   const def = ZTYPES[type];
