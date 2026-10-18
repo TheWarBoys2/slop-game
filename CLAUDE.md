@@ -24,7 +24,9 @@ More than one Claude works on this repo, often at the same time, from different 
    bun server.js &                                  # must boot, CI checks / and /game.js load
    SLOP_FAST=1 bun server.js 7778 &
    bun tools/bots.js ws://localhost:7778/ws 4       # bots should play with no errors
+   bun tools/playtest.js                            # every mode and special night; must say "All ... passed"
    ```
+   The Playtest workflow runs the same on every PR. Tick the Manual rows of `docs/feature-checklist.md` for the systems you touched.
    Test the systems you changed, plus anything the other merged work changed that touches yours.
 4. Only then merge the PR.
 5. After the release is published, move the delivered rows to the sheet's Done tab (see "Where work comes from").

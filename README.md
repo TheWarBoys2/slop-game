@@ -111,6 +111,8 @@ SLOP_FAST=1 bun server.js   # short days/nights and lots of gold, for testing
 bun tools/bots.js ws://localhost:7777/ws 4   # 4 bots join and play
 ```
 
+`bun tools/playtest.js` boots a fresh server for each mode and special night (Story, Endless, Royale, Adventure, Dinosaur Day, Bug Night, disasters), lets the bots play, probes mechs and Dust II, and fails on any server error. It prints tick time and bandwidth per player and writes `playtest-report.json`. CI runs it on every pull request. `docs/feature-checklist.md` lists every feature and how it's checked.
+
 `server.js` runs the whole game and serves `public/`. The browser client is `public/game.js`. `story.js` is spoilers.
 
 `SLOP_DMG=30` multiplies player damage, for testing the ending quickly. `SLOP_DISASTER=meteor|flood|tornado|quake|any` forces a disaster every dawn and dusk, and `SLOP_DINO=1` makes every day from day 2 a Dinosaur Day. `SLOP_BUGS=1` makes every night Bug Night.
