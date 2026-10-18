@@ -1,7 +1,7 @@
 // The bunker, the bomb and the Hearth Dome.
 import { shock } from "../market.js";
 import { ZTYPES } from "../data.js";
-import { fires, killPlayer, underground } from "./combat.js";
+import { fires, hurtZombie, killPlayer, underground } from "./combat.js";
 import { HEARTH, NUKE_WARN, clamp, now, rand } from "./config.js";
 import { LAKE, PLOTS, WOODEN, bunkerWall, damageWall } from "./map.js";
 import { addRad } from "./needs.js";
@@ -84,7 +84,7 @@ export function nukeBlast() {
     if (underground(p)) { toast(p, "The ground shakes and dust pours from the ceiling. The tunnels hold.", "#c8b48c"); addRad(p, 20); continue; }
     killPlayer(p, null, "vaporised by a nuclear bomb");
   }
-  for (const z of world.zombies) if (underground(z)) continue; else if (ZTYPES[z.type].nukeProof) z.hp *= 0.5; else z.hp = 0;
+  for (const z of world.zombies) if (underground(z)) continue; else if (ZTYPES[z.type].nukeProof) z.hp *= 0.5; else hurtZombie(z, z.hp, null, "nuke"); // a normal death: bile, loot, mech parts
   world.zombies = world.zombies.filter((z) => z.hp > 0);
   for (const w of [...world.WALLS]) if (WOODEN.has(w.kind) && w.kind !== "hwall" && !safe({ x: w.x + w.w / 2, y: w.y + w.h / 2 })) damageWall(w, w.kind === "house" ? 500 : 9999);
   for (const v of [...world.vehicles]) hurtVehicle(v, VEHICLES[v.kind].hp * 0.6, null);

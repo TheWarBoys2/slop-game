@@ -24,7 +24,7 @@ export function hurtZombie(z, dmg, p, kind) {
   if (z.hp <= 0) {
     const def = ZTYPES[z.type];
     if (p) deed("blood", z.type === "boss" || z.type === "elite" ? 20 : 0.4);
-    shock(game.market, "BOOM", 0.0015);
+    if (kind !== "nuke") shock(game.market, "BOOM", 0.0015); // the bomb moves the market on its own
     if (p) {
       if (!p.kt.has(z.type)) { p.kt.add(z.type); p.st.ztypes = p.kt.size; }
       p.st.kills++;

@@ -5,14 +5,14 @@ import { dist2, now, rand } from "./config.js";
 import { near } from "./geometry.js";
 import { boxDist } from "./map.js";
 import { lootRarity, spawnZombie } from "./phases.js";
-import { addGold, feed, fullName, game, lootType, newWeapon, players, toast } from "./state.js";
+import { addGold, addXp, feed, fullName, game, lootType, newWeapon, players, toast } from "./state.js";
 import { world } from "./world.js";
 
 // ---------------------------------------------------------------- Dust II: zombie terrorists, a bomb, two sites
 // Press E at the radio in CT spawn. Ten seconds to buy (B opens Haddock's stock anywhere on the map), then the terrorists
 // come out of T spawn and walk the bomb to A or B. Kill the carrier and another picks it up. If it's planted, hold E on it
 // for five seconds to defuse. Win: gold for everyone on the map and a good crate. Lose: a very big bang.
-const DUST_BUY = 10, DUST_PLANT = 3, DUST_FUSE = 40, DUST_DEFUSE = 5, DUST_COOL = 45, DUST_PAY = 120;
+const DUST_BUY = 10, DUST_PLANT = 3, DUST_FUSE = 40, DUST_DEFUSE = 5, DUST_COOL = 45, DUST_PAY = 120, DUST_XP = 50;
 function dustPlayers() { return [...players.values()].filter((q) => !q.dead && inDust(q, 200)); }
 export function dustUse(p) {
   const D = game.dust, t = now();
@@ -45,7 +45,7 @@ function dustEnd(D, ctWin, why) {
   world.zombies = world.zombies.filter((z) => !z.dust);
   if (ctWin) {
     D.wins++;
-    for (const q of dustPlayers()) addGold(q, DUST_PAY, "Round won");
+    for (const q of dustPlayers()) { addGold(q, DUST_PAY, "Round won"); addXp(q, DUST_XP); }
     const c = ctSpawn(); world.crates.push({ id: world.nextId++, x: c.x + rand(-40, 40), y: c.y + 30, w: newWeapon(lootType(), Math.min(4, lootRarity(game.night) + 2)) });
     world.events.push({ k: "dust", say: "ct", text: "COUNTER-TERRORISTS WIN", sub: `${why} ${DUST_PAY}g each, and there's a crate at CT spawn. ${D.wins}-${D.losses}.` });
   } else {

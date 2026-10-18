@@ -2,7 +2,7 @@
 import { shock } from "../market.js";
 import { ZTYPES } from "../data.js";
 import { hurtPiece } from "./building.js";
-import { explode, fires, hurtPlayer, ignite, insideWall, kick } from "./combat.js";
+import { explode, fires, hurtPlayer, hurtZombie, ignite, insideWall, kick } from "./combat.js";
 import { DISASTER, DISASTER_CHANCE, H, HEARTH, MV, W, clamp, dist2, now, pick, rand } from "./config.js";
 import { near } from "./geometry.js";
 import { BALL, PLOTS, boxDist, damageWall } from "./map.js";
@@ -159,7 +159,7 @@ export function disasterTick(t, dt) {
         if (d < 90 && e.gr) { kick(e, tx * 300, ty * 300, 650); hurtPlayer(e, 8, null, "carried off by a tornado"); }
       } else {
         e.vx += (dx / d * 400 + tx * 600) * k * dt; e.vy += (dy / d * 400 + ty * 600) * k * dt;
-        if (d < 90 && e.gr && !(ZTYPES[e.type] && ZTYPES[e.type].big)) { e.vz = 600; e.gr = false; e.hp -= 6; }
+        if (d < 90 && e.gr && !(ZTYPES[e.type] && ZTYPES[e.type].big)) { e.vz = 600; e.gr = false; hurtZombie(e, 6, null, ""); }
       }
     };
     for (const p of players.values()) pull(p, true);
