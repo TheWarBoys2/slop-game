@@ -105,9 +105,14 @@ function probeClient(port, probes, mode) {
       if (!await waitFor(playing, 30000)) return "the game never started for the probe";
       send({ t: "tp", hp: 500, mechParts: 1, mechSet: { core: "reactor", legs: "strider", armR: "cannon", armL: "rockets", head: "sensor" } });
       if (!await waitFor(() => mine() && mine().mc && mine().mc[0], 5000)) return "mech parts didn't bolt on";
-      await waitFor(playing, 10000);
-      send({ t: "mech" }); // once: calling it again picks the landed mech back up and drops it anew
-      const landed = await waitFor(() => S.vh.some((v) => v[12] === me && v[10]), 12000);
+      // a call is ignored while we're dead, respawning or falling, so try again until one lands; but never while
+      // one is on its way (6s covers the 4s drop), since calling again picks a landed mech back up and drops it anew
+      let lastCall = 0;
+      const landed = await waitFor(() => {
+        if (S.vh.some((v) => v[12] === me && v[10])) return true;
+        if (playing() && Date.now() - lastCall > 6000) { lastCall = Date.now(); send({ t: "tp", hp: 500 }); send({ t: "mech" }); }
+        return false;
+      }, 30000);
       return landed ? null : `the mech never landed (last message: ${toasts.at(-1) || "none"})`;
     },
     // blow up a crate in town: everyone should get a small "wd" message for it, not the whole map again
@@ -169,7 +174,7 @@ async function runScenario(sc, port) {
     lines(bots.stderr, (l) => log.push("[bots] " + l));
     probe = probeClient(port, sc.probes || [], mode);
     await sleep(sc.secs * 1000);
-    await Promise.race([probe.run, sleep(1000)]);
+    await Promise.race([probe.run, sleep(60000)]); // probes that are still going get up to a minute more
     for (const [name, err] of Object.entries(probe.results)) if (err) fails.push(`${name} probe: ${err}`);
     for (const name of sc.probes || []) if (!(name in probe.results)) fails.push(`${name} probe didn't finish`);
     if (!seen) fails.push("the bots reported nothing");
