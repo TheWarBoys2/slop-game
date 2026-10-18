@@ -111,7 +111,7 @@ SLOP_FAST=1 bun server.js   # short days/nights and lots of gold, for testing
 bun tools/bots.js ws://localhost:7777/ws 4   # 4 bots join and play
 ```
 
-`bun tools/playtest.js` boots a fresh server for each mode and special night (Story, Endless, Royale, Adventure, Dinosaur Day, Bug Night, disasters), lets the bots play, probes mechs and Dust II, and fails on any server error. It prints tick time and bandwidth per player and writes `playtest-report.json`. CI runs it on every pull request. `docs/feature-checklist.md` lists every feature and how it's checked.
+`bun tools/playtest.js` boots a fresh server for each mode and special night (Story, Endless, Royale, Adventure, Dinosaur Day, Bug Night, disasters), lets the bots play, probes mechs, Dust II and a nuke, and fails on any server error. It prints tick time and bandwidth per player and writes `playtest-report.json`. CI runs it on every pull request. `docs/feature-checklist.md` lists every feature and how it's checked.
 
 `server.js` boots the game; the server itself is in `server/`, one file per system, each opening with a line saying what it holds (`combat.js`, `economy.js`, `phases.js`, `bugnight.js`, `tick.js` for the game loop, `net.js` for snapshots and messages, and so on). State that several systems replace wholesale lives on the `world` object in `server/world.js`. The game's tables (weapons, classes, skills, zombie types) are in `data.js`, shared with the browser. The browser client is `public/game.js`. `story.js` is spoilers.
 

@@ -24,7 +24,7 @@ const SCENARIOS = [
     expect: (s) => [need(s.adv && s.adv.towns >= 6, "home plus 5 Adventure towns"), need(s.adv && s.adv.found >= 1, "the home town counts as found")] },
   { name: "dino-day", secs: 55, env: { SLOP_DINO: "1" },
     expect: (s) => [need(/[dy]/.test(s.zt || ""), "raptors or a T. rex showed up")] },
-  { name: "bug-night", secs: 50, env: { SLOP_BUGS: "1" },
+  { name: "bug-night", secs: 50, env: { SLOP_BUGS: "1" }, probes: ["nuke"],
     expect: (s) => [need(/[gpkq]/.test(s.zt || ""), "bugs came out of the holes")] },
   { name: "disasters", secs: 55, env: { SLOP_DISASTER: "any" },
     expect: (s) => [need(!!s.dis, "a disaster struck")] },
@@ -133,6 +133,12 @@ function probeClient(port, probes, mode) {
       if (!gone) return "the crate never came down in a wall-change message";
       if (counts.map > maps0) return "a crate breaking still resent the whole map";
       return null;
+    },
+    // set off a nuke at night: every zombie it kills goes through the normal death path, which must not throw
+    async nuke() {
+      if (!await waitFor(() => playing() && S.g.ph === "night", 45000)) return "night never came for the probe";
+      send({ t: "tp", hp: 500, nuke: 1 });
+      return await waitFor(() => events.some((e) => e.k === "nuke"), 30000) ? null : "the test nuke never went off";
     },
     // walk into Dust II's CT spawn, find the radio and start a round
     async dust() {

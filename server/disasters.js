@@ -101,7 +101,7 @@ export function finishFix(p, m) {
   shock(game.market, "FARM", 0.05, "Disaster averted. Farm shares rally.");
 }
 export function maybeDisaster() {
-  if (game.mode === "royale" || game.disaster) return;
+  if (game.mode === "royale" || game.mode === "adventure" || game.disaster) return; // both play far from the valley the disasters hit
   const forced = DISASTER && DISASTERS[DISASTER] ? DISASTER : DISASTER === "any" ? pick(Object.keys(DISASTERS)) : "";
   if (!forced && (game.night < 2 || Math.random() > DISASTER_CHANCE)) return;
   const kind = forced || pick(Object.keys(DISASTERS)), t = now(), D = DISASTERS[kind];

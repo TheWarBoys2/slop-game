@@ -18,7 +18,7 @@ Auto = a playtest scenario fails if it breaks. Bots = the bots exercise it, and 
 | Dinosaur Day | Auto: dino-day |
 | Bug Night, holes, Brain Bug | Auto: bug-night (bugs appear) · Manual: sealing holes, Brain Bug death |
 | Disasters and their control-station minigames | Auto: disasters (strikes) · Bots: minigames |
-| Nukes, siren, Hearth Dome, bunker | Manual (`SLOP_NUKE=1`) |
+| Nukes, siren, Hearth Dome, bunker | Auto: bug-night nuke probe (goes off, kills go through the normal death path) · Manual: Dome, bunker (`SLOP_NUKE=1`) |
 | Mystery: clues, accusation, Last Night boss, ending cutscene | Manual (tp `clues`, `killBoss`) |
 | Elections, daily ballot, mayor policies | Bots |
 | Town meetings | Bots |

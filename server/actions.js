@@ -263,7 +263,8 @@ export function doShout(p) {
   };
   // how well the element lands on this monster, like a certain pocket monster game
   const eff = (z) => { const [weak, res] = matchOf(z); const m = weak === el ? 2 : res === el ? 0.5 : 1; if (m !== 1) p.pe.push({ k: "eff", x: Math.round(z.x), y: Math.round(z.y), z: Math.round((z.z || 0) + zHeight(z) + 20), m }); return m; };
-  const mass = { boss: game.bossKind === "golem" ? 99 : 5, elite: 3, tank: 2, rex: 6, raptor: 1.2 };
+  const mass = { boss: game.bossKind === "golem" ? 99 : 5, elite: 3, tank: 2, rex: 6, raptor: 1.2, brain: 99 };
+  const massOf = (z) => mass[z.type] || (ZTYPES[z.type].big ? 4 : 1);
   if (el === "storm") {
     // chain lightning: the nearest thing in front of you, then whatever's closest to that, and on
     const hit = new Set(), pts = [[Math.round(p.x), Math.round(p.y), Math.round(p.z + 40)]];
@@ -288,7 +289,7 @@ export function doShout(p) {
     const m = eff(z); p.st.shoutHits++;
     if (el === "force") {
       const dx = z.x - p.x, dy = z.y - p.y;
-      z.vx = (dx / d) * 700 * m / (mass[z.type] || 1); z.vy = (dy / d) * 700 * m / (mass[z.type] || 1);
+      z.vx = (dx / d) * 700 * m / massOf(z); z.vy = (dy / d) * 700 * m / massOf(z);
       z.stun = t + 1.2 * m; hurtZombie(z, 10 * m * pow, p, m > 1 ? "crit" : "");
     } else if (el === "fire") {
       hurtZombie(z, 22 * m * pow, p, m > 1 ? "crit" : ""); z.fireUntil = t + 2.5 * m; z.fireBy = p.id;
