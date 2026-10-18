@@ -78,13 +78,13 @@ function probeClient(port, probes, mode) {
   const send = (m) => { try { ws.send(JSON.stringify(m)); } catch {} };
   const mine = () => S && S.p.find((q) => q.id === me);
   const events = [], toasts = [], goneIds = new Set(), counts = { map: 0 };
-  let mapWalls = [];
+  let mapWalls = [], hearth = null;
   ws.onopen = () => send({ t: "join", name: "Probe", color: "#ffffff", hat: "crown", cls: "fighter", bg: "soldier", trait: "Lucky", eyes: "dot" });
   ws.onmessage = (ev) => {
     const raw = ev.data; if (out.t0) out.bytes += raw.length;
     const m = JSON.parse(raw);
     if (m.t === "ck") for (const w of m.walls || []) if (w.kind === "radio") radios.push(w);
-    if (m.t === "map") { counts.map++; mapWalls = m.map.walls; }
+    if (m.t === "map") { counts.map++; mapWalls = m.map.walls; hearth = m.map.hearth; }
     if (m.t === "wd") for (const id of m.gone) goneIds.add(id);
     if (m.t !== "s") return;
     S = m; me = m.me;
@@ -106,11 +106,13 @@ function probeClient(port, probes, mode) {
       send({ t: "tp", hp: 500, mechParts: 1, mechSet: { core: "reactor", legs: "strider", armR: "cannon", armL: "rockets", head: "sensor" } });
       if (!await waitFor(() => mine() && mine().mc && mine().mc[0], 5000)) return "mech parts didn't bolt on";
       // a call is ignored while we're dead, respawning or falling, so try again until one lands; but never while
-      // one is on its way (6s covers the 4s drop), since calling again picks a landed mech back up and drops it anew
+      // one is on its way (6s covers the 4s drop), since calling again picks a landed mech back up and drops it anew.
+      // Call it from open ground in front of the Hearth: it can't land on someone standing indoors.
+      const outside = hearth ? { x: hearth.x + hearth.w / 2, y: hearth.y + hearth.h + 60 } : {};
       let lastCall = 0;
       const landed = await waitFor(() => {
         if (S.vh.some((v) => v[12] === me && v[10])) return true;
-        if (playing() && Date.now() - lastCall > 6000) { lastCall = Date.now(); send({ t: "tp", hp: 500 }); send({ t: "mech" }); }
+        if (playing() && Date.now() - lastCall > 6000) { lastCall = Date.now(); send({ t: "tp", hp: 500, ...outside }); send({ t: "mech" }); }
         return false;
       }, 30000);
       return landed ? null : `the mech never landed (last message: ${toasts.at(-1) || "none"})`;
@@ -124,7 +126,7 @@ function probeClient(port, probes, mode) {
       send({ t: "tp", x: cx - 160, y: cy, hp: 500, weapon: "rocket", rarity: 3 });
       const gone = await waitFor(() => {
         send({ t: "tp", x: cx - 160, y: cy, hp: 500, ammo: 5 });
-        send({ t: "in", k: 0, a: 0, pt: -0.12, rel: 1, my: 0, f: true });
+        send({ t: "in", k: 0, a: 0, pt: -0.12, my: 0, f: true });
         return goneIds.has(target.id);
       }, 15000);
       send({ t: "in", k: 0, a: 0, f: false });

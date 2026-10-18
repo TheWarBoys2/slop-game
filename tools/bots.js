@@ -84,7 +84,8 @@ for (let i = 0; i < count; i++) {
     if (S.g.elec && Math.random() < 0.02) ws.send(JSON.stringify({ t: "elect", i: (Math.random() * S.g.elec.c.length) | 0 }));
     const k = goSt ? 1 : [1, 2, 4, 8][(Date.now() / 700 + i) % 4 | 0] | (i % 2 && Math.random() < 0.3 ? 16 : 0); // odd bots bunny hop
     seen.maxZ3 = Math.max(seen.maxZ3 || 0, p.z || 0);
-    ws.send(JSON.stringify({ t: "in", k, a, rel: goSt ? 1 : 0, f: !goSt && !process.env.PASSIVE && !!tgt && bd < 700 ** 2, ads: i % 3 === 0 && !!tgt }));
+    const pt = tgt && !goSt ? Math.atan2((tgt[6] || 0) + 30 - ((p.z || 0) + 40), Math.sqrt(bd) || 1) : 0; // aim at the middle of it
+    ws.send(JSON.stringify({ t: "in", k, a, pt, f: !goSt && !process.env.PASSIVE && !!tgt && bd < 700 ** 2, ads: i % 3 === 0 && !!tgt }));
     if (i % 2 === 0 && Math.max(p.bl, p.bw) > 70 && Math.random() < 0.05) ws.send(JSON.stringify({ t: "go" })); // odd bots just have accidents
     const r = Math.random();
     if (p.air === 1 && Math.random() < 0.05) ws.send(JSON.stringify({ t: "dodge" }));

@@ -646,7 +646,7 @@ function makePlayer(ws, msg) {
     eyes: String(msg.eyes || "dot").slice(0, 10), bg, chosenTrait: chosen,
     cls, gen: 1, trait: chosen || pick(TRAIT_KEYS), x: 0, y: 0, a: 0, keys: 0, firing: false,
     hp: 0, armor: 0, gold: 0, seeds: 0, dead: false, respawnAt: 0, weapons: [], active: 0,
-    heat: 0, dashUntil: 0, dashCd: 0, dashDx: 0, dashDy: 0, z: 0, vz: 0, gr: true, pt: null, rel: false, shoutCd: 0, vx: 0, vy: 0, lastHurt: 0,
+    heat: 0, dashUntil: 0, dashCd: 0, dashDx: 0, dashDy: 0, z: 0, vz: 0, gr: true, pt: 0, shoutCd: 0, vx: 0, vy: 0, lastHurt: 0,
     pe: [], lineage: [], champion: false, cos: new Set(), trail: "", title: "", spunTotal: 0,
     cards: STARTER.reduce((a, id) => { a[id] = (a[id] || 0) + 1; return a; }, {}), deck: [], // your Slop Snap collection stays with you between games
   };
@@ -1098,15 +1098,15 @@ function throwIt(p, kind) {
   if (have <= 0) return toast(p, kind === "molo" ? "No molotovs left. Haddock's armoury sells them." : "No grenades left. Haddock's armoury sells them.", "#f88");
   if (kind === "molo") p.molo--; else p.gren--;
   p.throwAt = t + 0.7;
-  const pt = (p.pt == null ? 0.35 : p.pt) + 0.18, sp = 640;
+  const pt = p.pt + 0.18, sp = 640;
   const c = Math.cos(pt);
   projs.push({ id: nextId++, kind, owner: p.id, x: p.x + Math.cos(p.a) * 18, y: p.y + Math.sin(p.a) * 18, z: p.z + MV.EYE - 4, vx: Math.cos(p.a) * c * sp + p.vx * 0.5, vy: Math.sin(p.a) * c * sp + p.vy * 0.5, vz: Math.sin(pt) * sp + Math.max(0, p.vz) * 0.5, age: 0 });
   events.push({ k: "throw", id: p.id });
 }
 function fireRocket(p, w, mult) {
-  const pt = p.pt == null ? 0 : p.pt, sp = 980;
+  const pt = p.pt, sp = 980;
   const a = p.a + (Math.random() - 0.5) * 0.02;
-  projs.push({ id: nextId++, kind: "rocket", owner: p.id, x: p.x + Math.cos(a) * 20, y: p.y + Math.sin(a) * 20, z: p.z + MV.EYE - 6, vx: Math.cos(a) * Math.cos(pt) * sp, vy: Math.sin(a) * Math.cos(pt) * sp, vz: Math.sin(pt) * sp, age: 0, dmg: WEAPONS.rocket.dmg * mult, r: WEAPONS.rocket.boom * (w.rarity === 4 ? 1.5 : 1), flat: p.pt == null });
+  projs.push({ id: nextId++, kind: "rocket", owner: p.id, x: p.x + Math.cos(a) * 20, y: p.y + Math.sin(a) * 20, z: p.z + MV.EYE - 6, vx: Math.cos(a) * Math.cos(pt) * sp, vy: Math.sin(a) * Math.cos(pt) * sp, vz: Math.sin(pt) * sp, age: 0, dmg: WEAPONS.rocket.dmg * mult, r: WEAPONS.rocket.boom * (w.rarity === 4 ? 1.5 : 1) });
   events.push({ k: "tr", x1: p.x, y1: p.y, z1: Math.round(p.z + MV.EYE), x2: p.x + Math.cos(a) * 40, y2: p.y + Math.sin(a) * 40, z2: Math.round(p.z + MV.EYE), c: "rocket", m: 0 });
 }
 function projTick(t, dt) {
@@ -1118,10 +1118,9 @@ function projTick(t, dt) {
       const steps = 3; let boom = false;
       for (let i = 0; i < steps && !boom; i++) {
         pr.x += pr.vx * dt / steps; pr.y += pr.vy * dt / steps; pr.z += pr.vz * dt / steps;
-        if (pr.flat) pr.z = Math.max(pr.z, 30); // top-down players fire level rockets
         if (pr.z <= MV.floorAt(pr.x, pr.y, 2, pr.z, near(pr)).h || insideWall(pr.x, pr.y, pr.z) || (!OPEN() && (pr.x < 0 || pr.y < 0 || pr.x > W || pr.y > H))) boom = true;
-        for (const zb of zombies) if (!boom && zb.hp > 0 && (zb.x - pr.x) ** 2 + (zb.y - pr.y) ** 2 < (zb.r + 6) ** 2 && (pr.flat || (pr.z > zb.z - 6 && pr.z < zb.z + zHeight(zb) + 6))) boom = true;
-        for (const q of players.values()) if (!boom && q.id !== pr.owner && !q.dead && !q.air && (q.x - pr.x) ** 2 + (q.y - pr.y) ** 2 < 22 * 22 && (pr.flat || (pr.z > q.z - 6 && pr.z < q.z + MV.HGT + 6))) boom = true;
+        for (const zb of zombies) if (!boom && zb.hp > 0 && (zb.x - pr.x) ** 2 + (zb.y - pr.y) ** 2 < (zb.r + 6) ** 2 && pr.z > zb.z - 6 && pr.z < zb.z + zHeight(zb) + 6) boom = true;
+        for (const q of players.values()) if (!boom && q.id !== pr.owner && !q.dead && !q.air && (q.x - pr.x) ** 2 + (q.y - pr.y) ** 2 < 22 * 22 && pr.z > q.z - 6 && pr.z < q.z + MV.HGT + 6) boom = true;
         for (const v of vehicles) if (!boom && (v.x - pr.x) ** 2 + (v.y - pr.y) ** 2 < VEHICLES[v.kind].r ** 2 && pr.z > (v.z || 0) - 4 && pr.z < (v.z || 0) + 44 && !(owner && owner.veh === v.id)) boom = true;
       }
       if (boom || pr.age > 2.2) { pr.dead = true; explode(pr.x, pr.y, pr.z, pr.r, pr.dmg, owner, "blown up by a rocket", 0.22); }
@@ -1242,14 +1241,11 @@ function shoot(p, w) {
   const pellets = def.pellets + (myth && w.type === "shotgun" ? 4 : 0);
   const pierce = def.pierce || (myth && w.type === "rifle");
   const boom = def.boom ? def.boom * (myth ? 1.6 : 1) : myth && w.type === "sniper" ? 110 : 0;
-  // aim: yaw + pitch in the 3D views. The classic top-down view (and bots) send no pitch, and then height is ignored for targets.
-  const flat = p.pt == null;
   const mx = p.x + Math.cos(p.a) * 20, my = p.y + Math.sin(p.a) * 20, mz = (p.z || 0) + MV.EYE - (p.slide > 0 ? 28 : crouched(p) ? 20 : 0) - (p.ads && w.type === "sniper" ? 0 : 6); // from the eye the client draws, crouched or not, so the scope is true
-  const inZ = (tz, z0, z1) => flat || (tz >= z0 && tz <= z1);
   let anyHit = false;
   for (let i = 0; i < pellets; i++) {
     const a = p.a + (Math.random() - 0.5) * 2 * spread;
-    const pt = flat ? 0 : p.pt + (Math.random() - 0.5) * 2 * spread * 0.7;
+    const pt = p.pt + (Math.random() - 0.5) * 2 * spread * 0.7;
     const dx = Math.cos(a) * Math.cos(pt), dy = Math.sin(a) * Math.cos(pt), dz = Math.sin(pt);
     const o = [mx, my, mz], d = [dx, dy, dz];
     let wallT = def.range, wallW = null;
@@ -1261,7 +1257,7 @@ function shoot(p, w) {
       if (Math.max(0, tg) < wallT) { wallT = Math.max(0, tg); wallW = null; }
     }
     const hits = [];
-    const cyl = (c, r, z0, z1) => flat ? (() => { const hl = Math.hypot(dx, dy) || 1, th = rayCircle(mx, my, dx / hl, dy / hl, c, r); return th / hl; })() : rayCyl(o, d, c, r, z0, z1);
+    const cyl = (c, r, z0, z1) => rayCyl(o, d, c, r, z0, z1);
     for (const z of zombies) { const tt = cyl(z, z.r, z.z || 0, (z.z || 0) + zHeight(z)); if (tt < wallT) hits.push([tt, z, "z"]); }
     for (const q of players.values()) {
       if (q === p || q.dead || q.veh || q.air) continue;
@@ -1276,7 +1272,7 @@ function shoot(p, w) {
       events.push({ k: "boom", x: bx, y: by, z: bz, r: boom });
       if (w.type === "staff") ignite(bx, by, bz + 20, p.id, 3);
       if (hits.length) anyHit = true;
-      const near = (e, ez, r) => (e.x - bx) ** 2 + (e.y - by) ** 2 + (flat ? 0 : (ez - bz) ** 2) < r * r;
+      const near = (e, ez, r) => (e.x - bx) ** 2 + (e.y - by) ** 2 + (ez - bz) ** 2 < r * r;
       for (const z of zombies) if (near(z, (z.z || 0) + z.r, boom + z.r)) hurtZombie(z, def.dmg * mult, p);
       for (const q of players.values()) if (!q.dead && near(q, q.z + 28, boom)) hurtPlayer(q, def.dmg * mult * 0.3, q === p ? null : p, "blown up by their own fireball");
     } else {
@@ -1289,10 +1285,9 @@ function shoot(p, w) {
         anyHit = true;
         let dmg = def.dmg * mult;
         if (kind === "v") { hurtVehicle(target, dmg * 0.6, p); continue; }
-        // precision: in 3D a headshot is the top fifth of the target; top-down, it's a shot through the middle
-        let tag = "", head;
-        if (flat) { const hl = Math.hypot(dx, dy) || 1; head = Math.abs((target.x - mx) * dy / hl - (target.y - my) * dx / hl) < (kind === "z" ? target.r : 16) * 0.38; }
-        else { const th = hits.find((h) => h[1] === target)[0], hz = mz + dz * th, tz = target.z || 0, hh = kind === "z" ? zHeight(target) : crouched(target) ? 40 : MV.HGT; head = hz > tz + hh * 0.8; }
+        // precision: a headshot is the top fifth of the target
+        let tag = "";
+        const th = hits.find((h) => h[1] === target)[0], hz = mz + dz * th, tz = target.z || 0, hh = kind === "z" ? zHeight(target) : crouched(target) ? 40 : MV.HGT, head = hz > tz + hh * 0.8;
         const armoured = kind === "z" && target.armHp > 0;
         const back = armoured && target.type === "charger" && ((target.fx || 0) * dx + (target.fy || 0) * dy) > 0.3; // shot in the back
         if (armoured && (head || back)) { dmg *= WEAK_MULT + 0.25 * sk(p, "deadeye"); tag = "wk"; p.st.hs++; }
@@ -1687,7 +1682,7 @@ function doShout(p) {
 function doDodge(p) {
   const t = now();
   if (p.dead || p.air || p.veh || t < p.dashCd) return;
-  const w = MV.wishDir(p.keys, p.my ?? p.a, p.rel);
+  const w = MV.wishDir(p.keys, p.my ?? p.a);
   let dx = w.x, dy = w.y;
   if (!dx && !dy) { dx = Math.cos(p.a); dy = Math.sin(p.a); }
   const spd = Math.max(Math.hypot(p.vx, p.vy), speedOf(p) * 2.7); // works in the air too: an air dash
@@ -3704,8 +3699,8 @@ function mechTick(v, def, driver, t, dt) {
   let mx = 0, my = 0;
   if (on) {
     const k = driver.keys, f = ((k & 1) ? 1 : 0) - ((k & 4) ? 1 : 0), s = ((k & 8) ? 1 : 0) - ((k & 2) ? 1 : 0);
-    const yaw = driver.rel ? (driver.my ?? driver.a) : driver.a;
-    if (driver.rel) { mx = Math.cos(yaw) * f - Math.sin(yaw) * s; my = Math.sin(yaw) * f + Math.cos(yaw) * s; } else { mx = s; my = -f; }
+    const yaw = driver.my ?? driver.a;
+    mx = Math.cos(yaw) * f - Math.sin(yaw) * s; my = Math.sin(yaw) * f + Math.cos(yaw) * s;
     const l = Math.hypot(mx, my); if (l > 1) { mx /= l; my /= l; }
     let d = driver.a - v.a; d = Math.atan2(Math.sin(d), Math.cos(d));
     v.a += clamp(d, -def.turn * dt, def.turn * dt); // the torso turns to the crosshair
@@ -4257,7 +4252,7 @@ function tick() {
     if (p.veh && !veh) p.veh = 0;
     if (!veh) {
       if (p.stam === undefined) p.stam = 100;
-      const ev = MV.step(p, { keys: p.keys, yaw: p.rel ? (p.my ?? p.a) : p.a, rel: p.rel }, dt, { sp: speedOf(p), boxes: near(p), W: BW(), H: BH(), frozen: t < p.going || !!p.dlg || !!p.cg || t < p.frozen || game.phase === "lobby", canSprint: !p.firing && !p.ads, stam: p.stam, wrLen: 0.9 + 0.2 * sk(p, "fleet"), airJumps: 1 });
+      const ev = MV.step(p, { keys: p.keys, yaw: p.my ?? p.a }, dt, { sp: speedOf(p), boxes: near(p), W: BW(), H: BH(), frozen: t < p.going || !!p.dlg || !!p.cg || t < p.frozen || game.phase === "lobby", canSprint: !p.firing && !p.ads, stam: p.stam, wrLen: 0.9 + 0.2 * sk(p, "fleet"), airJumps: 1 });
       if (ev === "pad") events.push({ k: "pad", x: Math.round(p.x), y: Math.round(p.y) });
       else if (ev) events.push({ k: "mv", id: p.id, m: ev, x: Math.round(p.x), y: Math.round(p.y) }); // so everyone hears the slide, the boost, the wall jump
       moveTick(p, t, dt);
@@ -4474,7 +4469,7 @@ function snapshot() {
     p: [...players.values()].map((p) => {
       const w = p.weapons[p.active];
       return {
-        id: p.id, n: fullName(p), x: r(p.x), y: r(p.y), z: r(p.z), mv: [r(p.vx), r(p.vy), r(p.vz), p.gr ? 1 : 0], pt: p.pt == null ? 0 : +p.pt.toFixed(2), a: +p.a.toFixed(2), hp: r(p.hp), mh: maxHp(p), ar: r(p.armor),
+        id: p.id, n: fullName(p), x: r(p.x), y: r(p.y), z: r(p.z), mv: [r(p.vx), r(p.vy), r(p.vz), p.gr ? 1 : 0], pt: +p.pt.toFixed(2), a: +p.a.toFixed(2), hp: r(p.hp), mh: maxHp(p), ar: r(p.armor),
         c: p.color, h: p.hat, ey: p.eyes, cl: p.cls, bg: p.bg, d: p.dead ? 1 : 0, g: p.gold, sd: seedCount(p), st: Math.min(5, Math.floor(p.heat / 40)),
         w: w.type, wn: wName(w), wr: w.rarity, we: w.enh, am: w.ammo, mg: magOf(w), wmo: w.mode || "", wat: attList(w), wsk: w.skin || "", hot: w.hot ? 1 : 0, chg: w.chargeAt ? +Math.min(1, (t - w.chargeAt) / WEAPONS[w.type].charge).toFixed(2) : 0, sec: p.weapons.length > 1 ? 1 : 0,
         rl: w.reloadUntil ? +(w.reloadUntil - t).toFixed(2) : 0, rt: w.reloadUntil ? +(w.reloadUntil - w.reloadStart).toFixed(2) : 0, rtr: w.tried ? 1 : 0,
@@ -4543,7 +4538,7 @@ function onMessage(ws, raw) {
   switch (m.t) {
     case "in":
       p.keys = m.k | 0; p.a = Number.isFinite(+m.a) ? +m.a : 0; p.firing = !!m.f && !p.dead; p.ads = !!m.ads && !p.dead;
-      p.pt = typeof m.pt === "number" && isFinite(m.pt) ? clamp(m.pt, -1.5, 1.5) : null; p.rel = !!m.rel;
+      p.pt = typeof m.pt === "number" && isFinite(m.pt) ? clamp(m.pt, -1.5, 1.5) : 0;
       p.my = typeof m.my === "number" && isFinite(m.my) ? m.my : null; // the camera's yaw: what WASD walks by in 3D, so the server moves you the way your own prediction did
       p.fly = Array.isArray(m.fly) && m.fly.length === 4 ? m.fly.map((x) => clamp(+x || 0, -1, 1)) : null;
       break;
@@ -4671,7 +4666,7 @@ const server = Bun.serve({
     perMessageDeflate: true, // with send(..., true): snapshots shrink about 3x on the wire, map messages about 7x
     open(ws) {
       spectators.add(ws);
-      ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, shops: SHOPS, domeR: DOME_R, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, vehicles: VEHICLES, legends: LEGENDS, items: ITEMS, crops: CROPS, seedPack: SEED_PACK, gear: GEAR, cards: CARDS, locs: LOCS, stocks: STOCKS, cands: CANDIDATES, dust: DUST }), true);
+      ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, shops: SHOPS, domeR: DOME_R, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, legends: LEGENDS, items: ITEMS, crops: CROPS, seedPack: SEED_PACK, gear: GEAR, cards: CARDS, locs: LOCS, stocks: STOCKS, cands: CANDIDATES, dust: DUST }), true);
       ws.send(JSON.stringify(mapMsg()), true);
       ws.send(JSON.stringify({ t: "ck", reset: 1, seed: MAP_SEED, walls: WALLS.filter((w) => w.ck), bio: [...CHUNKS].filter(([, c]) => c.kind !== "town").map(([k, c]) => [...k.split(",").map(Number), c.kind]) }), true);
     },
