@@ -5,11 +5,12 @@ import { H, HEARTH, W, dist2, now, rand } from "./config.js";
 import { KEEPERS, PITCH, PLOTS, SHOP_SPOTS, shopBld } from "./map.js";
 import { freeSpot, game, players } from "./state.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 // ---------------------------------------------------------------- geometry
 // Story and Endless are played in an endless world: the town, and the wild past its hedge. Royale keeps its fence.
 world.gameReady = false; // the map is built before `game` exists
-export const OPEN = () => !world.gameReady || game.mode !== "royale";
+export const OPEN = () => !world.gameReady || rules().open; // the Royale keeps to the valley; every other mode has the wild past the hedge
 export const BW = () => (OPEN() ? Infinity : W), BH = () => (OPEN() ? Infinity : H);
 export const TOWN = { x: 0, y: 0, w: W, h: H };
 export const inTownXY = (x, y, pad = 0) => x > -pad && y > -pad && x < W + pad && y < H + pad;
@@ -88,6 +89,6 @@ export function npcTick(t, dt) {
     else { n.x += dx / d * sp; n.y += dy / d * sp; }
   }
 }
-function npcList() { if (game.mode === "adventure") return advFolk(); return game.mode !== "story" ? [] : world.NPC_POS.map((n) => ({ ...n, name: NPCS[n.id].name, role: NPCS[n.id].role, color: NPCS[n.id].color, hat: NPCS[n.id].hat, guest: NPCS[n.id].guest ? 1 : 0, quips: NPCS[n.id].quips || null, ride: NPCS[n.id].ride || null })); }
+function npcList() { if (game.mode === "adventure") return advFolk(); return !rules().townsfolk ? [] : world.NPC_POS.map((n) => ({ ...n, name: NPCS[n.id].name, role: NPCS[n.id].role, color: NPCS[n.id].color, hat: NPCS[n.id].hat, guest: NPCS[n.id].guest ? 1 : 0, quips: NPCS[n.id].quips || null, ride: NPCS[n.id].ride || null })); }
 export const WELL = { x: 1775, y: 1145 };
 export function mapMsg() { return { t: "map", map: { W, H, ver: world.mapVer, walls: world.WALLS.filter((w) => w.kind !== "built" && !w.ck), hearth: HEARTH, well: WELL, pitch: PITCH, plots: PLOTS.map((p) => ({ x: p.x, y: p.y })), seed: world.MAP_SEED, valley: world.VALLEY, npcs: npcList(), keepers: game.mode === "royale" ? [] : KEEPERS } }; }

@@ -12,7 +12,7 @@ import { advTick, advView } from "./adventure.js";
 import { bugAct, bugTick } from "./bugnight.js";
 import { buildTick, hurtPiece, rectHitsCircle } from "./building.js";
 import { DIRT, bile, fireTick, fires, hurtPlayer, hurtZombie, kick, killPlayer, podLand, projTick, reloadTick, respawnHeir, shoot, solved, startReload } from "./combat.js";
-import { COUNTDOWN, FAST, H, HEARTH, INFECT, INTRO_LEN, MV, NIGHT_LEN, SNAP_EVERY, STORY_ZONE_R, TICK_RATE, W, clamp, dist2, now, rand } from "./config.js";
+import { COUNTDOWN, FAST, H, HEARTH, INFECT, MV, NIGHT_LEN, SNAP_EVERY, STORY_ZONE_R, TICK_RATE, W, clamp, dist2, now, rand } from "./config.js";
 import { disasterTick } from "./disasters.js";
 import { dustTick, dustView } from "./dust.js";
 import { clubTick, invMsg, questReady, resolveElection } from "./economy.js";
@@ -30,6 +30,7 @@ import { PIECES, VEHICLES, attList, collide, crouched, freeSpot, fullName, game,
 import { breathe, vehOf, vehicleTick } from "./vehicles.js";
 import { ensureChunks, wildTick } from "./wild.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 // ---------------------------------------------------------------- tick
 world.lastT = now();
@@ -106,7 +107,7 @@ export function tick() {
   // players
   const alive = [...players.values()].filter((p) => !p.dead && !p.air);
   for (const p of players.values()) {
-    if (p.dead) { if (game.phase !== "over" && game.phase !== "intro" && !p.out && game.mode !== "royale" && t > p.respawnAt) respawnHeir(p); continue; }
+    if (p.dead) { if (game.phase !== "over" && game.phase !== "intro" && !p.out && rules().respawn && t > p.respawnAt) respawnHeir(p); continue; }
     if (p.air === "wait") continue;
     if (p.air === "bunker") { p.food = Math.max(10, p.food - dt * 0.05); continue; } // safe, and bored
     if (p.air === "plane") {
@@ -194,15 +195,15 @@ export function tick() {
     // bile and screams make you the only thing worth eating
     for (const p of alive) { let d = dist2(p, z); if (p.bile > t || (z.aggro === p.id && t < z.aggroUntil)) d /= 25; if (d < bd) { bd = d; target = p; } }
     if (target) bd = dist2(target, z);
-    if (!target && game.mode === "royale") { if (!z.wander || dist2(z, z.wander) < 900 || Math.random() < dt * 0.1) z.wander = freeSpot(20); }
+    if (!target && !rules().hearth) { if (!z.wander || dist2(z, z.wander) < 900 || Math.random() < dt * 0.1) z.wander = freeSpot(20); }
     if (!target && z.wild) { if (!z.wander || dist2(z, z.wander) < 900 || Math.random() < dt * 0.1) z.wander = { x: z.x + rand(-400, 400), y: z.y + rand(-400, 400) }; } // shambling about in the wild
-    let goal = target || (game.mode === "royale" || z.wild ? z.wander : hc);
+    let goal = target || (!rules().hearth || z.wild ? z.wander : hc);
     if (z.route) { // Dust II's terrorists walk their route to the site; the one with the bomb never stops for you
       while (z.route.length > 1 && dist2(z, z.route[0]) < 70 * 70) z.route.shift();
       if (z.bomb || !target || bd > 300 * 300) { goal = z.route[0]; if (z.bomb) target = null; }
     }
     // indoors and underground: follow the stairs and tunnels instead of scraping at a wall
-    if (target && game.mode !== "royale" && z.type !== "flyer") {
+    if (target && rules().hearth && z.type !== "flyer") {
       if ((tickN + z.id) % 15 === 0) z.nav = navGoal(z, target);
       else if (z.nav && (z.nav.x - z.x) ** 2 + (z.nav.y - z.y) ** 2 < (z.r + 20) ** 2 && Math.abs(z.nav.z - (z.z || 0)) < 46) z.nav = navGoal(z, target); // on to the next waypoint straight away
     } else { z.nav = null; z.navI = -1; }
@@ -244,7 +245,7 @@ export function tick() {
     if (t < (z.kd || 0)) sp = 0; // knocked flat by a slide
     z.x += (dx * sp + z.vx) * dt; z.y += (dy * sp + z.vy) * dt;
     z.vx *= Math.pow(0.03, dt); z.vy *= Math.pow(0.03, dt);
-    const touchingHearth = game.mode !== "royale" && z.z < HEARTH.z1 && z.x + z.r > HEARTH.x - 4 && z.x - z.r < HEARTH.x + HEARTH.w + 4 && z.y + z.r > HEARTH.y - 4 && z.y - z.r < HEARTH.y + HEARTH.h + 4;
+    const touchingHearth = rules().hearth && z.z < HEARTH.z1 && z.x + z.r > HEARTH.x - 4 && z.x - z.r < HEARTH.x + HEARTH.w + 4 && z.y + z.r > HEARTH.y - 4 && z.y - z.r < HEARTH.y + HEARTH.h + 4;
     // the dead climb: walls, roofs, towers. Not trees, not the Hearth, not your barricades (those they chew).
     const hit = MV.pushOut(z, z.r, near(z), BW(), BH(), z.z, zHeight(z));
     if (z.type !== "flyer" && (z.z || 0) > -8 && LAKE_SOLID.length) MV.pushOut(z, z.r, LAKE_SOLID, BW(), BH(), 0, 10); // the dead don't swim
@@ -323,8 +324,8 @@ export function tick() {
   }
   const bossWasAlive = world.zombies.some((z) => z.id === game.bossId);
   world.zombies = world.zombies.filter((z) => z.hp > 0);
-  if (game.phase === "night" && game.mode !== "adventure" && bossWasAlive && !world.zombies.some((z) => z.id === game.bossId)) {
-    if (game.mode === "story") endGame(true);
+  if (game.phase === "night" && rules().waves && bossWasAlive && !world.zombies.some((z) => z.id === game.bossId)) {
+    if (rules().bossWins) endGame(true);
     else { game.bossId = 0; game.ends = t + 8; world.events.push({ k: "banner", text: "BOSS DOWN", sub: "The sun is coming up. Enjoy it while it lasts." }); }
   }
   if ((game.phase === "night" || game.phase === "day") && game.hearth <= 0) { game.hearth = 0; endGame(false); }
@@ -339,8 +340,8 @@ function snapshot() {
   return {
     t: "s",
     g: { pp: CROP_KEYS.map((id) => cropPrice(null, id)), disc: game.mods.discount, mode: game.mode, cd: game.countdown ? Math.max(0, +(game.countdown - t).toFixed(1)) : -1, prev: game.prev,
-      intro: game.phase === "intro" ? { at: +(t - game.introT0).toFixed(2), len: INTRO_LEN[game.mode], skip: game.skip.size, cast: game.cast } : null,
-      deeds: game.mode === "story" ? Object.fromEntries(Object.keys(LEGENDS).map((k) => [k, Math.round(game.deeds[k])])) : null, legend: game.legend, now: game.mode === "story" ? legendOf(game.deeds) : null,
+      intro: game.phase === "intro" ? { at: +(t - game.introT0).toFixed(2), len: rules().intro, skip: game.skip.size, cast: game.cast } : null,
+      deeds: rules().story ? Object.fromEntries(Object.keys(LEGENDS).map((k) => [k, Math.round(game.deeds[k])])) : null, legend: game.legend, now: rules().story ? legendOf(game.deeds) : null,
       alive: [...players.values()].filter((p) => !p.out && !p.dead).length,
       zone: game.zone && (!OPEN() || game.phase === "night") ? [r(game.zone.cx), r(game.zone.cy), r(game.zone.r), r(game.zone.tcx), r(game.zone.tcy), r(game.zone.tr), game.zone.t0 > t ? r(game.zone.t0 - t) : -1] : null,
       drop: game.drop && t - game.drop.t0 < game.drop.dur + 3 ? [r(game.drop.x0), r(game.drop.y0), r(game.drop.x1), r(game.drop.y1), +dropPos(t).k.toFixed(3)] : null,
@@ -348,7 +349,7 @@ function snapshot() {
       ph: game.phase, n: game.night, uav: game.uav && game.uav > t ? Math.ceil(game.uav - t) : 0, left: game.ends === Infinity ? -1 : Math.max(0, r(game.ends - t)), hh: r(game.hearth), hm: game.hearthMax, res: game.result, boss: game.bossId, bk: game.bossKind, valley: world.VALLEY, fog: game.fog ? 1 : 0, solved: solved() ? 1 : 0, dino: game.dino ? 1 : 0, dd: game.dinoDay ? 1 : 0,
       du: dustView(t), bug: bugView(), adv: game.mode === "adventure" ? advView() : null,
       mk: SYMS.map((s) => +game.market.px[s].toFixed(2)), news: game.market.news.map((n) => [n.text, n.up ? 1 : 0]),
-      mayor: game.mayor, nuke: game.nuke ? [r(game.nuke.x), r(game.nuke.y), Math.max(0, +(game.nuke.at - t).toFixed(1))] : null, dome: game.dome && game.mode !== "royale" ? [game.dome.have, game.dome.cost] : null, waste: game.waste ? 1 : 0, hot: game.hot.map((h) => [r(h.x), r(h.y), r(h.r), h.lake ? 1 : 0]),
+      mayor: game.mayor, nuke: game.nuke ? [r(game.nuke.x), r(game.nuke.y), Math.max(0, +(game.nuke.at - t).toFixed(1))] : null, dome: game.dome && rules().nukes ? [game.dome.have, game.dome.cost] : null, waste: game.waste ? 1 : 0, hot: game.hot.map((h) => [r(h.x), r(h.y), r(h.r), h.lake ? 1 : 0]),
       elec: game.elec ? { c: game.elec.cands, v: Object.fromEntries(game.elec.votes), left: Math.max(0, r(game.elec.ends - t)) } : null,
       dis: game.disaster ? { k: game.disaster.kind, w: +game.disaster.water.toFixed(1), x: r(game.disaster.x || 0), y: r(game.disaster.y || 0), m: game.disaster.meteors.map((m) => [r(m.x), r(m.y), +(m.at - t).toFixed(2)]), left: r(game.disaster.until - t), st: game.disaster.st ? [r(game.disaster.st.x), r(game.disaster.st.y), game.disaster.st.busy ? 1 : 0] : null } : null },
     vote: v ? { title: v.ev.title, text: v.ev.text, ch: v.ev.choices.map((c) => [c.label, c.desc]), votes: Object.fromEntries(v.votes), left: Math.max(0, r(v.ends - t)) } : null,

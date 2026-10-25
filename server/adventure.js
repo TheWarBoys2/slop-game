@@ -22,7 +22,6 @@ import { world } from "./world.js";
 const ADV_BOARD = 3; // jobs on each board
 const ADV_ACTIVE = 4; // jobs the party can have on at once
 const ADV_TRAVEL = 25; // what the coach costs between signposts
-export const ADV_DAY = FAST ? 6 : 240, ADV_NIGHT = FAST ? 8 : 150; // longer days: there's walking to do
 world.ADV_KEEP = []; // the towns' patches, which the wild leaves alone
 export const bossName = (k) => BOSSES[k].name.toLowerCase().replace(/(^|\s)\w/g, (c) => c.toUpperCase()); // "The Drowned Mayor", not shouting it
 export const advTowns = () => (game.adv ? game.adv.towns : []);

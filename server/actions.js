@@ -21,6 +21,7 @@ import { CALL_IN, GUNS, SHOP, VEHICLES, addXp, collide, deed, feed, freeGround, 
 import { broadcastRaw } from "./tick.js";
 import { enterVehicle, exitVehicle, touchGlyph } from "./vehicles.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 // ---------------------------------------------------------------- actions
 export function interact(p) {
@@ -33,7 +34,7 @@ export function interact(p) {
   { const c = world.caches.find((q) => dist2(q, p) < 62 * 62); if (c) return startHack(p, c); }
   if (game.mode === "adventure" && advInteract(p)) return; // notice boards, signposts, the folk, signs of the beast
   if (game.disaster && game.disaster.st && dist2(game.disaster.st, p) < 85 * 85) return startFix(p);
-  { const b = bunkerWall(); if (b && rectHitsCircle(b, p, 46) && game.mode !== "royale") return enterBunker(p); }
+  { const b = bunkerWall(); if (b && rectHitsCircle(b, p, 46) && rules().town) return enterBunker(p); }
   let best = null, bd = 60 * 60;
   for (const c of world.crates) { const d = dist2(c, p); if (d < bd && (!c.vault || d < 26 * 26)) { bd = d; best = c; } } // vault loot: you have to be in the vault
   if (best && best.it) { // a crate of gear or supplies
@@ -56,16 +57,16 @@ export function interact(p) {
   }
   if (p.veh) return exitVehicle(p);
   for (const v of world.vehicles) if (dist2(v, p) < (VEHICLES[v.kind].r + 34) ** 2 && Math.abs((v.z || 0) - p.z) < 70 && enterVehicle(p, v)) return;
-  if (game.mode !== "royale") { const n = world.NPC_POS.filter((q) => dist2(q, p) < 70 * 70).sort((a, b) => dist2(a, p) - dist2(b, p))[0]; if (n) return openDlg(p, n.id); }
+  if (rules().town) { const n = world.NPC_POS.filter((q) => dist2(q, p) < 70 * 70).sort((a, b) => dist2(a, p) - dist2(b, p))[0]; if (n) return openDlg(p, n.id); }
   if (rectHitsCircle(HEARTH, p, 70) && bagCount(p.bag, "turnip") + bagCount(p.bag, "potato") >= 2) { // cook two vegetables into a stew
     for (let i = 0; i < 2; i++) bagTake(p.bag, bagCount(p.bag, "turnip") >= bagCount(p.bag, "potato") ? "turnip" : "potato");
     bagAdd(p.bag, "stew"); p.invDirty = true; deed("soil", 2);
     world.events.push({ k: "burn", x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 });
     return toast(p, "You cook your vegetables in the Hearth. Hearth stew! It's in your bag.", "#ffb070");
   }
-  if (game.mode !== "royale" && nearStall(p)) return openStall(p);
-  if (game.mode !== "royale") { const f = nearFitting(p); if (f) return useFitting(p, f); } // slot machines, the casino tables, the club bar
-  if (game.mode !== "royale" && inDust(p) && dustUse(p)) return; // Dust II: the CT radio starts a round; a planted bomb gets defused
+  if (rules().town && nearStall(p)) return openStall(p);
+  if (rules().town) { const f = nearFitting(p); if (f) return useFitting(p, f); } // slot machines, the casino tables, the club bar
+  if (rules().town && inDust(p) && dustUse(p)) return; // Dust II: the CT radio starts a round; a planted bomb gets defused
   { const sid = ["general", "armoury", "casino", "hearth"].filter((q) => nearShop(p, q)).sort((a, b) => boxDist(shopWall(a), p.x, p.y, 0) - boxDist(shopWall(b), p.x, p.y, 0))[0]; if (sid) return openShop(p, sid); } // the nearest counter
   if (LAKE && rectHitsCircle(LAKE, p, 40) && p.z < 20) { // fill a bottle at the water's edge
     if (!bagAdd(p.bag, "lakewater")) return toast(p, "Your bag is full.", "#f88");
@@ -93,7 +94,7 @@ export function interact(p) {
   } else toast(p, "Still growing...", "#bbb");
 }
 export function till(p) {
-  if (game.mode === "royale") return toast(p, "No time for farming. Somebody's shooting at you.", "#bbb");
+  if (!rules().town) return toast(p, "No time for farming. Somebody's shooting at you.", "#bbb");
   if (!p.gr || p.z > 4) return toast(p, "You can only till the ground.", "#bbb");
   const mineN = PLOTS.filter((pl) => pl.tilled === p.id).length, limit = hoeLimit(p.hoe);
   if (mineN >= limit) return toast(p, `Your ${HOES[p.hoe]} can't manage more than ${limit} plots. Upgrade it at Vex's store.`, "#f88");
@@ -127,10 +128,10 @@ export function giveWeapon(p, w) {
   p.weapons[slot] = w; p.active = slot;
 }
 export function buy(p, item) {
-  if (game.mode === "royale") return toast(p, "No shops in the Royale. Loot it or lose it.", "#f88");
+  if (!rules().town) return toast(p, "No shops in the Royale. Loot it or lose it.", "#f88");
   if (p.dead) return;
   const it = own(SHOP, item); if (!it) return;
-  const buyZone = (it.shop === "armoury" && inDust(p) && game.mode !== "royale") || (game.mode === "adventure" && advNearTrader(p, it.shop)); // Dust II's buy menu, and Adventure's merchants and smiths
+  const buyZone = (it.shop === "armoury" && inDust(p) && rules().town) || (game.mode === "adventure" && advNearTrader(p, it.shop)); // Dust II's buy menu, and Adventure's merchants and smiths
   if (!nearShop(p, it.shop) && !buyZone) return toast(p, `You'll have to go to ${SHOPS[it.shop].name} for that.`, "#f88");
   if (!shopIsOpen(it.shop) && !buyZone) return toast(p, SHOPS[it.shop].shut || "Shut.", "#f88");
   if (item.startsWith("dome")) return fundDome(p, it.cost);

@@ -9,6 +9,7 @@ import { BH, BW, near, nearXY } from "./geometry.js";
 import { LAKE_SOLID, boxDist, damageWall, inHouse } from "./map.js";
 import { collide, freeGround, fullName, game, newWeapon, players, price, toast, wading } from "./state.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 // ---- mech suits
 export function buyMech(p, item, cost) {
@@ -45,7 +46,7 @@ export function mechInstall(p, id) {
   p.pe.push({ k: "fitted" });
 }
 export function deployMech(p) {
-  if (game.mode === "royale") return toast(p, "No mechs in the Royale. It wouldn't be fair. It would be hilarious, but it wouldn't be fair.", "#bbb");
+  if (!rules().mechs) return toast(p, "No mechs in the Royale. It wouldn't be fair. It would be hilarious, but it wouldn't be fair.", "#bbb");
   if (!["day", "night"].includes(game.phase) || p.dead || p.air) return;
   const st = mechStats(p.mech), t = now();
   if (!st.ready) return toast(p, `Your mech needs ${mechMissing(p.mech)} before it can walk. Parts drop from big monsters, bug holes and Haddock's armoury.`, "#f88");

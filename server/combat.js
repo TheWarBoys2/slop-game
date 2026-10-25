@@ -15,6 +15,7 @@ import { ARM_SOAK, WEAK_MULT } from "./phases.js";
 import { PIECES, TRAIT_KEYS, VEHICLES, addGold, addXp, chat, crouched, deed, dmgMult, feed, fullName, game, lootType, magOf, maxHp, newWeapon, players, rayBox3, rayCyl, reloadTime, resetLoadout, sk, spreadOf, toast, traitOf, wName, zHeight } from "./state.js";
 import { exitVehicle, hurtVehicle, vehOf } from "./vehicles.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 // ---------------------------------------------------------------- combat
 export function hurtZombie(z, dmg, p, kind) {
@@ -29,7 +30,7 @@ export function hurtZombie(z, dmg, p, kind) {
       if (!p.kt.has(z.type)) { p.kt.add(z.type); p.st.ztypes = p.kt.size; }
       p.st.kills++;
       p.streak = (p.streak || 0) + 1;
-      if (p.streak % UAV_STREAK === 0 && game.mode !== "royale") { // killstreak: everyone sees every zombie for a while
+      if (p.streak % UAV_STREAK === 0 && rules().uav) { // killstreak: everyone sees every zombie for a while
         game.uav = now() + UAV_LEN;
         world.events.push({ k: "banner", text: "UAV ONLINE", sub: `${fullName(p)} is on a ${p.streak}-kill streak. Every zombie is on the map for ${UAV_LEN} seconds.` });
         feed(`${fullName(p)}: ${p.streak} kills without dying. UAV online.`, "#7fdcff");
@@ -65,7 +66,7 @@ export function bile(x, y, z, r) {
 export function hurtPlayer(v, dmg, attacker, cause) {
   if (v.dead || v.air || now() < v.dashUntil) return;
   if (attacker && attacker !== v) {
-    if (game.mode !== "royale") { dmg *= 0.35; attacker.heat += dmg; } // friendly fire is real, but softened
+    if (!rules().pvp) { dmg *= 0.35; attacker.heat += dmg; } // friendly fire is real, but softened
     attacker.st.dmg += dmg;
     attacker.pe.push({ k: "dmg", x: v.x, y: v.y - 20, z: Math.round(v.z + MV.HGT), v: Math.round(dmg), crit: false, ff: true });
   }
@@ -88,7 +89,7 @@ export function killPlayer(v, attacker, cause) {
   const prim = v.weapons.find((w) => w.type !== "pistol");
   if (prim) world.crates.push({ id: world.nextId++, x: v.x, y: v.y, w: { ...prim, ammo: magOf(prim), reloadUntil: 0, hot: false, tried: false, jam: false }, grave: true });
   const vStars = Math.min(5, Math.floor(v.heat / 40));
-  if (game.mode === "royale") {
+  if (!rules().respawn) { // out for good
     v.out = true;
     v.place = [...players.values()].filter((q) => !q.out).length + 1;
     if (attacker && attacker !== v) { attacker.st.pk++; addGold(attacker, 50, "Elimination"); addXp(attacker, 30); feed(`${fullName(attacker)} eliminated ${fullName(v)} (#${v.place})`, "#ff9090"); }
@@ -182,7 +183,7 @@ export function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
     if (q.veh) rode.add(vehOf(q));
     const f = 1 - (Math.max(0, d - 16) / r) * 0.7;
     if (q === owner) hurtPlayer(q, dmg * f * selfMult, null, cause);
-    else hurtPlayer(q, dmg * f * (owner && game.mode !== "royale" ? 0.4 : 0.6), owner, cause);
+    else hurtPlayer(q, dmg * f * (owner && !rules().pvp ? 0.4 : 0.6), owner, cause);
     // the push: mostly up, so aiming at your feet sends you flying (rocket jumping)
     const nx = (q.x - x) / (d || 1), ny = (q.y - y) / (d || 1), nz = (cz - z) / (d || 1), push = (q === owner ? 760 : 520) * f;
     kick(q, nx * push * 0.9, ny * push * 0.9, push * Math.max(0.55, nz));
@@ -366,7 +367,7 @@ export function shoot(p, w) {
       if (q === p || q.dead || q.veh || q.air) continue;
       const tt = cyl(q, 16, q.z, q.z + (crouched(q) ? 40 : MV.HGT)); if (tt < wallT) hits.push([tt, q, "p"]);
     }
-    if (game.mode === "royale") for (const v of world.vehicles) { if (v.id === p.veh) continue; const tt = cyl(v, VEHICLES[v.kind].r, v.z || 0, (v.z || 0) + 40); if (tt < wallT) hits.push([tt, v, "v"]); }
+    if (rules().pvp) for (const v of world.vehicles) { if (v.id === p.veh) continue; const tt = cyl(v, VEHICLES[v.kind].r, v.z || 0, (v.z || 0) + 40); if (tt < wallT) hits.push([tt, v, "v"]); }
     hits.sort((a, b) => a[0] - b[0]);
     let endT = wallT;
     if (def.boom) {

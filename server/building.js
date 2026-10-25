@@ -5,6 +5,7 @@ import { OPEN, WELL } from "./geometry.js";
 import { PLOTS } from "./map.js";
 import { GRID, PIECES, VEHICLES, deed, game, players, price, rayRect, toast } from "./state.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 // ---------------------------------------------------------------- base building
 export function rectHitsCircle(b, c, r) { const cx = clamp(c.x, b.x, b.x + b.w), cy = clamp(c.y, b.y, b.y + b.h); return (c.x - cx) ** 2 + (c.y - cy) ** 2 < r * r; }
@@ -24,7 +25,7 @@ export function placePiece(p, kind, x, y, free) {
   const hit = (o) => x < o.x + o.w && x + GRID > o.x && y < o.y + o.h && y + GRID > o.y;
   if (world.WALLS.some(hit) || world.builds.some(hit)) return fail("Something's already there.");
   if (PLOTS.some((pl) => rectHitsCircle(b, pl, 30))) return fail("Not on the crops!");
-  if (game.mode === "story" && world.NPC_POS.some((n) => rectHitsCircle(b, n, 22))) return fail("Somebody is standing there.");
+  if (rules().townsfolk && world.NPC_POS.some((n) => rectHitsCircle(b, n, 22))) return fail("Somebody is standing there.");
   if (rectHitsCircle(b, WELL, 30)) return fail("Not on the well.");
   if (def.solid) {
     if ([...players.values()].some((q) => !q.dead && !q.air && rectHitsCircle(b, q, 16))) return fail("Someone's in the way.");
@@ -47,14 +48,14 @@ export function buildTick(t) {
     const mid = { x: b.x + GRID / 2, y: b.y + GRID / 2 }, owner = players.get(b.owner) || null;
     if (b.bk === "spikes") {
       for (const z of world.zombies) if (z.hp > 0 && !z.burn && (z.spiked || 0) < t && rectHitsCircle(b, z, z.r * 0.8)) { z.spiked = t + 0.6; z.stun = Math.max(z.stun, t + 0.25); hurtZombie(z, 30 * game.mods.dmg, owner); b.uses--; }
-      if (game.mode === "royale") for (const q of players.values()) if (q !== owner && !q.dead && !q.air && !q.veh && (q.spiked || 0) < t && rectHitsCircle(b, q, 12)) { q.spiked = t + 0.8; hurtPlayer(q, 15, owner, "spiked"); b.uses--; }
+      if (rules().pvp) for (const q of players.values()) if (q !== owner && !q.dead && !q.air && !q.veh && (q.spiked || 0) < t && rectHitsCircle(b, q, 12)) { q.spiked = t + 0.8; hurtPlayer(q, 15, owner, "spiked"); b.uses--; }
       if (b.uses <= 0) breakPiece(b);
     } else if (b.bk === "turret" && t >= b.nextShot) {
       const def = PIECES.turret;
       let best = null, bd = def.range * def.range;
       const blocked = (e) => { const dx = e.x - mid.x, dy = e.y - mid.y, d = Math.hypot(dx, dy) || 1; for (const w of world.WALLS) if (w !== b && (w.z1 ?? 60) > 30 && rayRect(mid.x, mid.y, dx / d, dy / d, w) < d - 20) return true; return false; };
       for (const z of world.zombies) { const d = dist2(z, mid); if (z.hp > 0 && !z.burn && d < bd && !blocked(z)) { bd = d; best = z; } }
-      if (game.mode === "royale") for (const q of players.values()) { const d = dist2(q, mid); if (q !== owner && !q.dead && !q.air && d < bd && !blocked(q)) { bd = d; best = q; } }
+      if (rules().pvp) for (const q of players.values()) { const d = dist2(q, mid); if (q !== owner && !q.dead && !q.air && d < bd && !blocked(q)) { bd = d; best = q; } }
       if (best) {
         b.a = Math.atan2(best.y - mid.y, best.x - mid.x); b.nextShot = t + 1 / def.rate;
         const sx = mid.x + Math.cos(b.a) * 22, sy = mid.y + Math.sin(b.a) * 22;

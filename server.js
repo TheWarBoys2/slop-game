@@ -5,6 +5,7 @@ import { placeNpcs } from "./server/geometry.js";
 import { generateMap } from "./server/map.js";
 import { world } from "./server/world.js";
 import "./server/config.js";
+import "./server/modes.js";
 import "./server/map.js";
 import "./server/geometry.js";
 import "./server/state.js";

@@ -55,7 +55,7 @@ export function finishHack(p, m) {
     feed(`${fullName(p)} tripped a Slop-Tech alarm.`, "#ff6060");
     world.events.push({ k: "alarm", x: Math.round(c.x), y: Math.round(c.y) });
     shock(game.market, "SLOP", 0.03);
-    if (game.mode !== "royale" || true) { for (let i = 0; i < 3 + players.size; i++) spawnZombie(Math.random() < 0.3 ? "runner" : "walker", c); spawnZombie("screamer", c); }
+    { for (let i = 0; i < 3 + players.size; i++) spawnZombie(Math.random() < 0.3 ? "runner" : "walker", c); spawnZombie("screamer", c); }
     return toast(p, late ? "Too slow. ALARM." : "Access denied. ALARM.", "#ff6060");
   }
   if (c.term) return termHacked(p, c, solved);

@@ -18,6 +18,7 @@ import { seedCount, takeSeed } from "./map.js";
 import { spawnZombie } from "./phases.js";
 import { GRID, GUNS, addGold, addXp, collide, deed, feed, freeSpot, fullName, game, lootType, maxHp, newWeapon, players, toast, traitOf, wName } from "./state.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 // ---------------------------------------------------------------- story
 export const storyApi = {
@@ -67,13 +68,13 @@ export const storyApi = {
   impeach: () => { if (!game.mayor) return ""; const name = CANDIDATES[game.mayor].name; applyMayor(game.mayor, -1); game.mayor = null; return name; },
   calm: () => { for (const q of players.values()) q.stress = 0; },
   seeds: () => { for (const q of players.values()) { const id = pick(Object.keys(CROPS)); for (let i = 0; i < 3; i++) bagAdd(q.bag, "s_" + id); q.invDirty = true; } },
-  freeClue: () => { if (game.mode !== "story") return null; const id = Object.keys(CLUES).find((c) => !game.clues.has(c)); if (!id) return null; npcApi.clue(id); return clueText(id); },
+  freeClue: () => { if (!rules().story) return null; const id = Object.keys(CLUES).find((c) => !game.clues.has(c)); if (!id) return null; npcApi.clue(id); return clueText(id); },
 };
 // The town votes once a day. The ballot opens at dawn, stays open all day (change your mind as often as you like)
 // and is counted at dusk. Story days have their story question; other days get an ordinary town meeting.
 export function openVote(day) {
-  if (!players.size || game.mode === "royale" || game.mode === "adventure") return;
-  const ev = (game.mode === "story" && storyEvent(day, storyApi)) || townMeeting(day, storyApi);
+  if (!players.size || !rules().politics) return;
+  const ev = (rules().story && storyEvent(day, storyApi)) || townMeeting(day, storyApi);
   if (!ev) return;
   game.vote = { day, ev, votes: new Map(), ends: game.ends };
   world.events.push({ k: "vote" });
@@ -144,7 +145,7 @@ export function openDlg(p, npc) {
 }
 // ---------------------------------------------------------------- the mystery: accuse whoever poisoned the well
 export const clueText = (id) => culpritOf(game.flags).clue[id];
-const canAccuse = (npc) => game.mode === "story" && SUSPECTS[npc] && game.clues.size >= 3 && !solved() && !game.flags.wrong[npc];
+const canAccuse = (npc) => rules().story && SUSPECTS[npc] && game.clues.size >= 3 && !solved() && !game.flags.wrong[npc];
 function wrongAccuse(p, npc) {
   game.flags.wrong[npc] = true; game.aff[npc] = (game.aff[npc] || 0) - 2; addLove(p, npc, -15);
   game.mods.zCount *= 1.15;
@@ -186,7 +187,7 @@ function accuseNode(p, npc, node) {
 }
 // the main quest's next step, for the orange "?" and the compass
 export function mainQuest() {
-  if (game.mode !== "story" || game.phase === "lobby" || game.phase === "over" || game.flags.finalAt) return [];
+  if (!rules().story || game.phase === "lobby" || game.phase === "over" || game.flags.finalAt) return [];
   if (game.clues.size >= 3) return Object.keys(SUSPECTS).filter((id) => !game.flags.wrong[id]);
   const next = Object.keys(CLUE_FROM).find((id) => !game.clues.has(id));
   return next ? [CLUE_FROM[next]] : [];
