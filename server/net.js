@@ -38,6 +38,7 @@ import { PIECES, SHOP, VEHICLES, chat, feed, fullName, game, makePlayer, newWeap
 import { broadcastRaw, tick } from "./tick.js";
 import { exitVehicle } from "./vehicles.js";
 import { world } from "./world.js";
+import { MODE_RULES, rules } from "./modes.js";
 
 // the browser gets the same tables the server plays by (data.js), plus a few names from the other data modules
 const CLIENT_DATA = { ...DATA, GEAR_RAR, BOSS_NAMES: Object.fromEntries(Object.entries(BOSSES).map(([k, b]) => [k, b.name])) };
@@ -115,7 +116,7 @@ function onMessage(ws, raw) {
     case "elect": if (game.elec && Number.isInteger(m.i) && m.i >= 0 && m.i < game.elec.cands.length) game.elec.votes.set(p.id, m.i); break;
     case "cg": cardAct(p, m); break;
     case "stall": stallAct(p, m); break;
-    case "buyzone": if (inDust(p) && game.mode !== "royale" && !p.dead) p.pe.push({ k: "shop", sid: "armoury" }); break; // B on Dust II
+    case "buyzone": if (inDust(p) && rules().town && !p.dead) p.pe.push({ k: "shop", sid: "armoury" }); break; // B on Dust II
     case "reload": pressReload(p, p.weapons[p.active]); break;
     case "clean": cleanWeapon(p, m); break;
     case "hack": finishHack(p, m); break;
@@ -129,7 +130,7 @@ function onMessage(ws, raw) {
     // the host's lobby buttons: start now, ready or not, and show someone the door
     case "force": if (p.id === hostId() && (game.phase === "lobby" || game.phase === "over") && !game.force) { game.force = true; feed(`${fullName(p)} (host) is starting the game`, "#ffd34d"); } break;
     case "kick": { const q = players.get(+m.id); if (p.id === hostId() && q && q !== p) { feed(`${fullName(q)} was kicked by the host`, "#f88"); try { q.ws.send(JSON.stringify({ t: "kicked" })); q.ws.close(); } catch {} } } break;
-    case "mode": if (p.id === hostId() && (game.phase === "lobby" || game.phase === "over") && (m.m === "story" || m.m === "royale" || m.m === "endless" || m.m === "adventure")) { game.mode = m.m; broadcastRaw(JSON.stringify(mapMsg())); } break;
+    case "mode": if (p.id === hostId() && (game.phase === "lobby" || game.phase === "over") && own(MODE_RULES, m.m)) { game.mode = m.m; broadcastRaw(JSON.stringify(mapMsg())); } break;
     case "shout": doShout(p); break;
     case "elem": cycleElement(p); break;
     case "go": relieve(p); break;

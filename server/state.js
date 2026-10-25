@@ -3,15 +3,13 @@ import { ITEMS, GEAR, GEAR_KEYS, gearSum, bagAdd } from "../items.js";
 import { FEE, newMarket } from "../market.js";
 import { WEAPONS, MYTHIC, LOOT_TYPES, GUN_TYPES, RARITY_MULT, MODES, ATTACH, SKINS, CLASSES, BACKGROUNDS, TRAITS, ZTYPES } from "../data.js";
 import { STARTER } from "../cards.js";
-import { DINO_FORCE, FAST, H, HEARTH, MV, ROMAN, TEST_DMG, UNLUCKY, W, dist2, now, own, pick, rand } from "./config.js";
+import { FAST, H, HEARTH, MV, ROMAN, TEST_DMG, UNLUCKY, W, dist2, now, own, pick, rand } from "./config.js";
 import { endFix } from "./disasters.js";
 import { BH, BW, near } from "./geometry.js";
 import { PLOTS, inHouse } from "./map.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
-// Dinosaurs only come on DINOSAUR DAY: day 4 of the story, and in endless day 4 and every 7th day after.
-// That day (and its night) nothing but dinosaurs crawls out of the well, and fewer of them than a normal night.
-export function isDinoDay(day) { if (game.mode === "royale" || game.mode === "adventure") return false; if (DINO_FORCE) return day >= 2; return game.mode === "story" ? day === 4 : day >= 4 && (day - 4) % 7 === 0; }
 // ---------------------------------------------------------------- data (the tables themselves are in data.js)
 export const lootType = () => (Math.random() < 0.03 ? "laser" : pick(LOOT_TYPES)); // the Spartan Laser is a rare find
 export const GUNS = new Set(GUN_TYPES);
@@ -196,7 +194,7 @@ export function resetLoadout(p, fresh) {
   p.gren = Math.max(p.gren || 0, fresh ? 2 : 1); p.molo = Math.max(p.molo || 0, fresh ? 1 : 0); p.bile = 0; p.throwAt = 0;
   Object.assign(p, hearthSpawn(), { z: 0, vx: 0, vy: 0, vz: 0, gr: true });
 }
-export function deed(k, n) { if (game.mode === "story") game.deeds[k] += n; }
+export function deed(k, n) { if (rules().story) game.deeds[k] += n; }
 export function toast(p, text, color) { p.pe.push({ k: "toast", text, color }); }
 export function feed(text, color) { world.events.push({ k: "feed", text, color }); }
 export function chat(from, text, color) { world.events.push({ k: "chat", from, text, color }); }

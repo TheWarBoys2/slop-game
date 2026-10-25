@@ -32,7 +32,6 @@ export const UAV_STREAK = 10, UAV_LEN = 30; // kills without dying, and how long
 export const HEARTH_HEAL = 3, HEARTH_HEAL_R = 190; // hp per second, and how close you need to be
 export const ANTIDOTE_IMMUNE = 90; // seconds an antidote keeps you from being reinfected
 export const FORCE_SYM = process.env.SLOP_SYM || ""; // testing only
-export const INTRO_LEN = { story: FAST ? 3 : 25, royale: FAST ? 2 : 10, endless: FAST ? 3 : 25, adventure: FAST ? 2 : 10 };
 export const COUNTDOWN = FAST ? 1 : 4;
 // ---------------------------------------------------------------- helpers
 export const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);

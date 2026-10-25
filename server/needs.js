@@ -7,6 +7,7 @@ import { BALL, PITCH, PLOTS } from "./map.js";
 import { VEHICLES, addGold, deed, feed, fullName, game, maxHp, players, toast } from "./state.js";
 import { vehOf } from "./vehicles.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 // ---------------------------------------------------------------- infection and bodily needs
 // A bite can infect you. Infection cycles through symptoms until dawn, an antidote, or it wears off.
@@ -37,7 +38,7 @@ export function stress(p, dt, t) {
   else d -= 0.15;
   if (dist2(p, hc) < 260 * 260) d -= 0.3;
   // the Hearth's warmth slowly heals anyone resting close to it (not while you're being chewed on)
-  p.warm = game.mode !== "royale" && dist2(p, hc) < HEARTH_HEAL_R * HEARTH_HEAL_R && p.hp < maxHp(p) && t - (p.lastHurt || 0) > 3;
+  p.warm = rules().hearth && dist2(p, hc) < HEARTH_HEAL_R * HEARTH_HEAL_R && p.hp < maxHp(p) && t - (p.lastHurt || 0) > 3;
   if (p.warm) p.hp = Math.min(maxHp(p), p.hp + HEARTH_HEAL * dt);
   p.stress = clamp((p.stress || 0) + d * dt * (FAST ? 4 : 1), 0, 100);
   if (p.stress >= 60 && !p.warnStress) { p.warnStress = true; toast(p, "You're getting stressed. Your aim is shaking. Go and kick a football about.", "#ff9a60"); }

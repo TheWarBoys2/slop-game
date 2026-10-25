@@ -8,6 +8,7 @@ import { addRad } from "./needs.js";
 import { VEHICLES, addGold, collide, deed, feed, freeSpot, fullName, game, players, toast } from "./state.js";
 import { exitVehicle, hurtVehicle } from "./vehicles.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 // ---------------------------------------------------------------- the bunker and the bomb
 export function enterBunker(p) {
@@ -33,8 +34,7 @@ const RADIO = [
   "📻 Nothing but the long tone. Haddock says that means tonight. Is the Dome up?",
 ];
 export function radioNews() {
-  if (game.mode === "adventure") return;
-  if (game.mode === "royale" || !game.dome || game.dome.struck) return;
+  if (!rules().nukes || !game.dome || game.dome.struck) return;
   const d = game.dome, line = RADIO[Math.min(game.night, RADIO.length - 1)];
   setTimeout(() => {
     feed(line, "#9fe0ff");
@@ -63,7 +63,7 @@ export function fundDome(p, amt) {
   else feed(`${fullName(p)} put ${amt}g towards the Hearth Dome`, "#9fe0ff");
 }
 export function nukeWarn(why) {
-  if (game.nuke || game.mode === "royale" || !players.size) return;
+  if (game.nuke || !rules().nukes || !players.size) return;
   const hc = { x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 };
   let gz = freeSpot(40);
   for (let i = 0; i < 40; i++) { const c = freeSpot(40); if (Math.hypot(c.x - hc.x, c.y - hc.y) > 900) { gz = c; break; } }

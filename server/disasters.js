@@ -9,6 +9,7 @@ import { BALL, PLOTS, boxDist, damageWall } from "./map.js";
 import { addStress } from "./needs.js";
 import { addGold, addXp, deed, feed, freeSpot, fullName, game, players, toast } from "./state.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 const DISASTERS = {
   meteor: { name: "METEOR SHOWER", sub: "Get out of the red circles. Or get to the defence console and shoot them down [E].", len: 36, station: "orbital defence console", game: "Orbital Defence" },
@@ -101,7 +102,7 @@ export function finishFix(p, m) {
   shock(game.market, "FARM", 0.05, "Disaster averted. Farm shares rally.");
 }
 export function maybeDisaster() {
-  if (game.mode === "royale" || game.mode === "adventure" || game.disaster) return; // both play far from the valley the disasters hit
+  if (!rules().disasters || game.disaster) return;
   const forced = DISASTER && DISASTERS[DISASTER] ? DISASTER : DISASTER === "any" ? pick(Object.keys(DISASTERS)) : "";
   if (!forced && (game.night < 2 || Math.random() > DISASTER_CHANCE)) return;
   const kind = forced || pick(Object.keys(DISASTERS)), t = now(), D = DISASTERS[kind];

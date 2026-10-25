@@ -17,6 +17,7 @@ import { spawnZombie } from "./phases.js";
 import { dlgCtx, npcApi, openPack, sendDlg } from "./social.js";
 import { addGold, addXp, deed, feed, fullName, game, lootType, maxHp, newWeapon, players, sk, toast, wName } from "./state.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 // ---------------------------------------------------------------- Vex's Casino (in-game gold only)
 export function sendCasino(p) {
@@ -108,7 +109,7 @@ export function equip(p, slot, id) {
 }
 // ---------------------------------------------------------------- the produce stall
 export function openShop(p, sid) {
-  if (game.mode === "royale") return toast(p, "Boarded up for the Royale.", "#bbb");
+  if (!rules().town) return toast(p, "Boarded up for the Royale.", "#bbb");
   if (!shopIsOpen(sid)) return toast(p, SHOPS[sid].shut, "#bbb");
   p.pe.push({ k: "shop", sid });
 }
@@ -118,7 +119,7 @@ export function openStall(p) {
   p.pe.push({ k: "stall", sid: "produce" });
 }
 export function stallAct(p, m) {
-  if (game.mode === "royale" || p.dead || !nearStall(p)) return;
+  if (!rules().town || p.dead || !nearStall(p)) return;
   const k = KEEPERS.find((q) => q.sid === "produce");
   if (!stallOpen(k)) return toast(p, "The stall's shut for the night.", "#bbb");
   if (m.a === "buy") {
@@ -270,7 +271,7 @@ export function useFitting(p, f) {
 // Club Slop at night: dancing melts stress and puts you in the groove; Big Tony keeps wanted players out
 let CLUB = null, CLUB_FLOOR = null, CLUB_VER = -1;
 export function clubTick(p, t, dt) {
-  if (game.mode === "royale" || p.dead || game.phase !== "night") { p.danceT = 0; return; }
+  if (!rules().town || p.dead || game.phase !== "night") { p.danceT = 0; return; }
   if (CLUB_VER !== world.mapVer) { CLUB = shopBld("club"); CLUB_FLOOR = world.WALLS.find((w) => w.kind === "dance"); CLUB_VER = world.mapVer; }
   if (!CLUB || !inside(CLUB, p)) { p.danceT = 0; return; }
   if (p.heat >= 80) { // wanted: back out the door you go
@@ -290,7 +291,7 @@ export function clubTick(p, t, dt) {
 // ---------------------------------------------------------------- the stock exchange
 const IMPACT = 0.00015, SPREAD = 0.01; // 1000 shares move the price 15%
 export function trade(p, sym, n) {
-  if (!own(STOCKS, sym) || !n || game.mode === "royale" || p.dead) return;
+  if (!own(STOCKS, sym) || !n || !rules().town || p.dead) return;
   n = Math.trunc(clamp(n, -1000, 1000));
   // your own order moves the price as it fills: you pay the average of the climb (or take the average of the fall), and the price
   // lands at the end of it straight away, so a big buy can't be sold back into its own rise. Plus a 1% spread each way, even under Vex.
@@ -319,7 +320,7 @@ export function dividends() {
 }
 // ---------------------------------------------------------------- elections
 export function openElection() {
-  if (game.mode === "royale" || game.mode === "adventure" || !players.size || game.elec) return; // Adventure has no mayor: the towns run themselves
+  if (!rules().politics || !players.size || game.elec) return;
   game.elec = { cands: ballot(game.mayor), votes: new Map(), ends: game.ends };
   world.events.push({ k: "feed", text: "It's election day too: the mayor's race is on today's ballot [N].", color: "#9fc0ff" });
 }

@@ -10,6 +10,7 @@ import { lootRarity } from "./phases.js";
 import { game, lootType, newWeapon, price } from "./state.js";
 import { broadcastRaw } from "./tick.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 export const PLOTS = [];
 for (const baseX of [1330, 1890]) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++)
@@ -33,7 +34,7 @@ let CASINO = null;
 export const shopWall = (sid) => sid === "hearth" ? HEARTH : world.WALLS.find((w) => w.kind === "till" && w.sid === sid); // the counter you stand at
 export const shopBld = (sid) => world.WALLS.find((w) => w.kind === "shop" && w.sid === sid); // the whole building
 export let SHOP_SPOTS = {}; // where each keeper stands behind their counter (town.js)
-export const shopIsOpen = (sid) => game.mode !== "royale" && (SHOPS[sid].hours !== "day" || game.phase !== "night");
+export const shopIsOpen = (sid) => rules().town && (SHOPS[sid].hours !== "day" || game.phase !== "night");
 export const inside = (b, e) => !!b && e.x > b.x && e.x < b.x + b.w && e.y > b.y && e.y < b.y + b.h && (e.z || 0) < (b.z1 || 100) - 20;
 export const nearShop = (p, sid) => { const w = shopWall(sid); return (!!w && rectHitsCircle(w, p, sid === "hearth" ? 80 : 84)) || (sid === "casino" && inside(shopBld("casino"), p)); }; // anywhere on the casino floor counts
 export let KEEPERS = [{ id: "giles", sid: "produce", name: "Old Giles", role: "Produce stall. Buys crops, sells seeds.", color: "#8a6a3a", hat: "flatcap", x: STALL.x + STALL.w / 2, y: STALL.y - 22, hours: "day" }];

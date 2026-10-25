@@ -12,6 +12,7 @@ import { spawnZombie } from "./phases.js";
 import { VEHICLES, addGold, addXp, collide, feed, freeGround, fullName, game, players, toast } from "./state.js";
 import { hurtVehicle } from "./vehicles.js";
 import { world } from "./world.js";
+import { rules } from "./modes.js";
 
 // ---------------------------------------------------------------- Bug Night and mech suits (the data is in bugs.js)
 // Bug Night: story night 3, Endless night 3 and every 6th after, and any night Comrade Posad's saucers feel like it.
@@ -22,9 +23,9 @@ const BUG_FORCE = !!process.env.SLOP_BUGS; // testing only: every night is Bug N
 for (const [id, m] of Object.entries(MECH_PARTS)) ITEMS["mp_" + id] = { name: m.name, kind: "mech", icon: m.icon, desc: `Mech part (${m.slot}). ${m.desc} Use it to bolt it on.` };
 const hearthC = () => ({ x: HEARTH.x + HEARTH.w / 2, y: HEARTH.y + HEARTH.h / 2 });
 export function isBugNight(n) {
-  if (game.mode !== "story" && game.mode !== "endless") return false;
+  if (!rules().waves) return false;
   if (BUG_FORCE || game.forceBugs) { game.forceBugs = false; return true; }
-  if (n === 3 || (game.mode === "endless" && n > 3 && (n - 3) % 6 === 0)) return true;
+  if (rules().bugNight(n)) return true;
   return game.mayor === "posad" && n >= 2 && Math.random() < 0.3; // the saucers bring them
 }
 function bugSpot(minD, maxD, avoid) {
