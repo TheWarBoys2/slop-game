@@ -20,6 +20,9 @@ var R3D = (function () {
     if (!m) { m = new T.MeshLambertMaterial({ color, emissive: emissive || 0x000000, ...(extra || {}) }); matCache.set(key, m); }
     return m;
   }
+  // scenery shapes every tree and rock shares (sized per wall by scale), so a forest is one set of buffers, not one per tree
+  const geoCache = new Map();
+  function sharedGeo(key, make) { let g = geoCache.get(key); if (!g) { g = make(); g.userData.shared = true; geoCache.set(key, g); } return g; }
   let GLASS = null; // office glazing: see-through, and lit from both sides
   const basic = (color, opacity) => new T.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
   function mesh(geo, m, x = 0, y = 0, z = 0) { const o = new T.Mesh(geo, m); o.position.set(x, y, z); return o; }
@@ -533,17 +536,18 @@ var R3D = (function () {
       tgt.add(at(box(w.w, w.h, hgt, mat(0x8c867a)), cx, cy, z0 + hgt / 2));
       tgt.add(at(box(w.w * 0.6, w.h + 2, 6, mat(0x5f7a3a)), cx - w.w * 0.15, cy, z1 - 2)); // moss on top
     } else if (w.kind === "rock") {
-      const r = mesh(new T.DodecahedronGeometry(1, 0), mat(w.stone ? 0x9a9690 : 0x7d7d80));
+      const r = mesh(sharedGeo("rock", () => new T.DodecahedronGeometry(1, 0)), mat(w.stone ? 0x9a9690 : 0x7d7d80));
       if (w.stone) { tgt.add(at(box(w.w, w.h, hgt, mat(0x9a9690)), cx, cy, z0 + hgt / 2)); level.add(tgt); if (w.id !== undefined) wallObjs.set(w.id, tgt); tgt.userData.ck = w.ck ? [cx, cy] : null; return; }
       r.scale.set(w.w * 0.62, hgt * 0.95, w.h * 0.62); at(r, cx, cy, z0 + hgt * 0.45); r.rotation.y = (w.x * 7) % 3; tgt.add(r);
     } else if (w.kind === "tree") {
-      tgt.add(at(mesh(new T.CylinderGeometry(6, 9, 120, 8), mat(0x5a3a1e)), cx, cy, 60));
+      tgt.add(at(mesh(sharedGeo("trunk", () => new T.CylinderGeometry(6, 9, 120, 8)), mat(0x5a3a1e)), cx, cy, 60));
+      const scaled = (o, r) => { o.scale.set(r, 1, r); return o; };
       if (w.fruit) { // a squat apple tree
-        tgt.add(at(mesh(new T.SphereGeometry(w.w * 0.75, 10, 8), mat(0x4a8a34)), cx, cy, 140));
-        for (let i = 0; i < 6; i++) { const a = i * 1.05 + (w.x % 7); tgt.add(at(mesh(new T.SphereGeometry(5, 6, 5), mat(0xd23a2a)), cx + Math.cos(a) * w.w * 0.6, cy + Math.sin(a) * w.w * 0.6, 125 + (i % 3) * 14)); }
+        const crown = mesh(sharedGeo("crown", () => new T.SphereGeometry(1, 10, 8)), mat(0x4a8a34)); crown.scale.setScalar(w.w * 0.75); tgt.add(at(crown, cx, cy, 140));
+        for (let i = 0; i < 6; i++) { const a = i * 1.05 + (w.x % 7); tgt.add(at(mesh(sharedGeo("apple", () => new T.SphereGeometry(5, 6, 5)), mat(0xd23a2a)), cx + Math.cos(a) * w.w * 0.6, cy + Math.sin(a) * w.w * 0.6, 125 + (i % 3) * 14)); }
       } else {
-        tgt.add(at(mesh(new T.ConeGeometry(w.w * 0.9, 130, 9), mat(w.dark ? 0x1f4220 : 0x2f5e28)), cx, cy, 150));
-        tgt.add(at(mesh(new T.ConeGeometry(w.w * 0.65, 100, 9), mat(w.dark ? 0x28512a : 0x3b7431)), cx, cy, 215));
+        tgt.add(at(scaled(mesh(sharedGeo("cone1", () => new T.ConeGeometry(1, 130, 9)), mat(w.dark ? 0x1f4220 : 0x2f5e28)), w.w * 0.9), cx, cy, 150));
+        tgt.add(at(scaled(mesh(sharedGeo("cone2", () => new T.ConeGeometry(1, 100, 9)), mat(w.dark ? 0x28512a : 0x3b7431)), w.w * 0.65), cx, cy, 215));
       }
     } else if (w.kind === "fence") {
       tgt.add(at(box(w.w, w.h * 0.4, 8, mat(0x94693c)), cx, cy, 26));
@@ -573,7 +577,7 @@ var R3D = (function () {
   // walls can be destroyed (and rubble appears) without rebuilding the whole level
   function syncWalls(MAP) {
     const ids = new Set(MAP.walls.map((w) => w.id));
-    for (const [id, o] of wallObjs) if (!ids.has(id)) { level.remove(o); o.traverse((c) => { if (c.geometry) c.geometry.dispose(); }); wallObjs.delete(id); }
+    for (const [id, o] of wallObjs) if (!ids.has(id)) { level.remove(o); o.traverse((c) => { if (c.geometry && !c.geometry.userData.shared) c.geometry.dispose(); }); wallObjs.delete(id); }
     for (const w of MAP.walls) if (w.id !== undefined && !wallObjs.has(w.id)) addWall(w);
   }
 

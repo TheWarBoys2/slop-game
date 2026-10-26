@@ -7,6 +7,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ctSpawn } from "../dust2.js";
+import snapJs from "../public/snap.js" with { type: "text" };
+const SNAP = new Function(snapJs + "\nreturn SNAP;")(); // snapshots arrive as deltas; this fills them back in
 
 const ROOT = path.resolve(import.meta.dir, "..");
 const BASE_PORT = Number(process.env.PLAYTEST_PORT || 7790);
@@ -87,7 +89,7 @@ function probeClient(port, probes, mode) {
     if (m.t === "map") { counts.map++; mapWalls = m.map.walls; hearth = m.map.hearth; }
     if (m.t === "wd") for (const id of m.gone) goneIds.add(id);
     if (m.t !== "s") return;
-    S = m; me = m.me;
+    S = SNAP.merge(S, m); me = m.me;
     if (["day", "night", "royale"].includes(m.g.ph)) { if (!out.t0) { out.t0 = Date.now(); out.bytes = 0; out.wire0 = wire.down; } out.t1 = Date.now(); out.wire1 = wire.down; out.maxSnap = Math.max(out.maxSnap, raw.length); }
     for (const e of m.e) events.push(e);
     for (const e of m.pe || []) if (e.k === "toast") toasts.push(e.text);

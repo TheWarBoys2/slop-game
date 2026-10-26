@@ -1,5 +1,6 @@
 // The game loop: one tick of the whole world.
 import { BOSSES } from "../story.js";
+import snapJs from "../public/snap.js" with { type: "text" };
 import { NPCS, QUESTS } from "../npcs.js";
 import { COSMETICS } from "../casino.js";
 import { LEGENDS, legendOf } from "../legend.js";
@@ -394,13 +395,20 @@ export function broadcastRaw(s) {
   for (const p of players.values()) { try { p.ws.send(s, true); } catch {} }
   for (const ws of spectators) { try { ws.send(s, true); } catch {} }
 }
+// Each snapshot goes out as a delta against the last one (see public/snap.js). A connection's first snapshot is a
+// full one, and every few seconds everyone gets a full one anyway, so nothing can drift for long.
+const SNAP = new Function(snapJs + "\nreturn SNAP;")(), snapLast = {};
+let snapN = 0;
 function broadcast() {
-  const base = JSON.stringify(snapshot()).slice(1);
+  const full = snapshot(), key = ++snapN % 150 === 0;
+  const base = JSON.stringify(SNAP.diff(full, snapLast)).slice(1);
+  let fullBase = null; const fullFor = (ws) => { if (!key && !ws.data.fresh) return base; ws.data.fresh = false; return (fullBase ??= JSON.stringify({ full: 1, ...full }).slice(1)); };
   world.events = [];
   for (const p of players.values()) {
     if (p.invDirty || tickN % 30 === 0) { p.invDirty = false; p.pe.push(invMsg(p)); } // the bag, gear, needs and shares
-    try { p.ws.send(`{"me":${p.id},"pe":${JSON.stringify(p.pe)},${base}`, true); } catch {}
+    try { p.ws.send(`{"me":${p.id},"pe":${JSON.stringify(p.pe)},${fullFor(p.ws)}`, true); } catch {}
     p.pe = [];
   }
-  for (const ws of spectators) { try { ws.send(`{"me":0,"pe":[],${base}`, true); } catch {} }
+  for (const ws of spectators) { try { ws.send(`{"me":0,"pe":[],${fullFor(ws)}`, true); } catch {} }
+  if (snapN % 900 === 0) for (const k in snapLast) if (/^p\d/.test(k) && !players.has(+k.slice(1, k.indexOf(".")))) delete snapLast[k]; // players who left
 }
