@@ -1,7 +1,8 @@
 // Base building: walls, spikes, turrets, lamps.
 import { hurtPlayer, hurtZombie } from "./combat.js";
 import { H, TEST_DMG, W, clamp, dist2, own } from "./config.js";
-import { OPEN, WELL } from "./geometry.js";
+import { OPEN, WELL, wallsAlong } from "./geometry.js";
+import { zombiesNear } from "./zgrid.js";
 import { PLOTS } from "./map.js";
 import { GRID, PIECES, VEHICLES, deed, game, players, price, rayRect, toast } from "./state.js";
 import { world } from "./world.js";
@@ -53,8 +54,8 @@ export function buildTick(t) {
     } else if (b.bk === "turret" && t >= b.nextShot) {
       const def = PIECES.turret;
       let best = null, bd = def.range * def.range;
-      const blocked = (e) => { const dx = e.x - mid.x, dy = e.y - mid.y, d = Math.hypot(dx, dy) || 1; for (const w of world.WALLS) if (w !== b && (w.z1 ?? 60) > 30 && rayRect(mid.x, mid.y, dx / d, dy / d, w) < d - 20) return true; return false; };
-      for (const z of world.zombies) { const d = dist2(z, mid); if (z.hp > 0 && !z.burn && d < bd && !blocked(z)) { bd = d; best = z; } }
+      const blocked = (e) => { const dx = e.x - mid.x, dy = e.y - mid.y, d = Math.hypot(dx, dy) || 1; for (const w of wallsAlong(mid.x, mid.y, dx / d, dy / d, d)) if (w !== b && (w.z1 ?? 60) > 30 && rayRect(mid.x, mid.y, dx / d, dy / d, w) < d - 20) return true; return false; };
+      for (const z of zombiesNear(mid.x, mid.y, def.range)) { const d = dist2(z, mid); if (z.hp > 0 && !z.burn && d < bd && !blocked(z)) { bd = d; best = z; } }
       if (rules().pvp) for (const q of players.values()) { const d = dist2(q, mid); if (q !== owner && !q.dead && !q.air && d < bd && !blocked(q)) { bd = d; best = q; } }
       if (best) {
         b.a = Math.atan2(best.y - mid.y, best.x - mid.x); b.nextShot = t + 1 / def.rate;
