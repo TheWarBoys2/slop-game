@@ -1,4 +1,6 @@
 // Headless bot playtest: `bun tools/bots.js [url] [count]`. Bots wander, shoot the nearest zombie, farm and shop.
+import snapJs from "../public/snap.js" with { type: "text" };
+const SNAP = new Function(snapJs + "\nreturn SNAP;")(); // snapshots arrive as deltas; this fills them back in
 const url = process.argv[2] || "ws://localhost:7777/ws";
 const count = Number(process.argv[3] || 4);
 const classes = ["fighter", "rogue", "wizard", "farmer", "gaffer"];
@@ -10,7 +12,7 @@ for (let i = 0; i < count; i++) {
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     if (m.t !== "s") return;
-    S = m; me = m.me;
+    S = SNAP.merge(S, m); me = m.me;
     seen.phases.add(m.g.ph + m.g.n); seen.hh = m.g.hh; seen.maxZ = Math.max(seen.maxZ, m.z.length);
     if (m.g.ph === "over" && !seen.over) { seen.over = m.stats; seen.ending = m.ending; }
     const mp = m.p.find((q) => q.id === m.me); if (mp) seen.lv = Math.max(seen.lv, mp.lv);

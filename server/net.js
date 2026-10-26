@@ -1,7 +1,20 @@
 // The network: snapshots, messages from players, serving the client, and bug reports.
 import indexHtml from "../public/index.html" with { type: "text" };
-import gameSrc from "../public/game.js" with { type: "text" };
+import client1 from "../public/client/01-core.js" with { type: "text" };
+import client2 from "../public/client/02-effects.js" with { type: "text" };
+import client3 from "../public/client/03-input.js" with { type: "text" };
+import client4 from "../public/client/04-menus.js" with { type: "text" };
+import client5 from "../public/client/05-audio.js" with { type: "text" };
+import client6 from "../public/client/06-ui.js" with { type: "text" };
+import client7 from "../public/client/07-movement.js" with { type: "text" };
+import client8 from "../public/client/08-cutscene.js" with { type: "text" };
+import client9 from "../public/client/09-view.js" with { type: "text" };
+import client10 from "../public/client/10-render.js" with { type: "text" };
+import client11 from "../public/client/11-screens.js" with { type: "text" };
+import client12 from "../public/client/12-music.js" with { type: "text" };
+const gameSrc = [client1, client2, client3, client4, client5, client6, client7, client8, client9, client10, client11, client12].join("\n"); // the browser client, one file per part, joined in order
 import moveJs from "../public/move.js" with { type: "text" };
+import snapJs from "../public/snap.js" with { type: "text" };
 import r3dJs from "../public/r3d.js" with { type: "text" };
 import threeJs from "../public/vendor/three.module.min.js" with { type: "text" };
 import os from "node:os";
@@ -42,7 +55,7 @@ import { MODE_RULES, rules } from "./modes.js";
 
 // the browser gets the same tables the server plays by (data.js), plus a few names from the other data modules
 const CLIENT_DATA = { ...DATA, GEAR_RAR, BOSS_NAMES: Object.fromEntries(Object.entries(BOSSES).map(([k, b]) => [k, b.name])) };
-const gameJs = "var DATA = " + JSON.stringify(CLIENT_DATA) + ";\n" + moveJs + "\n" + r3dJs + "\n" + gameSrc;
+const gameJs = "var DATA = " + JSON.stringify(CLIENT_DATA) + ";\n" + moveJs + "\n" + snapJs + "\n" + r3dJs + "\n" + gameSrc;
 // ---------------------------------------------------------------- network
 export const spectators = new Set();
 let msgErrs = 0, msgErrAt = 0;
@@ -191,6 +204,7 @@ const server = Bun.serve({
   websocket: {
     perMessageDeflate: true, // with send(..., true): snapshots shrink about 3x on the wire, map messages about 7x
     open(ws) {
+      ws.data.fresh = true; // its first snapshot is a full one; deltas after that
       spectators.add(ws);
       ws.send(JSON.stringify({ t: "hello", wheel: WHEEL, cosmetics: COSMETICS, freeHats: FREE_HATS, shop: SHOP, shops: SHOPS, domeR: DOME_R, enhCost: ENH_COST, enhChance: ENH_CHANCE, pieces: PIECES, legends: LEGENDS, items: ITEMS, crops: CROPS, seedPack: SEED_PACK, gear: GEAR, cards: CARDS, locs: LOCS, stocks: STOCKS, cands: CANDIDATES, dust: DUST }), true);
       ws.send(JSON.stringify(mapMsg()), true);
