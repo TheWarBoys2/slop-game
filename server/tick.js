@@ -31,6 +31,7 @@ import { breathe, vehOf, vehicleTick } from "./vehicles.js";
 import { ensureChunks, wildTick } from "./wild.js";
 import { world } from "./world.js";
 import { rules } from "./modes.js";
+import { zgridStale, zombiesNear } from "./zgrid.js";
 
 // ---------------------------------------------------------------- tick
 world.lastT = now();
@@ -40,6 +41,7 @@ export function tick() {
   const dt = Math.min(0.1, t - world.lastT);
   world.lastT = t;
   tickN++;
+  zgridStale();
 
   // lobby: the game starts once everyone is ready
   if (game.phase === "lobby" || game.phase === "over") {
@@ -317,8 +319,9 @@ export function tick() {
     }
   }
   // separation
-  for (let i = 0; i < world.zombies.length; i++) for (let j = i + 1; j < world.zombies.length; j++) {
-    const a = world.zombies[i], b = world.zombies[j];
+  zgridStale(); // they've all moved
+  for (const a of world.zombies) for (const b of zombiesNear(a.x, a.y, a.r + 60)) {
+    if (b.id <= a.id) continue; // each pair once
     const dx = b.x - a.x, dy = b.y - a.y, rr = a.r + b.r, d2 = dx * dx + dy * dy;
     if (d2 < rr * rr && d2 > 0.01) { const d = Math.sqrt(d2), push = (rr - d) / 2; a.x -= dx / d * push; a.y -= dy / d * push; b.x += dx / d * push; b.y += dy / d * push; }
   }

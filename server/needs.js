@@ -8,6 +8,7 @@ import { VEHICLES, addGold, deed, feed, fullName, game, maxHp, players, toast } 
 import { vehOf } from "./vehicles.js";
 import { world } from "./world.js";
 import { rules } from "./modes.js";
+import { nearXY } from "./geometry.js";
 
 // ---------------------------------------------------------------- infection and bodily needs
 // A bite can infect you. Infection cycles through symptoms until dawn, an antidote, or it wears off.
@@ -59,7 +60,7 @@ export function ballTick(t, dt) {
   const nx = BALL.x + BALL.vx * dt, ny = BALL.y + BALL.vy * dt, nz = BALL.z + BALL.vz * dt;
   if (nx < 10 || nx > W - 10 || insideWall(nx, BALL.y, nz + 8)) BALL.vx = -BALL.vx * 0.7; else BALL.x = nx;
   if (ny < 10 || ny > H - 10 || insideWall(BALL.x, ny, nz + 8)) BALL.vy = -BALL.vy * 0.7; else BALL.y = ny;
-  const fl = MV.floorAt(BALL.x, BALL.y, 6, BALL.z + 4, world.WALLS).h;
+  const fl = MV.floorAt(BALL.x, BALL.y, 6, BALL.z + 4, nearXY(BALL.x, BALL.y)).h;
   if (nz <= fl) { BALL.z = fl; BALL.vz = Math.abs(BALL.vz) > 80 ? -BALL.vz * 0.55 : 0; const f = Math.pow(0.35, dt); BALL.vx *= f; BALL.vy *= f; } else BALL.z = nz;
   for (const p of players.values()) {
     if (p.dead || p.air || p.veh || t < (p.kickAt || 0)) continue;

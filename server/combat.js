@@ -9,6 +9,7 @@ import { hurtPiece } from "./building.js";
 import { H, HEARTH, MV, UAV_LEN, UAV_STREAK, W, clamp, dist2, now, pick, rand } from "./config.js";
 import { endFix } from "./disasters.js";
 import { OPEN, near, nearXY, wallsAlong } from "./geometry.js";
+import { zombiesNear } from "./zgrid.js";
 import { BALL, PLOTS, WOODEN, boxDist, damageWall } from "./map.js";
 import { addStress } from "./needs.js";
 import { ARM_SOAK, WEAK_MULT } from "./phases.js";
@@ -166,7 +167,7 @@ export function explode(x, y, z, r, dmg, owner, cause, selfMult = 0.3) {
   world.events.push({ k: "boom", x: Math.round(x), y: Math.round(y), z: Math.round(z), r: Math.round(r) });
   const d3 = (ex, ey, ez) => Math.sqrt((ex - x) ** 2 + (ey - y) ** 2 + (ez - z) ** 2);
   const below = underground({ x, y, z }), otherSide = (e) => underground(e) !== below;
-  for (const zb of world.zombies) {
+  for (const zb of zombiesNear(x, y, r)) {
     if (zb.hp <= 0 || otherSide(zb)) continue;
     const d = Math.max(0, d3(zb.x, zb.y, (zb.z || 0) + zHeight(zb) / 2) - zb.r);
     if (d >= r) continue;
@@ -281,10 +282,10 @@ export function fireTick(t, dt) {
     }
     const owner = players.get(f.owner) || null;
     const inCell = (e, r, ez) => Math.abs(e.x - f.x) < FIRE_CELL / 2 + r * 0.5 && Math.abs(e.y - f.y) < FIRE_CELL / 2 + r * 0.5 && Math.abs((ez || 0) - f.z) < 26;
-    for (const zb of world.zombies) if (zb.hp > 0 && zb.type !== "flyer" && inCell(zb, zb.r, zb.z)) { zb.fireUntil = t + 3; zb.fireBy = f.owner; }
+    for (const zb of zombiesNear(f.x, f.y, FIRE_CELL)) if (zb.hp > 0 && zb.type !== "flyer" && inCell(zb, zb.r, zb.z)) { zb.fireUntil = t + 3; zb.fireBy = f.owner; }
     for (const q of players.values()) if (!q.dead && !q.air && !q.veh && inCell(q, 16, q.z)) { q.fireUntil = t + 1.5; q.fireBy = q.id === f.owner ? 0 : f.owner; }
     const once = new Set();
-    for (const w of [...world.WALLS]) if (w.hp && WOODEN.has(w.kind) && boxDist(w, f.x, f.y, f.z) < 26 && !once.has(w.kind === "hwall" ? w.hid : w.id) && once.add(w.kind === "hwall" ? w.hid : w.id)) {
+    for (const w of [...nearXY(f.x, f.y)]) if (w.hp && WOODEN.has(w.kind) && boxDist(w, f.x, f.y, f.z) < 26 && !once.has(w.kind === "hwall" ? w.hid : w.id) && once.add(w.kind === "hwall" ? w.hid : w.id)) {
       damageWall(w, 60 * step);
       if (Math.random() < 0.15) ignite(f.x + (w.x + w.w / 2 - f.x) * 0.2, f.y + (w.y + w.h / 2 - f.y) * 0.2, f.z + 20, f.owner, Math.max(0, f.gen - 1), true);
     }
