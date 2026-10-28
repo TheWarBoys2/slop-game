@@ -69,6 +69,7 @@ Auto = a playtest scenario fails if it breaks. Bots = the bots exercise it, and 
 | --- | --- |
 | First and third person 3D view, HUD, minimap, compass | Manual (headless screenshot, see the memory note on the camera rig) |
 | Radial menus, every screen (bag, skills, journal, cards, market, wardrobe, options) | Manual |
+| Interface size and HUD opacity (Options), rebindable keys (Options > Controls), hold F1 cheat sheet | Manual (headless screenshot at 75% and 140%) |
 | Positional audio, music, NPC voices | Manual |
 | Gamepad and flight stick | Manual |
 | Windows and Linux builds | Auto: the release workflow smoke-tests both |

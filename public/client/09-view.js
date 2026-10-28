@@ -166,7 +166,7 @@ function rayWorld(o, d, maxT, skipId, boxesOnly) {
 const dirOf = (yw, pt) => [Math.cos(yw) * Math.cos(pt), Math.sin(yw) * Math.cos(pt), Math.sin(pt)];
 function render3d(mine, t, dt) {
   ctx.clearRect(0, 0, VW, VH);
-  R3D.resize(VW, VH);
+  R3D.resize(innerWidth, innerHeight); // the 3D view is in real pixels, the HUD in UI units
   if (document.pointerLockElement === cv && menusOpen()) document.exitPointerLock();
   adsZoom += ((mine && !mine.d && aiming() ? 1.35 : 1) - adsZoom) * Math.min(1, dt * 10);
   const adsK = Math.max(0, (adsZoom - 1) / 0.35), fp = viewMode === "fp";
@@ -260,8 +260,8 @@ function render3d(mine, t, dt) {
   drawHud(mine, t);
   drawMinimap(mine, t); drawCompass(t); zombieSounds(t);
   drawCrosshair(mine, t); drawRadial(); // the wheel goes on top of everything
-  if (mine && document.pointerLockElement !== cv && !menusOpen() && !radial) { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 170, VH / 2 + 80, 340, 34, 8); ctx.fill(); text("Click to look around  ·  T switches view", VW / 2, VH / 2 + 97, 15, "#ffd34d"); }
-  if (t - viewT < 2) text(`${VIEW_NAME[viewMode]}  (T to switch)`, VW / 2, Math.max(150, hudTop + 14), 20, "#fff");
+  if (mine && document.pointerLockElement !== cv && !menusOpen() && !radial) { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 240, VH / 2 + 80, 480, 34, 8); ctx.fill(); text(`Click to look around  ·  ${keyFor("view")} switches view  ·  hold F1 for controls`, VW / 2, VH / 2 + 97, 15, "#ffd34d"); }
+  if (t - viewT < 2) text(`${VIEW_NAME[viewMode]}  (${keyFor("view")} to switch)`, VW / 2, Math.max(150, hudTop + 14), 20, "#fff");
   for (const k of disp.keys()) if (disp.get(k).seen < frameNo - 30) disp.delete(k);
   { const n = performance.now(), ft = (n - fpsLast) / 1000; fpsLast = n; if (ft > 0 && ft < 2) fpsAvg += (1 / ft - fpsAvg) * 0.05; }
   if (OPTS.fps) text(`${Math.round(fpsAvg)} fps`, VW - 40, VH - 12, 12, fpsAvg < 30 ? "#ff8080" : "#9f9");
@@ -272,17 +272,17 @@ let ghost3d = null, scopedNow = false;
 function overlay3d(mine, t, dt) {
   // labels hide behind walls: a quick line-of-sight check from the camera
   const seen = (x, y, z) => { if (!camNow || camNow.x === undefined) return true; const v = [x - camNow.x, y - camNow.y, z - camNow.z], L = Math.hypot(...v); if (L < 1) return true; return rayWorld([camNow.x, camNow.y, camNow.z], v.map((c) => c / L), L, me, true) >= L - 12; };
-  const P = (x, y, z) => { const s = R3D.project(x, y, z); return s && s.d < 1500 && seen(x, y, z) ? s : null; };
+  const P = (x, y, z) => { const s = project3(x, y, z); return s && s.d < 1500 && seen(x, y, z) ? s : null; };
   // the main quest's next step: a big orange ? you can see from anywhere
   if (S.g.adv) {
     const A = S.g.adv;
     for (const [x, y, kind] of A.pts) { const s = P(x, y, 30); if (s && s.d < 800) text(kind ? "📦" : "🔍", s.x, s.y + Math.sin(t * 3) * 3, 26, "#fff", "center", false); }
-    for (const q of A.q) { const s = R3D.project(q[4], q[5], 140); if (s && s.d > 350) { text(advIcon(q), s.x, s.y, 22, "#fff", "center", false); text(`${Math.round(s.d / 10)}m`, s.x, s.y + 18, 11, "#ffd34d"); } } // a waypoint you can see from anywhere
+    for (const q of A.q) { const s = project3(q[4], q[5], 140); if (s && s.d > 350) { text(advIcon(q), s.x, s.y, 22, "#fff", "center", false); text(`${Math.round(s.d / 10)}m`, s.x, s.y + 18, 11, "#ffd34d"); } } // a waypoint you can see from anywhere
     for (const [id, name] of A.qb) { const z = S.z.find((q) => q[0] === id); if (!z) continue; const s = P(z[2], z[3], (z[6] || 0) + 120); if (s && s.d < 1200) text(name, s.x, s.y, 14, "#ff9060"); }
     for (const w of advWalls()) { const s = P(w.x + w.w / 2, w.y + w.h / 2, w.z1 + 20); if (s && s.d < 700) text(w.kind === "board" ? "Notice board" : "Signpost", s.x, s.y, 13, "#ffe9a0"); }
-    for (const [n, x, y, , , home] of A.t) { if (home) continue; const s = R3D.project(x, y, 260); if (s && s.d < 1400 && s.d > 300) text(n, s.x, s.y, 22, "#ffe9a0"); }
+    for (const [n, x, y, , , home] of A.t) { if (home) continue; const s = project3(x, y, 260); if (s && s.d < 1400 && s.d > 300) text(n, s.x, s.y, 22, "#ffe9a0"); }
   }
-  for (const n of questNpcs()) { const s = R3D.project(n.x, n.y, 100); if (!s) continue; const bob = Math.sin(t * 3) * 4; ctx.save(); ctx.shadowColor = "#ff8a00"; ctx.shadowBlur = 18; text("?", s.x, s.y - 16 + bob, 44, "#ffa020"); ctx.restore(); if (s.d > 300) text(`${Math.round(s.d / 10)}m`, s.x, s.y + 14 + bob, 12, "#ffc070"); }
+  for (const n of questNpcs()) { const s = project3(n.x, n.y, 100); if (!s) continue; const bob = Math.sin(t * 3) * 4; ctx.save(); ctx.shadowColor = "#ff8a00"; ctx.shadowBlur = 18; text("?", s.x, s.y - 16 + bob, 44, "#ffa020"); ctx.restore(); if (s.d > 300) text(`${Math.round(s.d / 10)}m`, s.x, s.y + 14 + bob, 12, "#ffc070"); }
   for (const p of S.p) {
     if (p.d || p.air === 1 || p.air === 3 || p.vh) continue;
     const own = p.id === me;
@@ -299,7 +299,7 @@ function overlay3d(mine, t, dt) {
     if (p.go) { y -= 16; text(p.go === "poo" ? "💩 busy" : "💦 busy", s.x, y, 12, "#ffe7a0"); }
     bar(s.x - 18, s.y + 8, 36, 4, p.hp / p.mh, "#5f5");
     const b = bubbles.get(p.id);
-    if (b && t - b.t < 4.5) { ctx.font = "bold 13px Trebuchet MS"; const tw = Math.min(260, ctx.measureText(b.text).width + 16); ctx.fillStyle = "#fffe"; ctx.beginPath(); ctx.roundRect(s.x - tw / 2, y - 44, tw, 24, 8); ctx.fill(); text(b.text.length > 36 ? b.text.slice(0, 35) + "…" : b.text, s.x, y - 32, 13, "#222", "center", false); }
+    if (b && t - b.t < 4.5) { ctx.font = `bold 13px "Trebuchet MS", sans-serif`; const tw = Math.min(260, ctx.measureText(b.text).width + 16); ctx.fillStyle = "#fffe"; ctx.beginPath(); ctx.roundRect(s.x - tw / 2, y - 44, tw, 24, 8); ctx.fill(); text(b.text.length > 36 ? b.text.slice(0, 35) + "…" : b.text, s.x, y - 32, 13, "#222", "center", false); }
   }
   if (S.sh && pred.z < -40) for (const w of MAP.walls) {
     if (w.kind === "shrine") { const s = P(w.x + w.w / 2, w.y + w.h / 2, w.z1 + 30); if (s && s.d < 600) text(S.sh[5] ? "The shrine stands open" : "Carved here:  " + S.sh.slice(0, 4).map((g, i) => (i < S.sh[4] ? "✓" : "") + GLYPH_CH[g]).join("   "), s.x, s.y, 18, "#bfe8ff"); }

@@ -5,11 +5,18 @@
 const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
 const $ = (id) => document.getElementById(id);
-let VW = 0, VH = 0, DPR = 1;
+let VW = 0, VH = 0, DPR = 1, UIS = 1;
+// UI scale: "auto" fits the window (100% at about 950px tall), or a fixed 75-150% from Options.
+// VW and VH are the screen in UI units, so the whole HUD grows or shrinks with it; --ui zooms the HTML panels to match.
+// The HUD canvas also follows the Resolution option, so a lower resolution means fewer HUD pixels to paint as well.
+const uiPrefs = () => { try { const o = JSON.parse(localStorage.getItem("slop-opts") || "{}"); return { ui: o.ui ?? "auto", res: +o.res || 1 }; } catch { return { ui: "auto", res: 1 }; } };
 function resize() {
-  DPR = window.devicePixelRatio || 1;
-  VW = innerWidth; VH = innerHeight;
-  cv.width = VW * DPR; cv.height = VH * DPR; cv.style.width = VW + "px"; cv.style.height = VH + "px";
+  const p = uiPrefs();
+  UIS = p.ui === "auto" ? Math.max(0.8, Math.min(1.4, innerHeight / 950)) : Math.max(0.75, Math.min(1.5, +p.ui || 1));
+  DPR = (window.devicePixelRatio || 1) * Math.min(1, p.res);
+  VW = innerWidth / UIS; VH = innerHeight / UIS;
+  cv.width = Math.round(innerWidth * DPR); cv.height = Math.round(innerHeight * DPR); cv.style.width = innerWidth + "px"; cv.style.height = innerHeight + "px";
+  document.documentElement.style.setProperty("--ui", UIS);
 }
 addEventListener("resize", resize); resize();
 
@@ -23,6 +30,7 @@ const VIEWS = ["fp", "tp"], VIEW_NAME = { fp: "First person", tp: "Third person"
 let viewMode = (() => { try { return localStorage.getItem("slop-view") || "fp"; } catch { return "fp"; } })();
 if (!VIEWS.includes(viewMode)) viewMode = "fp";
 const has3d = typeof R3D !== "undefined" && R3D.init();
+const project3 = (x, y, z) => { const s = R3D.project(x, y, z); if (s) { s.x /= UIS; s.y /= UIS; } return s; }; // a point in the world to the HUD (UI units)
 let yaw = 0, pitch = 0, yawInit = false, aimYaw = 0, aimPitch = 0, playView = false, camNow = null, lastShotT = -9, viewT = -9;
 const slashT = new Map();
 const COLORS = ["#e0b050", "#e05050", "#50a0e0", "#60c060", "#c070e0", "#f08040", "#f0f0f0", "#40d0c0"];

@@ -1,10 +1,11 @@
 // Browser client, 06-ui: Options, dialogue and the journal, and flight sticks and gamepads.
 // The files in public/client/ are joined in order into /game.js (see server/net.js), inside one shared function.
 // ---------------------------------------------------------------- options
-const OPTS = { vol: 1, music: 0.5, sens: 1, fov: 80, invert: false, shake: true, impact: true, voices: true, crouchHold: false, res: 1, fps: false };
+const OPTS = { vol: 1, music: 0.5, sens: 1, fov: 80, invert: false, shake: true, impact: true, voices: true, crouchHold: false, res: 1, fps: false, ui: "auto", hud: 1 };
 try { Object.assign(OPTS, JSON.parse(localStorage.getItem("slop-opts") || "{}")); } catch {}
 let optsOpen = false;
 if (has3d) R3D.setScale(OPTS.res);
+cv.style.opacity = OPTS.hud;
 function saveOpts() { try { localStorage.setItem("slop-opts", JSON.stringify(OPTS)); } catch {} }
 let padView = 0;
 function toggleOptions(force) {
@@ -29,20 +30,26 @@ function renderOptions() {
     row("sens", "Mouse sensitivity", 0.2, 3, 0.05, OPTS.sens, (v) => (+v).toFixed(2) + "x") +
     row("fov", "Field of view", 60, 110, 1, OPTS.fov, (v) => v + "°") +
     row("res", "Resolution (lower = smoother)", 0.5, 1.5, 0.05, OPTS.res, pct) +
+    row("ui", "Interface size", 0.75, 1.5, 0.05, OPTS.ui === "auto" ? +UIS.toFixed(2) : OPTS.ui, pct) +
+    `<div class="opt"><label><input type="checkbox" id="o-uiauto"${OPTS.ui === "auto" ? " checked" : ""}> Interface size fits the window</label></div>` +
+    row("hud", "HUD opacity", 0.4, 1, 0.05, OPTS.hud, pct) +
     `<div class="opt"><label><input type="checkbox" id="o-fps"${OPTS.fps ? " checked" : ""}> Show frames per second</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-invert"${OPTS.invert ? " checked" : ""}> Invert mouse Y</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-shake"${OPTS.shake ? " checked" : ""}> Screen shake</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-impact"${OPTS.impact ? " checked" : ""}> Impact frames (a split-second freeze on big hits)</label></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-voices"${OPTS.voices ? " checked" : ""}> NPC voices (the townsfolk talk out loud)</label></div>` +
-    `<div class="opt"><label>View</label><span>${VIEW_NAME[viewMode] || "First person"} (press T to switch)</span></div>` +
+    `<div class="opt"><label>View</label><span>${VIEW_NAME[viewMode] || "First person"} (press ${keyFor("view")} to switch)</span></div>` +
     `<div class="opt"><label><input type="checkbox" id="o-crouch"${OPTS.crouchHold ? " checked" : ""}> Hold CTRL to crouch / dive (off: tap CTRL to toggle)</label></div>` +
     `<h3 class="opt-h">Flight stick / gamepad (helicopters)</h3><div class="opt-pad" id="o-pad"></div>` +
     [["pitch", "Pitch (stick forward/back)"], ["roll", "Roll / strafe (stick left/right)"], ["yaw", "Yaw (twist or rudder)"], ["thr", "Collective (throttle: up = climb)"]].map(([k, l]) =>
       `<div class="opt"><label>${l}</label><button class="cbtn alt bind" data-ax="${k}">Axis ${FLY[k]}</button><label class="inv"><input type="checkbox" data-inv="${k}"${FLY.inv[k] ? " checked" : ""}> invert</label><span id="o-ax-${k}"></span></div>`).join("") +
-    `<div class="opt-note">Click an axis button, then push that control all the way. Trigger fires the chain gun, button 2 fires rockets, button 3 gets out. Set the throttle to the middle to hover. A standard gamepad needs no setup.</div>`;
-  for (const id of ["vol", "music", "sens", "fov", "res"]) {
-    const el = $("o-" + id), fmt = id === "vol" || id === "music" || id === "res" ? pct : id === "sens" ? (v) => (+v).toFixed(2) + "x" : (v) => v + "°";
-    el.oninput = () => { OPTS[id] = +el.value; $("o-" + id + "-v").textContent = fmt(OPTS[id]); saveOpts(); if (id === "vol") sfx("hit"); if (id === "res" && has3d) R3D.setScale(OPTS.res); };
+    `<div class="opt-note">Click an axis button, then push that control all the way. Trigger fires the chain gun, button 2 fires rockets, button 3 gets out. Set the throttle to the middle to hover. A standard gamepad needs no setup.</div>` +
+    `<h3 class="opt-h">Controls <small>(hold F1 in game to see them)</small></h3><div id="o-controls"></div>`;
+  renderControls();
+  for (const id of ["vol", "music", "sens", "fov", "res", "ui", "hud"]) {
+    const el = $("o-" + id), fmt = id === "vol" || id === "music" || id === "res" || id === "ui" || id === "hud" ? pct : id === "sens" ? (v) => (+v).toFixed(2) + "x" : (v) => v + "°";
+    el.oninput = () => { OPTS[id] = +el.value; $("o-" + id + "-v").textContent = fmt(OPTS[id]); saveOpts(); if (id === "vol") sfx("hit"); if (id === "res" && has3d) R3D.setScale(OPTS.res); if (id === "res" || id === "ui") { $("o-uiauto").checked = OPTS.ui === "auto"; resize(); } if (id === "hud") cv.style.opacity = OPTS.hud; };
+  $("o-uiauto").onchange = (e) => { OPTS.ui = e.target.checked ? "auto" : +UIS.toFixed(2); saveOpts(); resize(); $("o-ui").value = UIS; $("o-ui-v").textContent = pct(UIS); };
   }
   $("o-fps").onchange = (e) => { OPTS.fps = e.target.checked; saveOpts(); };
   $("o-invert").onchange = (e) => { OPTS.invert = e.target.checked; saveOpts(); };

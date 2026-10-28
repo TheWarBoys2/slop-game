@@ -200,7 +200,7 @@ function impactFrame(kind) {
   impact = { t0: t, until: t + (kind === "big" ? 0.11 : kind === "wk" ? 0.085 : 0.065), kind, drawn: false };
 }
 function drawImpact() { // one held, high-contrast frame: the screen stops for a blink
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.setTransform(DPR * UIS, 0, 0, DPR * UIS, 0, 0);
   const cx = VW / 2, cy = VH / 2, red = impact.kind === "wk";
   ctx.fillStyle = red ? "rgba(255,40,30,0.22)" : "rgba(255,255,255,0.28)"; ctx.fillRect(0, 0, VW, VH);
   ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.lineWidth = 3;
@@ -265,6 +265,7 @@ const tintEl = {}, tintWant = {};
 let tintSeen = -1;
 for (const [id, bg] of Object.entries(TINTS)) {
   const el = document.createElement("div");
+  el.className = "tint";
   el.style.cssText = `position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0;background:${bg}`;
   cv.parentNode.insertBefore(el, cv); // same layer as the HUD canvas but painted under it
   tintEl[id] = el; el._a = 0;
