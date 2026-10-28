@@ -243,7 +243,9 @@ function render3d(mine, t, dt) {
   const sl = slashT.get(me), moving = Math.hypot(pred.vx, pred.vy) > 30 && pred.gr;
   const vm = ownView && mine && !mine.d && !scoped ? { type: mine.w, rar: mine.wr, sk: mine.wsk, at: mine.wat, spr: sprintK, sli: slideK, man: mantleDip, rl: mine.rl > 0 && mine.rt ? 1 - mine.rl / mine.rt : 0, show: true, kick: Math.max(0, 1 - (t - lastShotT) / 0.12), bob: moving ? t * 11 : 0, ads: adsK, swing: sl ? Math.min(1, (t - sl) / 0.25) : 1 } : null;
   R3D.frame({ S, MAP, t, dt, me, pred, aimYaw, aimPitch, fp: ownView, cam, fx, messes, hearthHitT, ghost, vm, slashT, nukeFx, cropKeys: CROP_KEYS, domeR: DOME_R });
+  if (scoped && ownView) { ctx.save(); ctx.beginPath(); ctx.arc(VW / 2, VH / 2, VH * 0.44, 0, 7); ctx.clip(); } // through the scope, names and labels only show inside the lens
   overlay3d(mine, t, dt);
+  if (scoped && ownView) ctx.restore();
   if (scoped && ownView) { // scope overlay: black outside the lens, fine crosshair inside
     const R = VH * 0.44; tint("scope", 1);
     ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(VW / 2 - R, VH / 2); ctx.lineTo(VW / 2 + R, VH / 2); ctx.moveTo(VW / 2, VH / 2 - R); ctx.lineTo(VW / 2, VH / 2 + R); ctx.stroke();

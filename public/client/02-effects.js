@@ -261,6 +261,7 @@ const TINTS = {
   scope: "radial-gradient(circle 44vh, #0000 99.6%, #000 100%)",
 };
 const tintEl = {}, tintWant = {};
+let tintSeen = -1;
 for (const [id, bg] of Object.entries(TINTS)) {
   const el = document.createElement("div");
   el.style.cssText = `position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0;background:${bg}`;
@@ -268,11 +269,13 @@ for (const [id, bg] of Object.entries(TINTS)) {
   tintEl[id] = el; el._a = 0;
 }
 function tint(id, a) { tintWant[id] = Math.max(tintWant[id] || 0, a); }
-(function tintFrame() {
+requestAnimationFrame(function tintFrame() { // first runs after every client file has loaded (frameNo lives in 10-render)
+  requestAnimationFrame(tintFrame);
+  if (frameNo === tintSeen) return; // an impact frame holds the picture, so hold the tints too
+  tintSeen = frameNo;
   for (const id in tintEl) {
     const el = tintEl[id], a = Math.round(Math.min(1, tintWant[id] || 0) * 100) / 100;
     if (a !== el._a) { el._a = a; el.style.opacity = a; } // only touch the style when it changes
     tintWant[id] = 0;
   }
-  requestAnimationFrame(tintFrame);
-})();
+});
