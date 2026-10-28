@@ -17,11 +17,15 @@ function questNpcs() {
 // a compass strip under the clock: N/E/S/W, the Hearth, the shops and the quest
 function drawCompass(t) {
   if (!S || !playView || ["lobby", "over", "intro"].includes(S.g.ph)) return;
-  const W2 = Math.min(420, VW - 460), cx = VW / 2, y = 66, span = Math.PI * 0.75;
+  const W2 = Math.min(420, VW - 460), cx = VW / 2, y = COMPASS_Y, span = Math.PI * 0.75;
   if (W2 < 160) return;
-  ctx.fillStyle = "#0008"; ctx.beginPath(); ctx.roundRect(cx - W2 / 2, y - 12, W2, 24, 6); ctx.fill();
+  // Skyrim: a long dark strip between two thin rules, with a diamond at each end
+  const g0 = ctx.createLinearGradient(cx - W2 / 2, 0, cx + W2 / 2, 0); g0.addColorStop(0, "#0000"); g0.addColorStop(0.12, "#000a"); g0.addColorStop(0.88, "#000a"); g0.addColorStop(1, "#0000");
+  ctx.fillStyle = g0; ctx.fillRect(cx - W2 / 2, y - 11, W2, 22);
+  ctx.strokeStyle = "#d8ccaa99"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx - W2 / 2 + 10, y - 11.5); ctx.lineTo(cx + W2 / 2 - 10, y - 11.5); ctx.moveTo(cx - W2 / 2 + 10, y + 11.5); ctx.lineTo(cx + W2 / 2 - 10, y + 11.5); ctx.stroke();
+  ctx.fillStyle = "#d8ccaa"; for (const ex of [cx - W2 / 2 + 6, cx + W2 / 2 - 6]) { ctx.beginPath(); ctx.moveTo(ex, y - 6); ctx.lineTo(ex + 4, y); ctx.lineTo(ex, y + 6); ctx.lineTo(ex - 4, y); ctx.fill(); }
   const at = (ang) => { let d = ang - aimYaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return Math.abs(d) > span / 2 ? null : cx + d / (span / 2) * (W2 / 2 - 10); };
-  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, x = at(a); if (x == null) continue; const lab = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"][i]; text(lab, x, y, lab.length === 1 ? 14 : 10, lab === "N" ? "#ff7060" : "#ddd"); }
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, x = at(a); if (x == null) continue; const lab = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"][i]; text(lab, x, y, lab.length === 1 ? 15 : 10, lab === "N" ? "#ff7060" : "#e8dfc4"); }
   const placed = []; // icons in the same direction sit side by side instead of on top of each other
   const mark = (wx, wy, icon, col) => { let x = at(Math.atan2(wy - pred.y, wx - pred.x)); if (x == null) return; for (let i = 0; i < 4 && placed.some((px) => Math.abs(px - x) < 15); i++) x += 15; placed.push(x); text(icon, x, y + 1, 14, col, "center", false); };
   if (S.g.mode !== "royale" && MAP.hearth) mark(MAP.hearth.x + MAP.hearth.w / 2, MAP.hearth.y + MAP.hearth.h / 2, "🔥", "#ff8a2a");
@@ -35,12 +39,12 @@ function drawCompass(t) {
 }
 function drawMinimap(mine, t) {
   if (!S || S.g.ph === "lobby" && !S.g.zone) return;
-  const mw = 190, mh = mw * MAP.H / MAP.W, mx = 12, my = 12, k = mw / MAP.W;
-  // out in the wild the map follows you; in town it shows the whole town
-  const inTown = pred.x > 0 && pred.y > 0 && pred.x < MAP.W && pred.y < MAP.H, ox = openWorld() && !inTown ? pred.x - MAP.W / 2 : 0, oy = openWorld() && !inTown ? pred.y - MAP.H / 2 : 0;
-  ctx.fillStyle = "#000b"; ctx.fillRect(mx - 3, my - 3, mw + 6, mh + 6);
-  ctx.fillStyle = "#3a5a2c"; ctx.fillRect(mx, my, mw, mh);
-  ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
+  // GTA San Andreas: a round radar that follows you, north up, with what's off the edge pinned to the rim
+  const mw = RADAR_D, mh = RADAR_D, mx = 14, my = 12, k = RADAR_K, rc = [mx + mw / 2, my + mh / 2];
+  const ox = pred.x - mw / 2 / k, oy = pred.y - mh / 2 / k;
+  ctx.fillStyle = "#000c"; ctx.beginPath(); ctx.arc(rc[0], rc[1], mw / 2 + 4, 0, 7); ctx.fill();
+  ctx.fillStyle = "#3a5a2c"; ctx.beginPath(); ctx.arc(rc[0], rc[1], mw / 2, 0, 7); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.arc(rc[0], rc[1], mw / 2, 0, 7); ctx.clip();
   if (ox || oy) { ctx.fillStyle = "#3f6030"; ctx.fillRect(mx + (0 - ox) * k, my + (0 - oy) * k, MAP.W * k, MAP.H * k); ctx.strokeStyle = "#ffe9a066"; ctx.lineWidth = 1; ctx.strokeRect(mx + (0 - ox) * k, my + (0 - oy) * k, MAP.W * k, MAP.H * k); }
   else { ctx.fillStyle = "#3f6030"; ctx.fillRect(mx, my, mw, mh); }
   ctx.fillStyle = "#0006"; for (const w of MAP.walls) if (w.z1 > 0 && w.kind !== "hwall" && w.kind !== "furn" && w.x + w.w > ox && w.x < ox + MAP.W && w.y + w.h > oy && w.y < oy + MAP.H) ctx.fillRect(mx + (w.x - ox) * k, my + (w.y - oy) * k, Math.max(1, w.w * k), Math.max(1, w.h * k));
@@ -59,7 +63,7 @@ function drawMinimap(mine, t) {
     for (const q of S.g.adv.q) { const qx = mx + (q[4] - ox) * k, qy = my + (q[5] - oy) * k; if (q[6]) { ctx.strokeStyle = "#ffd34d"; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(qx, qy, Math.max(4, q[6] * k), 0, 7); ctx.stroke(); ctx.setLineDash([]); } text(advIcon(q), qx, qy, 11, "#fff", "center", false); }
     for (const [x, y, kind] of S.g.adv.pts) text(kind ? "📦" : "🔍", mx + (x - ox) * k, my + (y - oy) * k, 9, "#fff", "center", false);
   }
-  ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
+  ctx.save(); ctx.beginPath(); ctx.arc(rc[0], rc[1], mw / 2, 0, 7); ctx.clip();
   if (S.g.zone) {
     const [cx, cy, r, tcx, tcy, tr] = S.g.zone;
     ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.arc(mx + (cx - ox) * k, my + (cy - oy) * k, Math.max(0.5, r * k), 0, 7, true); ctx.fillStyle = "#7828a080"; ctx.fill("evenodd");
@@ -79,9 +83,10 @@ function drawMinimap(mine, t) {
     if (p.d || p.air === 1 || p.air === 3) continue;
     if (S.g.mode === "royale" && p.id !== me) continue; // no wallhacks in the Royale
     const x = p.id === me ? pred.x : p.x, y = p.id === me ? pred.y : p.y;
-    ctx.fillStyle = p.id === me ? "#fff" : p.c; ctx.beginPath(); ctx.arc(mx + (x - ox) * k, my + (y - oy) * k, p.id === me ? 3.5 : 2.5, 0, 7); ctx.fill();
+    if (p.id === me) continue; // you're the arrow in the middle, drawn last
+    ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(mx + (x - ox) * k, my + (y - oy) * k, 3, 0, 7); ctx.fill(); ctx.strokeStyle = "#000"; ctx.lineWidth = 1; ctx.stroke();
   }
-  if (S.g.uav) { ctx.fillStyle = "#ff4040"; for (const z of S.z) { const zx = mx + (z[2] - ox) * k, zy = my + (z[3] - oy) * k; if (zx > mx && zy > my && zx < mx + mw && zy < my + mh) ctx.fillRect(zx - 1.5, zy - 1.5, 3, 3); } text(`📡 UAV ${S.g.uav}s`, mx + mw / 2, my + mh + 14, 12, "#7fdcff"); }
+  if (S.g.uav) { ctx.fillStyle = "#ff4040"; for (const z of S.z) { const zx = mx + (z[2] - ox) * k, zy = my + (z[3] - oy) * k; if (zx > mx && zy > my && zx < mx + mw && zy < my + mh) ctx.fillRect(zx - 1.5, zy - 1.5, 3, 3); } text(`📡 UAV ${S.g.uav}s`, mx + mw / 2, my + mh - 14, 12, "#7fdcff"); }
   if (S.g.bug) { // Bug Night: every hole, the hive, and (with a Sensor Helm on your mech) every bug
     const sensor = mine.vh && S.vh.some((v) => v[0] === mine.vh && v[1] === "mech" && String(v[10]).endsWith(",sensor"));
     if (sensor) { ctx.fillStyle = "#ffb040"; for (const z of S.z) if ("gpkq".includes(z[1])) ctx.fillRect(mx + (z[2] - ox) * k - 1.5, my + (z[3] - oy) * k - 1.5, 3, 3); }
@@ -90,6 +95,7 @@ function drawMinimap(mine, t) {
   }
   if (S.g.boss) { const bz = S.z.find((z) => z[0] === S.g.boss); if (bz) { ctx.fillStyle = "#f33"; ctx.beginPath(); ctx.arc(mx + (bz[2] - ox) * k, my + (bz[3] - oy) * k, 4, 0, 7); ctx.fill(); } }
   ctx.restore();
+  radarRim(mine, rc, mw / 2, ox, oy, k, t);
 }
 function bar(x, y, w, h, frac, col, bg = "#0009") {
   ctx.fillStyle = bg; ctx.fillRect(x, y, w, h);

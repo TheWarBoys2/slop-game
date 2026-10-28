@@ -254,7 +254,8 @@ function renderInv() {
   }
   const mineP = S && S.p.find((q) => q.id === me), mate = mineP && S.p.filter((q) => q.id !== me && !q.d && !q.air).map((q) => [q, Math.hypot(q.x - mineP.x, q.y - mineP.y)]).filter(([, d]) => d < 150).sort((a, b) => a[1] - b[1])[0];
   const giveRow = mate ? `<div class="fine" style="margin-top:6px">Next to <b>${escH(mate[0].n)}</b>: <kbd>Shift</kbd>+click an item to give it. Give gold: ${[10, 50, 100, 500].map((n) => `<button class="tab" data-gold="${n}">${n}g</button>`).join(" ")}</div>` : `<div class="fine" style="margin-top:6px">Stand next to a mate to give them items or gold.</div>`;
-  $("invBody").innerHTML = `<div class="invL">${meter("🍞 Food", INV.food, "#d8a050")}${meter("💧 Drink", INV.water, "#5ab0ff")}${meter("☢ Radiation", INV.rad, INV.rad > 50 ? "#e33" : "#9fff60")}<h3>Wearing</h3>${slots}${mechPanel()}</div>` +
+  const me2 = S && S.p.find((p) => p.id === me), who = me2 ? `<div class="tag" style="margin:0 0 8px">${escH(me2.n)} · generation ${me2.gen} · ${escH(me2.tr)}: ${escH(TRAIT_DESC[me2.tr] || "")}</div>` : ""; // moved here from the HUD
+  $("invBody").innerHTML = `<div class="invL">${who}${meter("🍞 Food", INV.food, "#d8a050")}${meter("💧 Drink", INV.water, "#5ab0ff")}${meter("☢ Radiation", INV.rad, INV.rad > 50 ? "#e33" : "#9fff60")}<h3>Wearing</h3>${slots}${mechPanel()}</div>` +
     `<div class="invR"><h3>Bag ${INV.bag.length}/${INV.size}</h3><div class="bag">${cells.join("")}</div>${giveRow}<div class="fine">Click to eat, drink, use or wear. Right-click to drop (someone else can pick it up). <kbd>H</kbd> eats or drinks whatever you need most. Cook two turnips at the Hearth [E] for stew. Fill bottles at the lake.</div></div>`;
   for (const el of $("invBody").querySelectorAll(".bslot[data-i]")) {
     el.onclick = (e) => send({ t: "item", a: e.shiftKey ? "give" : "use", i: +el.dataset.i });
