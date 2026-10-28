@@ -34,13 +34,15 @@ function drawHud(mine, t) {
   else label = g.res === "win" ? "VICTORY" : g.res === "royale" ? "ROYALE OVER" : "DEFEAT";
   if (g.ph === "lobby") label += g.mode === "royale" ? " · Royale" : g.mode === "endless" ? " · Hearth Defence: Endless" : g.mode === "adventure" ? " · Adventure" : " · Hearth Defence";
   const lobby = g.ph === "lobby"; // the lobby and join panels already say all this, and the clock showed through them
-  if (!lobby) { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 200, 10, 400, 44, 10); ctx.fill(); }
   const dusk = (g.ph === "day" || (g.ph === "night" && g.left >= 0)) && g.left >= 0 && g.left <= 10; // the last ten seconds of a day or night glow amber
-  if (!lobby) text(label, VW / 2, 26, 18, dusk && Math.floor(t * 2) % 2 ? "#ffb040" : g.ph === "night" ? "#9fc0ff" : "#ffe9a0");
   const hHit = t - hearthHitT < 1.5 && g.mode !== "royale";
-  if (g.mode !== "royale" && g.mode !== "adventure") bar(VW / 2 - 180, 42, 360, 6, g.hh / g.hm, hHit && Math.floor(t * 8) % 2 ? "#ff3020" : "#e8703a");
+  if (!lobby) { // the clock (Majora's Mask), with the Hearth's health along its bottom edge
+    const day = g.ph === "day" ? `DAY ${g.n + 1}` : g.ph === "night" ? `NIGHT ${g.n}` : "";
+    const note = g.ph === "day" ? (g.dd ? "Dinosaur Day" : "") : g.ph === "night" ? (g.left < 0 ? (g.mode === "endless" ? "BOSS NIGHT" : "THE LAST NIGHT") : [g.fog && "Fog", g.dino && "Dinosaurs"].filter(Boolean).join(" · ")) : label;
+    hudClock(g, day, note, t, dusk, g.mode !== "royale" && g.mode !== "adventure" ? [g.hh / g.hm, hHit] : null);
+  }
   // everything under the clock and compass stacks downwards, so nothing lands on top of anything else
-  let top = playView && !["lobby", "over", "intro"].includes(g.ph) && Math.min(420, VW - 460) >= 160 ? 84 : 62;
+  let top = playView && !["lobby", "over", "intro"].includes(g.ph) && Math.min(420, VW - 460) >= 160 ? HUD_STACK_TOP : CLOCK_Y + CLOCK_H + 8;
   const slot = (h) => { const y = top; top += h + 4; return y; };
   if (g.ph === "lobby" && joined && $("lobbyPanel").classList.contains("hidden")) {
     const rd = S.p.filter((p) => p.rd).length, y = slot(28);
@@ -55,21 +57,22 @@ function drawHud(mine, t) {
     if (g.dis.st) { const [sx, sy] = g.dis.st, d = Math.hypot(sx - pred.x, sy - pred.y); y = slot(20); ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 170, y, 340, 20, 8); ctx.fill(); text(`Stop it: control station ${Math.round(d / 10)}m ${compass(sx - pred.x, sy - pred.y)} (⚠ on your map)`, VW / 2, y + 10, 12, "#9fe0ff"); }
   }
   if (g.moon) moonHud(g, slot, t); // Moonfall (13-moon.js)
-  // boss bar
+  // boss bars (Dark Souls), along the bottom of the screen
+  bossSlot = 0;
   if (g.boss) {
     const bz = S.z.find((z) => z[0] === g.boss);
-    if (bz) { const y = slot(30); text(BOSS_NAME[g.bk] || "BOSS", VW / 2, y + 7, 16, "#ff6060"); bar(VW / 2 - 250, y + 18, 500, 12, bz[4] / 100, "#c02020"); }
+    if (bz) hudBossBar(BOSS_NAME[g.bk] || "BOSS", bz[4] / 100, "#c02020");
   }
   if (g.adv && ["day", "night"].includes(g.ph)) {
     const q = g.adv.q.find((x) => x[9]) || g.adv.q[0];
     if (q) { const y = slot(20), dx = q[4] - pred.x, dy = q[5] - pred.y, txt = `${advIcon(q)} ${Math.round(Math.hypot(dx, dy) / 10)}m ${compass(dx, dy)}  ·  ${q[3].length > 90 ? q[3].slice(0, 88) + "…" : q[3]}`; ctx.font = 'bold 13px "Trebuchet MS", sans-serif'; const w = Math.min(VW - 40, ctx.measureText(txt).width + 48); ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - w / 2, y, w, 20, 8); ctx.fill(); text(txt, VW / 2, y + 10, 13, "#ffe9a0"); }
     let best = null, bd = 1100 * 1100;
     for (const [id, name] of g.adv.qb) { const z = S.z.find((q2) => q2[0] === id); if (!z) continue; const d = (z[2] - pred.x) ** 2 + (z[3] - pred.y) ** 2; if (d < bd) { bd = d; best = [z, name]; } }
-    if (best && !g.boss) { const y = slot(28); text(best[1].toUpperCase(), VW / 2, y + 7, 15, "#ff9060"); bar(VW / 2 - 180, y + 17, 360, 9, best[0][4] / 100, "#d05030"); }
+    if (best && !g.boss) hudBossBar(best[1], best[0][4] / 100, "#d05030");
     if (t - advSignT < 4) { const y = slot(22); text(`SIGN FOUND (${advSignN}/3): press J`, VW / 2, y + 11, 18, "#e0c0ff"); }
   }
   const elite = S.z.find((z) => z[1] === "e");
-  if (elite && !g.boss) { const y = slot(28); text("THE DROWNED MAYOR", VW / 2, y + 7, 16, "#6ab0e0"); bar(VW / 2 - 200, y + 18, 400, 10, elite[4] / 100, "#3a7ab0"); }
+  if (elite && !g.boss) hudBossBar("The Drowned Mayor", elite[4] / 100, "#3a7ab0");
   // Dust II: the round, the bomb, the defuse
   if (g.du && g.du[0] !== "post" && inDustC()) {
     const [st, site, , , , left, def, nz, wins, losses, planting] = g.du, y = slot(def >= 0 ? 44 : 24);
@@ -86,7 +89,7 @@ function drawHud(mine, t) {
 
   // kill feed (top right): wraps, keeps clear of the clock in the middle and stops above the story card
   {
-    const fw = Math.max(220, VW / 2 - 236), maxY = storyCardOn() ? 172 : VH * 0.45, rows = [];
+    const fw = Math.max(220, VW / 2 - Math.min(460, VW - 40) / 2 - 24), maxY = storyCardOn() ? 172 : VH * 0.45, rows = [];
     let h = 0;
     for (let i = feed.length - 1; i >= 0; i--) {
       const f = feed[i], age = t - f.t; if (age > 8) continue;
@@ -98,15 +101,15 @@ function drawHud(mine, t) {
     for (const { f, lines, bh, a } of rows) {
       ctx.globalAlpha = a;
       ctx.font = `bold 13px "Trebuchet MS", sans-serif`; const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 16;
-      ctx.fillStyle = "#000a"; ctx.fillRect(VW - w - 12, y, w, bh);
-      lines.forEach((l, j) => text(l, VW - 20, y + 11 + j * 16, 13, f.color || "#fff", "right", false));
+      hudFeedRow(f, lines, VW - w - 12, y, w, bh, mine && mine.n); // Counter-Strike: your own doings get a red outline
       y += bh + 4;
       ctx.globalAlpha = 1;
     }
   }
   // chat log (bottom left), sitting above however many needs rows are showing
-  const nr = mine && ["day", "night", "royale"].includes(g.ph) ? (Math.max(mine.bl, mine.bw) >= 50) + ((mine.fd ?? 100) < 60 || (mine.wt ?? 100) < 60 || mine.rad > 0) + ((mine.ss || 0) >= 25 || (mine.els || "").includes(",")) + ((mine.ss || 0) >= 60 ? 0.7 : 0) : 0;
-  const chatY = Math.min(VH - 236, VH - 176 - 30 * nr - 10);
+  const fdRow = mine && ((mine.fd ?? 100) < 90 || (mine.wt ?? 100) < 90 || mine.rad > 0);
+  const nr = mine && ["day", "night", "royale"].includes(g.ph) ? (Math.max(mine.bl, mine.bw) >= 50) + (fdRow ? 1.4 : 0) + ((mine.ss || 0) >= 25 || (mine.els || "").includes(",")) + ((mine.ss || 0) >= 60 ? 0.7 : 0) : 0;
+  const vt = mine ? vitalsTop(mine) : VH - 146, chatY = Math.min(vt - 60, vt - 30 * nr - 40);
   chatLog.forEach((c, i) => {
     const age = t - c.t; if (age > 15 && !chatting) return;
     ctx.globalAlpha = chatting ? 1 : Math.min(1, 15 - age);
@@ -168,7 +171,7 @@ function drawHud(mine, t) {
   if (g.dis && g.dis.k === "flood" && g.dis.w > 1 && pred.z < g.dis.w) { ctx.fillStyle = `rgba(40,110,170,${Math.min(0.3, g.dis.w / 100)})`; ctx.fillRect(0, VH * 0.55, VW, VH * 0.45); text("wading", VW / 2, VH * 0.55 + 16, 12, "#bfe0ff"); }
   // bottom left: needs. Each row only shows up once it matters, so the HUD stays quiet most of the time.
   if (["day", "night", "royale"].includes(S.g.ph)) {
-    let ry = VH - 176;
+    let ry = vitalsTop(mine) - 30;
     const row = () => { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(12, ry, 330, 26, 8); ctx.fill(); const y = ry + 14; ry -= 30; return y; };
     if (Math.max(mine.bl, mine.bw) >= 50) {
       const y = row();
@@ -177,12 +180,12 @@ function drawHud(mine, t) {
       if (Math.max(mine.bl, mine.bw) >= 60) text("[X] go", 336, y, 11, "#ffc030", "right");
     }
     const fd = mine.fd ?? 100, wt = mine.wt ?? 100;
-    if (fd < 60 || wt < 60 || mine.rad > 0) {
-      const y = row();
-      const fb = (x, lbl, v, col) => { text(lbl, x, y, 12, v <= 20 && Math.floor(t * 3) % 2 ? "#f55" : "#ddd", "left"); bar(x + 58, y - 5, 70, 8, v / 100, v <= 20 ? "#e33" : col); };
-      fb(22, "🍞 Food", fd, "#d8a050"); fb(160, "💧 Drink", wt, "#5ab0ff");
-      if (mine.rad > 0) text(`☢ ${mine.rad}`, 336, y, 12, mine.rad > 50 && Math.floor(t * 3) % 2 ? "#f55" : "#9fff60", "right");
-      else if (fd < 30 || wt < 30) text("[H] eat", 336, y, 11, "#ffc030", "right");
+    if (fd < 90 || wt < 90 || mine.rad > 0) { // Minecraft: a row of drumsticks and a row of water drops
+      ry -= 12; const y0 = ry; ry -= 30;
+      ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(12, y0, 330, 38, 8); ctx.fill();
+      hudFoodDrink(20, y0 + 11, fd, wt, t);
+      if (mine.rad > 0) text(`☢ ${mine.rad}`, 336, y0 + 19, 12, mine.rad > 50 && Math.floor(t * 3) % 2 ? "#f55" : "#9fff60", "right");
+      else if (fd < 30 || wt < 30) text(`${keyFor("eat")} eat`, 336, y0 + 19, 11, "#ffc030", "right");
     }
     const ss = mine.ss || 0, el = ELEMS[mine.el] || ELEMS.force, multi = (mine.els || "").includes(",");
     if (ss >= 25 || multi) {
@@ -193,42 +196,35 @@ function drawHud(mine, t) {
       if (ss >= 60) text("Stressed out. Kick a ball about on the pitch to calm down.", 22, ry + 16, 12, "#ffb070", "left");
     }
   }
-  // bottom left: vitals
-  ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(12, VH - 146, 330, 134, 10); ctx.fill();
-  bar(24, VH - 138, 300, 5, mine.xp / mine.xn, "#9fe0ff");
-  text(`Lv ${mine.lv}${mine.pts ? `  ·  ${mine.pts} skill point${mine.pts > 1 ? "s" : ""}: press K` : ""}`, 324, VH - 125, 11, mine.pts ? "#9fe0ff" : "#8aa", "right");
-  text(mine.n, 24, VH - 112, 15, mine.c, "left");
-  text(`Gen ${mine.gen} · ${mine.tr}: ${TRAIT_DESC[mine.tr] || ""}`, 24, VH - 94, 12, "#b8a8e0", "left");
-  bar(24, VH - 80, 300, 14, mine.hp / mine.mh, mine.hp / mine.mh > 0.3 ? "#4c4" : "#e33");
-  text(`${mine.hp} / ${mine.mh}`, 174, VH - 73, 12, "#fff");
-  if (mine.ar > 0) bar(24, VH - 64, 300 * mine.ar / 60, 5, 1, "#6cf", "#0000");
-  text(`${mine.g}g`, 24, VH - 45, 20, "#ffd34d", "left");
-  text(`🌱 ${mine.sd}`, 110, VH - 45, 18, "#8f8", "left");
-  if (mine.spn) text(`🎰 ${mine.spn} spin${mine.spn > 1 ? "s" : ""} at the casino`, 324, VH - 22, 13, "#ffd34d", "right");
-  text(`[3] 💣 ${mine.gn ?? 0}   [4] 🔥 ${mine.mo ?? 0}${mine.hoe ? `   [F] ${["", "Hoe", "Steel Hoe", "Golden Hoe"][mine.hoe]}${mine.ho ? " (in hand)" : ""}` : ""}`, VW - 296, VH - 116, 13, "#ffb070", "left");
+  // bottom left: vitals. Your name and level, Zelda hearts, gold and seeds, and your shout
+  const py = vitalsTop(mine), ph = VH - 12 - py;
+  ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(12, py, 330, ph, 10); ctx.fill();
+  text(mine.n, 24, py + 14, 14, mine.c, "left");
+  text(`Lv ${mine.lv}${mine.pts ? `  ·  ${mine.pts} skill point${mine.pts > 1 ? "s" : ""}: ${keyFor("skills")}` : ""}`, 330, py + 14, 11, mine.pts ? "#9fe0ff" : "#8aa", "right");
+  bar(24, py + 25, 306, 3, mine.xp / mine.xn, "#9fe0ff");
+  let vy = py + 33 + hudHearts(24, py + 33, mine.hp, mine.mh, t);
+  text(`${mine.hp}/${mine.mh}`, 330, py + 42, 11, mine.hp / mine.mh > 0.25 ? "#ccc" : "#f66", "right");
+  if (mine.ar > 0) { bar(24, vy + 1, 210 * Math.min(1, mine.ar / 60), 4, 1, "#6cf", "#0000"); vy += 7; }
+  text(`${mine.g}g`, 24, vy + 15, 20, "#ffd34d", "left");
+  text(`🌱 ${mine.sd}`, 110, vy + 15, 18, "#8f8", "left");
+  if (mine.spn) text(`🎰 ${mine.spn} spin${mine.spn > 1 ? "s" : ""} at the casino`, 330, VH - 26, 12, "#ffd34d", "right");
   if (mine.wm) text("🔥 The Hearth's warmth is healing you", VW / 2, VH - 176, 13, "#ffb070");
-  if ((mine.sta ?? 100) < 100) { // stamina: only shown while it's being used or refilling
-    const k = (mine.sta ?? 100) / 100; ctx.fillStyle = "#0008"; ctx.beginPath(); ctx.roundRect(VW / 2 - 62, VH - 30, 124, 9, 4); ctx.fill();
-    ctx.fillStyle = k < 0.15 ? "#ff7050" : "#9fe0ff"; ctx.beginPath(); ctx.roundRect(VW / 2 - 60, VH - 28, 120 * k, 5, 3); ctx.fill();
-  }
-  if (mine.ho) text("🌱 Hoe in hand: click open ground to till · F puts it away", VW / 2, VH - 150, 14, "#c8e0a0");
-  if (mine.st > 0) { ctx.fillStyle = "#ffcc00"; for (let i = 0; i < 5; i++) { ctx.globalAlpha = i < mine.st ? 1 : 0.2; star(190 + i * 22, VH - 45, 9); } ctx.globalAlpha = 1; text("WANTED", 290, VH - 45, 11, "#ffcc00", "left"); }
+  hudStamina(mine, t); // Breath of the Wild: the wheel by the crosshair
+  if (mine.ho) text(`🌱 Hoe in hand: click open ground to till · ${keyFor("hoe")} puts it away`, VW / 2, VH - 150, 14, "#c8e0a0");
+  if (mine.st > 0) { ctx.fillStyle = "#ffcc00"; for (let i = 0; i < 5; i++) { ctx.globalAlpha = i < mine.st ? 1 : 0.2; star(190 + i * 22, vy + 15, 9); } ctx.globalAlpha = 1; text("WANTED", 300, vy + 15, 11, "#ffcc00", "left"); }
   const sc = mine.sc;
   const shEl = ELEMS[mine.el] || ELEMS.force;
-  text(sc > 0 ? `Q  shout ${Math.ceil(sc)}s` : `Q  ${shEl.word} ready`, 24, VH - 22, 13, sc > 0 ? "#888" : shEl.color, "left");
-  // bottom right: weapon (with its firing mode and attachments)
-  ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW - 312, VH - 128, 300, 116, 10); ctx.fill();
-  const wn = `${mine.we ? ENH[mine.we] + " " : ""}${mine.wn}`;
-  text(wn, VW - 24, VH - 80, 20, RARITY_COL[mine.wr], "right");
-  text(`${mine.wmo ? `${MODE_ICON[mine.wmo] || ""} ${mine.we >= 4 ? "OVERCHARGED · " : ""}` : ""}${(mine.wat || "").split(",").filter(Boolean).map((a) => ATT_ICON[a]).join(" ")}${mine.wat ? "  " : ""}${RARITY[mine.wr]}${mine.we ? `  +${mine.we}` : ""}`, VW - 24, VH - 58, 13, RARITY_COL[mine.wr], "right");
-  const busy = mine.rl > 0 || mine.jam;
-  text(mine.jam ? "JAMMED" : mine.rl > 0 ? "RELOADING" : mine.w === "sword" ? "∞" : `${mine.am}`, VW - 24, VH - 32, busy ? 18 : 28, mine.jam ? "#ff8060" : mine.am === 0 ? "#f55" : mine.hot ? "#7dffb0" : "#fff", "right");
-  if (mine.hot && !busy) text("EMPOWERED", VW - 70, VH - 32, 12, "#7dffb0", "right");
-  else if (mine.w === "ak" && !busy && !mine.jam && !(mine.rl > 0)) text("🎲 MAYBE", VW - 70, VH - 32, 12, "#ffd34d", "right"); // the AK-Maybe re-rolls its ammo every shot; a perfect reload steadies it
-  if (PARTS[mine.w]) { const dd = mine.dirt || 0; text(mine.jam ? "⚠ JAMMED: R clears it, L strips & cleans" : `Condition: ${dd < 20 ? "clean" : dd < 45 ? "grubby" : dd < 70 ? "dirty, may jam" : "filthy, will jam"}${dd >= 45 ? "  ·  L to clean" : ""}`, VW - 296, VH - 98, 12, mine.jam ? "#ff8060" : dd < 20 ? "#8f8" : dd < 45 ? "#cc9" : dd < 70 ? "#ffb070" : "#ff8060", "left"); }
-  text(mine.sec ? "[1] Pistol  [2] Primary" : "", VW - 296, VH - 32, 12, "#999", "left");
+  text(sc > 0 ? `${keyFor("shout")}  shout ${Math.ceil(sc)}s` : `${keyFor("shout")}  ${shEl.word} ready`, 24, VH - 26, 13, sc > 0 ? "#888" : shEl.color, "left");
+  // bottom right: the weapon (Halo), with its firing mode and attachments
+  {
+    const busy = mine.rl > 0 || mine.jam, dd = mine.dirt || 0;
+    const sub = `${mine.wmo ? `${MODE_ICON[mine.wmo] || ""} ${mine.we >= 4 ? "OVERCHARGED · " : ""}` : ""}${(mine.wat || "").split(",").filter(Boolean).map((a) => ATT_ICON[a]).join(" ")}${mine.wat ? "  " : ""}${RARITY[mine.wr]}${mine.we ? `  +${mine.we}` : ""}`;
+    const badge = mine.hot && !busy ? ["EMPOWERED", "#7dffb0"] : mine.w === "ak" && !busy ? ["🎲 MAYBE", "#ffd34d"] : null; // the AK-Maybe re-rolls its ammo every shot; a perfect reload steadies it
+    const cond = !PARTS[mine.w] ? null : mine.jam ? [`⚠ JAMMED: ${keyFor("reload")} clears it, ${keyFor("clean")} cleans`, "#ff8060"] : [`${dd < 20 ? "✔ clean" : dd < 45 ? "grubby" : dd < 70 ? "⚠ dirty, may jam" : "⚠ filthy, will jam"}${dd >= 45 ? `  ·  ${keyFor("clean")} to clean` : ""}`, dd < 20 ? "#8f8" : dd < 45 ? "#cc9" : dd < 70 ? "#ffb070" : "#ff8060"];
+    hudWeapon(mine, t, { sub, badge, cond });
+  }
   const myVeh = mine.vh && S.vh.find((v) => v[0] === mine.vh);
-  { const qp = quickPlan(mine); if (qp) { const qy = myVeh ? VH - 250 : VH - 166; ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW - 232, qy, 220, 30, 8); ctx.fill(); text(`[H] ${qp.icon} ${qp.label}`, VW - 222, qy + 15, 13, qp.col, "left"); } } // the quick-use slot
+  { const qp = quickPlan(mine); if (qp) { const qy = myVeh ? VH - 250 : VH - 166; ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW - 232, qy, 220, 30, 8); ctx.fill(); text(`[${keyFor("eat")}] ${qp.icon} ${qp.label}`, VW - 222, qy + 15, 13, qp.col, "left"); } } // the quick-use slot
   if (myVeh) {
     ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW - 312, VH - 212, 300, 74, 10); ctx.fill();
     const driving = myVeh[6] === me;
