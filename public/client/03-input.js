@@ -81,7 +81,7 @@ cv.addEventListener("mousemove", (e) => {
   }
   if (document.pointerLockElement === cv) { const sm = S && S.p.find((q) => q.id === me), sc = sm && sm.w === "sniper" && adsZoom > 1.3; const sens = 0.0024 * OPTS.sens * (sc ? 0.2 : adsZoom > 1.05 ? 0.55 : 1); yaw += e.movementX * sens; pitch = Math.max(-1.45, Math.min(1.45, pitch - e.movementY * sens * (OPTS.invert ? -1 : 1))); return; }
 });
-const menusOpen = () => fixOpen || dlgOpen || bugOpen || ballotOpen || (S && S.g.ph === "lobby") || cleanOpen || hackOpen || optsOpen || chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || journalOpen || invOpen || mktOpen || cardsOpen || stallOpen || (S && S.g.ph === "over");
+const menusOpen = () => pauseOpen || fixOpen || dlgOpen || bugOpen || ballotOpen || (S && S.g.ph === "lobby") || cleanOpen || hackOpen || optsOpen || chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || journalOpen || invOpen || mktOpen || cardsOpen || stallOpen || (S && S.g.ph === "over");
 // Browsers refuse to re-lock the mouse for about a second after it was released (closing a menu with Esc counts).
 // So if a click comes too soon, quietly try again once the browser allows it instead of leaving the mouse stuck.
 let lockRetry = 0;
@@ -127,7 +127,6 @@ $("bugSend").onclick = () => {
   send({ t: "bug", kind, text, errors: kind === "Bug" ? recentErrors.slice(-5) : [], ua: navigator.userAgent }); toggleBug(false);
 };
 $("bugCancel").onclick = () => toggleBug(false);
-$("bugBtn").onclick = (e) => { e.target.blur(); toggleBug(); };
 $("bug").addEventListener("click", (e) => { if (e.target === $("bug")) toggleBug(false); });
 $("overReady").onclick = (e) => { e.target.blur(); send({ t: "ready" }); };
 for (const b of document.querySelectorAll(".modeBtns button")) b.onclick = (e) => { e.target.blur(); send({ t: "mode", m: b.dataset.m }); };

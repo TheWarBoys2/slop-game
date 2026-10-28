@@ -114,7 +114,7 @@
   .btns button:disabled { opacity: .3; cursor: default; }
   .btns button[data-n^="-"] { background: #6a2f2f; }
   .nw { font-size: 13px; margin: 2px 0; }
-  #elect { position: fixed; left: 12px; top: 220px; width: 300px; z-index: 5; background: #141a24ee; border: 2px solid #4a6a9a; border-radius: 10px; padding: 8px 10px; font-size: 12px; max-height: calc(calc(100vh / var(--ui, 1)) - 400px); overflow: auto; }
+  #elect { position: fixed; left: 12px; top: 186px; width: 300px; z-index: 5; background: #141a24ee; border: 2px solid #4a6a9a; border-radius: 10px; padding: 8px 10px; font-size: 12px; max-height: calc(calc(100vh / var(--ui, 1)) - 400px); overflow: auto; }
   #elect .st-h { font-size: 15px; margin-bottom: 3px; } #elect .st-t { margin-bottom: 4px; } #elect .st-c { padding: 4px 7px; margin: 3px 0; } #elect .st-c small { font-size: 11px; }
   .st-c.posad { background: #3a1414; } .st-c.posad b { color: #ff6050; }
   #cards .panel { max-width: 1000px; background: #16121c; border-color: #8a5ab0; }
@@ -179,10 +179,6 @@
   #wardrobe .wi.sel { border-color: #ffd34d; } #wardrobe .wi.lock { opacity: .3; cursor: default; }
   .lg { margin: 5px 0; } .lg .bar { height: 8px; background: #0006; border-radius: 4px; overflow: hidden; margin-top: 2px; } .lg .bar div { height: 100%; }
   .modeBtns { display: flex; gap: 6px; flex-wrap: wrap; }
-  #optBtn { position: fixed; left: 12px; top: 186px; z-index: 5; background: #000a; color: #ddd; border: 1px solid #555; border-radius: 8px; padding: 4px 9px; font-size: 13px; cursor: pointer; }
-  #optBtn:hover, #bugBtn:hover { color: #fff; border-color: #aaa; }
-  body.locked #optBtn, body.locked #bugBtn { display: none; } /* can't click them with the mouse locked anyway; O and F8 still work */
-  #bugBtn { position: fixed; left: 118px; top: 186px; z-index: 5; background: #000a; color: #ddd; border: 1px solid #555; border-radius: 8px; padding: 4px 9px; font-size: 13px; cursor: pointer; }
   #bugText { width: 100%; min-height: 140px; box-sizing: border-box; background: #121610; color: #eee; border: 2px solid #4b5e38; border-radius: 8px; padding: 10px; font: 14px/1.4 inherit; resize: vertical; }
   #lobbyPanel .panel { max-width: 760px; width: 92vw; }
   .lp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 10px; }
@@ -235,6 +231,31 @@
   .jq small { display: block; color: #b0a0c8; }
   .jc { padding: 8px 10px; margin: 5px 0; background: #2a2020; border-left: 3px solid #e0c0ff; border-radius: 4px; color: #ddd; line-height: 1.4; }
   #journalBody h3 { color: #cfe0b8; margin: 14px 0 4px; }
+  /* the Esc menu and the tab strip (Persona 5): slanted, jagged, red and black */
+  #p5tabs { position: fixed; left: 0; right: 0; top: 0; z-index: 12; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 8px 12px 10px; background: linear-gradient(176deg, #000 0 78%, transparent 79%); font-family: "Arial Black", Impact, sans-serif; }
+  #p5tabs .p5t { transform: skewX(-14deg); background: #fff; color: #000; border: 0; padding: 5px 12px; font: inherit; font-size: 13px; letter-spacing: .5px; text-transform: uppercase; cursor: pointer; display: flex; gap: 6px; align-items: center; clip-path: polygon(0 8%, 100% 0, 96% 100%, 3% 92%); }
+  #p5tabs .p5t > * { transform: skewX(14deg); font-style: normal; }
+  #p5tabs .p5t:hover { background: #ffd0d0; }
+  #p5tabs .p5t.on { background: #e60012; color: #fff; padding: 8px 18px; font-size: 15px; clip-path: polygon(0 0, 100% 10%, 97% 100%, 4% 86%); }
+  #p5tabs .p5t.off { opacity: .35; }
+  #p5tabs .p5k { background: #e60012; color: #fff; font: inherit; font-size: 12px; padding: 3px 7px; transform: rotate(-6deg); margin: 0 6px; border-radius: 2px; }
+  #p5tabs .p5esc { color: #fff; font-size: 11px; margin-left: 10px; opacity: .8; font-family: "Trebuchet MS", sans-serif; }
+  body.p5 .overlay { padding-top: 58px; }
+  body.p5 .panel { max-height: calc(92vh / var(--ui, 1) - 58px); }
+  #p5menu { position: fixed; inset: 0; z-index: 13; overflow: hidden; font-family: "Arial Black", Impact, sans-serif; }
+  #p5menu .p5bg { position: absolute; inset: -10%; background: repeating-linear-gradient(-28deg, transparent 0 34px, #0003 34px 40px), radial-gradient(circle at 75% 60%, #ff2a3a 0, #c4000f 40%, #3a0006 100%); clip-path: polygon(0 0, 72% 0, 52% 100%, 0 100%); animation: p5in .18s ease-out; }
+  #p5menu::before { content: ""; position: absolute; inset: 0; background: #000c; z-index: -1; }
+  @keyframes p5in { from { transform: translateX(-30%); } to { transform: none; } }
+  #p5menu .p5title { position: absolute; left: 40px; top: 26px; color: #fff; font-size: 64px; letter-spacing: 2px; transform: rotate(-8deg); text-shadow: 5px 5px 0 #000; }
+  #p5menu .p5title small { display: block; font-size: 15px; letter-spacing: 1px; background: #000; padding: 2px 10px; margin-top: -4px; width: max-content; text-shadow: none; font-family: "Trebuchet MS", sans-serif; }
+  #p5menu .p5list { position: absolute; left: 70px; top: 150px; list-style: none; margin: 0; padding: 0; }
+  #p5menu li { position: relative; display: flex; align-items: center; gap: 12px; margin: 0 0 4px calc(var(--n) * 14px); padding: 4px 22px 4px 14px; color: #fff; font-size: 26px; text-transform: uppercase; cursor: pointer; transform: rotate(-8deg); width: max-content; text-shadow: 3px 3px 0 #000; }
+  #p5menu li b { font-size: 22px; text-shadow: none; } #p5menu li kbd { font: 12px "Trebuchet MS", sans-serif; background: #000; color: #fff; padding: 1px 6px; text-shadow: none; }
+  #p5menu li em { font: bold 12px "Trebuchet MS", sans-serif; background: #fff; color: #e60012; padding: 1px 6px; text-shadow: none; }
+  #p5menu li.on { color: #e60012; text-shadow: none; }
+  #p5menu li.on::before { content: ""; position: absolute; inset: -4px -10px; background: #fff; z-index: -1; clip-path: polygon(0 18%, 100% 0, 94% 100%, 3% 82%); }
+  #p5menu li.off { opacity: .45; }
+  #p5menu .p5foot { position: absolute; left: 40px; bottom: 20px; color: #fff; font: 13px "Trebuchet MS", sans-serif; background: #000; padding: 4px 10px; transform: rotate(-3deg); }
 </style>
 </head>
 <body>
@@ -357,8 +378,6 @@
 
 <div id="dlg" class="hidden"></div>
 
-<button id="optBtn" title="Options (O)">⚙ Options [O]</button>
-<button id="bugBtn" title="Features and bugs (F8)">🐞 Ideas &amp; bugs [F8]</button>
 <div id="bug" class="overlay hidden">
   <div class="panel" style="max-width:560px">
     <h2 style="margin:0 0 4px;color:#ffd34d">Features and bugs</h2>
