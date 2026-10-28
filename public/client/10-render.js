@@ -126,9 +126,9 @@ function drawHud(mine, t) {
 
   if (!mine) return;
   // low health: the edges of the screen pulse red until you patch yourself up
-  if (!mine.d && mine.hp > 0 && mine.hp / mine.mh < 0.3) { const k = 1 - mine.hp / mine.mh / 0.3, g2 = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.35, VW / 2, VH / 2, VH * 0.85); g2.addColorStop(0, "#f000"); g2.addColorStop(1, `rgba(170,0,0,${(0.18 + 0.22 * k) * (0.75 + 0.25 * Math.sin(t * 5))})`); ctx.fillStyle = g2; ctx.fillRect(0, 0, VW, VH); }
+  if (!mine.d && mine.hp > 0 && mine.hp / mine.mh < 0.3) { const k = 1 - mine.hp / mine.mh / 0.3; tint("low", (0.18 + 0.22 * k) * (0.75 + 0.25 * Math.sin(t * 5))); }
   // aim-down-sights vignette
-  if (adsZoom > 1.02) { const k = (adsZoom - 1) / 0.35, g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.25, VW / 2, VH / 2, VH * 0.75); g.addColorStop(0, "#0000"); g.addColorStop(1, `rgba(0,0,0,${0.55 * k})`); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
+  if (adsZoom > 1.02) tint("ads", 0.55 * (adsZoom - 1) / 0.35);
   // second person
   if (watcher) {
     ctx.fillStyle = "rgba(60,90,20,0.12)"; ctx.fillRect(0, 0, VW, VH);
@@ -323,8 +323,8 @@ function drawHud(mine, t) {
     text("🔔 SHAME 🔔 SHAME 🔔 SHAME 🔔", VW / 2, VH * 0.42 - sz * 0.62, 26, "#ffd34d");
     ctx.globalAlpha = 1;
   }
-  if (mine.bi) { ctx.fillStyle = `rgba(140,190,40,${0.14 + Math.sin(t * 3) * 0.04})`; ctx.fillRect(0, 0, VW, VH); }
-  if (mine.fr) { const g2 = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.25, VW / 2, VH / 2, VH * 0.8); g2.addColorStop(0, "#f000"); g2.addColorStop(1, `rgba(255,110,20,${0.45 + Math.random() * 0.15})`); ctx.fillStyle = g2; ctx.fillRect(0, 0, VW, VH); }
+  if (mine.bi) tint("bile", 0.14 + Math.sin(t * 3) * 0.04);
+  if (mine.fr) tint("fire", 0.45 + Math.random() * 0.15);
   // wasted
   if (mine.d && g.mode === "royale" && wastedPlace) {
     ctx.fillStyle = "rgba(40,40,40,0.45)"; ctx.fillRect(0, VH / 2 - 80, VW, 150);

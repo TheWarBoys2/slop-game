@@ -247,3 +247,36 @@ function makeReel(type, rarity, name) {
   return reel;
 }
 
+// ---------------------------------------------------------------- full-screen tints
+// The big screen-wide glows (aiming down sights, low health, getting hit, on fire, the sniper scope) are CSS layers
+// between the 3D view and the HUD canvas. They used to be fresh canvas gradients painted over the whole HUD canvas
+// (at full screen resolution) every frame, which is what made aiming down sights drop the framerate.
+// Call tint(id, alpha) each frame it should show; any layer not asked for that frame fades out by itself.
+const TINTS = {
+  ads: "radial-gradient(circle 75vh, #0000 33.3%, #000 100%)",
+  low: "radial-gradient(circle 85vh, #0000 41.2%, rgb(170,0,0) 100%)",
+  hurt: "radial-gradient(circle 80vh, #0000 37.5%, rgb(200,0,0) 100%)",
+  fire: "radial-gradient(circle 80vh, #0000 31.2%, rgb(255,110,20) 100%)",
+  bile: "rgb(140,190,40)",
+  fog: "rgb(120,40,160)",
+  scope: "radial-gradient(circle 44vh, #0000 99.6%, #000 100%)",
+};
+const tintEl = {}, tintWant = {};
+let tintSeen = -1;
+for (const [id, bg] of Object.entries(TINTS)) {
+  const el = document.createElement("div");
+  el.style.cssText = `position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0;background:${bg}`;
+  cv.parentNode.insertBefore(el, cv); // same layer as the HUD canvas but painted under it
+  tintEl[id] = el; el._a = 0;
+}
+function tint(id, a) { tintWant[id] = Math.max(tintWant[id] || 0, a); }
+requestAnimationFrame(function tintFrame() { // first runs after every client file has loaded (frameNo lives in 10-render)
+  requestAnimationFrame(tintFrame);
+  if (frameNo === tintSeen) return; // an impact frame holds the picture, so hold the tints too
+  tintSeen = frameNo;
+  for (const id in tintEl) {
+    const el = tintEl[id], a = Math.round(Math.min(1, tintWant[id] || 0) * 100) / 100;
+    if (a !== el._a) { el._a = a; el.style.opacity = a; } // only touch the style when it changes
+    tintWant[id] = 0;
+  }
+});
