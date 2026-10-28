@@ -265,7 +265,7 @@ function render3d(mine, t, dt) {
   }
   if (t - hurtFlash < 0.3) tint("hurt", 0.5 * (1 - (t - hurtFlash) / 0.3));
   if (t - fogT < 1.2) tint("fog", 0.25 * (1 - (t - fogT) / 1.2));
-  drawHud(mine, t); if (building) placeBuildBar(); drawHitDirs(t); drawAchievement(t); drawMsgLog();
+  drawHud(mine, t); if (building) placeBuildBar(); drawHitDirs(t); drawAchievement(t); drawFirstHint(t); drawMsgLog();
   drawMinimap(mine, t); drawCompass(t); zombieSounds(t);
   drawCrosshair(mine, t); drawBigMap(t); drawRadial(); // the wheel goes on top of everything
   if (mine && document.pointerLockElement !== cv && !menusOpen() && !radial) { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 240, VH / 2 + 80, 480, 34, 8); ctx.fill(); text(`Click to look around  ·  ${keyFor("view")} switches view  ·  hold F1 for controls`, VW / 2, VH / 2 + 97, 15, "#ffd34d"); }

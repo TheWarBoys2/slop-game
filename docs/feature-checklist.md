@@ -76,6 +76,7 @@ Auto = a playtest scenario fails if it breaks. Bots = the bots exercise it, and 
 | Shops: per-shop look (RE4 Merchant, Stardew, Fallout terminal, Yakuza), item card on the right, Shift-click buys five consumables; dialogue: Stardew box, portrait, typewriter text (click to finish) | Manual (headless screenshots of each shop and a real NPC talk) |
 | Minigames: casino (Yakuza, H/S/1-5/Enter keys), Slop Snap (Marvel Snap, drag cards, staged power preview, Enter ends turn), market (BAWSAQ: quantity picker, Max, chart per row), ballot (Papers, Please stamp, 1-9 keys), breach (Cyberpunk, next-line preview), control stations (Among Us, Task Completed/Failed); "How to play" banner until dismissed | Manual (headless screenshots of each, a real Snap match, real ballot vote) |
 | Build bar (Fortnite): slots along the bottom with costs and gold, ghost goes red and says why (too far, gold, occupied, crops, well, someone in the way, 25 max) | Manual (headless: ghost reason matched the server's accept/reject at 5 spots) |
+| Join (Smash select: P1 card draws your farmer live, class and background tiles, READY TO FARM, Enter from anywhere, fits 720p), lobby (Mario Kart mode cards, host ← → flips modes, ready flags), results (Smash cards for the top four, Play again), first-time hints (Left 4 Dead style, once per computer) | Manual (headless at 1600x900 and 1280x720; `tp end` test hook ends a round) |
 | Positional audio, music, NPC voices | Manual |
 | Gamepad and flight stick | Manual |
 | Windows and Linux builds | Auto: the release workflow smoke-tests both |
