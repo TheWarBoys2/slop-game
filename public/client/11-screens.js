@@ -93,7 +93,7 @@ function openFix(e) {
   $("fix").classList.remove("hidden");
   cancelAnimationFrame(fixTimer); fixLoop();
 }
-function fixDone(ok) { if (!fx2 || fx2.sent) return; const F = fx2; F.sent = true; setTimeout(() => { if (fx2 === F) openFix({ close: 1 }); }, 3000); send(fx2.kind === "flood" ? { t: "fix", rots: fx2.rots } : { t: "fix", ok }); }
+function fixDone(ok) { if (!fx2 || fx2.sent) return; const F = fx2; F.sent = true; fixBanner(ok); setTimeout(() => { if (fx2 === F) openFix({ close: 1 }); }, 3000); send(fx2.kind === "flood" ? { t: "fix", rots: fx2.rots } : { t: "fix", ok }); }
 const PIPE_M = [5, 3, 7], rotM = (m, k) => { for (let i = 0; i < (k & 3); i++) m = ((m << 1) | (m >> 3)) & 15; return m; };
 function sluiceWet() { // which pipes the water reaches from the inlet
   const { R, C, r0, g, rots } = fx2, mask = (i) => rotM(PIPE_M[g[i][0]], rots[i]), wet = new Set();
@@ -216,6 +216,7 @@ function renderHack() {
   $("hkGo").onclick = () => closeHack(false);
   $("hkReset").onclick = () => { hk.picks = []; renderHack(); };
   $("hkQuit").onclick = () => closeHack(true);
+  hackDress();
 }
 
 // ---------------------------------------------------------------- the bag (I)
@@ -341,23 +342,30 @@ function spark(h, w, h0) {
   const pts = h.map((v, i) => `${(i / (h.length - 1) * w).toFixed(1)},${(h0 - (v - lo) / k * (h0 - 2) - 1).toFixed(1)}`).join(" ");
   return `<svg width="${w}" height="${h0}" viewBox="0 0 ${w} ${h0}"><polyline fill="none" stroke="${h[h.length - 1] >= h[0] ? "#7fd34d" : "#ff6060"}" stroke-width="1.6" points="${pts}"/></svg>`;
 }
-function renderMarket() {
+function renderMarket() { // GTA V's BAWSAQ: a stock site on a phone browser. Pick a quantity, click a row for its chart.
   const mine = S?.p.find((p) => p.id === me);
   if (!S || !S.g.mk) return;
   const syms = Object.keys(STOCKS), sh = (INV && INV.shares) || {}, basis = (INV && INV.basis) || {};
-  let worth = 0;
+  if (!syms.includes(mkSel)) mkSel = syms[0];
+  let worth = 0, spent = 0;
   const rows = syms.map((s, i) => {
     const px = S.g.mk[i], h = mkHist && mkHist[s], ch = h && h.length > 1 ? (px / h[0] - 1) * 100 : 0, n = sh[s] || 0, val = n * px, pl = n ? val - (basis[s] || 0) : 0;
-    worth += val;
-    return `<tr><td><b>${s}</b><small>${escH(STOCKS[s].name)}</small></td><td>${spark(h, 110, 30)}</td><td class="px">${px.toFixed(2)}g<small style="color:${ch >= 0 ? "#7fd34d" : "#ff6060"}">${ch >= 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(1)}%</small></td>` +
-      `<td>${n ? `${n}<small>${Math.round(val)}g <span style="color:${pl >= 0 ? "#7fd34d" : "#ff6060"}">${pl >= 0 ? "+" : ""}${Math.round(pl)}</span></small>` : "<small>-</small>"}</td>` +
-      `<td class="btns"><button data-s="${s}" data-n="1">Buy 1</button><button data-s="${s}" data-n="10">Buy 10</button><button data-s="${s}" data-n="-1"${n ? "" : " disabled"}>Sell 1</button><button data-s="${s}" data-n="${-n}"${n ? "" : " disabled"}>Sell all</button></td></tr>`;
+    worth += val; spent += n ? basis[s] || 0 : 0;
+    const q = mkQty === "max" ? mkMax(s) : mkQty, qs = mkQty === "max" ? n : Math.min(n, mkQty);
+    return `<tr class="${s === mkSel ? "sel" : ""}" data-row="${s}"><td><b>${s}</b><small>${escH(STOCKS[s].name)}</small></td><td>${spark(h, 110, 30)}</td><td class="px">${px.toFixed(2)}g<small class="${ch >= 0 ? "up" : "dn"}">${ch >= 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(1)}%</small></td>` +
+      `<td>${n ? `${n}<small>${Math.round(val)}g <span class="${pl >= 0 ? "up" : "dn"}">${pl >= 0 ? "+" : ""}${Math.round(pl)}</span></small>` : "<small>-</small>"}</td>` +
+      `<td class="btns"><button class="by" data-s="${s}" data-n="${q}"${q ? "" : " disabled"}>Buy ${q || ""}</button><button class="sl" data-s="${s}" data-n="${-qs}"${qs ? "" : " disabled"}>Sell ${qs || ""}</button></td></tr>`;
   }).join("");
-  const news = (S.g.news || []).map(([txt, up]) => `<div class="nw" style="color:${up ? "#7fd34d" : "#ff8080"}">${up ? "▲" : "▼"} ${escH(txt)}</div>`).join("") || `<div class="tag">Quiet day on the exchange.</div>`;
-  const M = S.g.mayor && CANDS[S.g.mayor];
-  $("marketBody").innerHTML = `<div class="tag">You have ${mine ? mine.g : 0}g. Your shares are worth ${Math.round(worth)}g. Shares pay 1.5% dividends every dawn. Trading fee: ${M && S.g.mayor === "vex" ? "none (Mayor Vex)" : "2%"}, plus a 1% spread. Your own orders move the price as they fill, so you can't sell into a rise you bought.</div>` +
-    `<table class="mkt">${rows}</table><h3>Valley news</h3>${news}<div class="fine">Prices react to what happens: kills, harvests, hacks, disasters, elections, bombs. <kbd>M</kbd>/<kbd>Esc</kbd> to close.</div>`;
-  for (const b of $("marketBody").querySelectorAll("button[data-s]")) b.onclick = () => { send({ t: "trade", sym: b.dataset.s, n: +b.dataset.n }); sfx("click"); };
+  const news = (S.g.news || []).map(([txt, up]) => `<div class="nw ${up ? "up" : "dn"}">${up ? "▲" : "▼"} ${escH(txt)}</div>`).join("") || `<div class="tag">Quiet day on the exchange.</div>`;
+  const M = S.g.mayor && CANDS[S.g.mayor], si = syms.indexOf(mkSel), sh0 = mkHist && mkHist[mkSel], pl = Math.round(worth - spent);
+  $("marketBody").innerHTML = `<div class="bq-bar"><span>●●●</span><i>www.slopsaq.com/${mkSel.toLowerCase()}</i></div><div class="bq-top"><b>SLOP<em>SAQ</em></b><span>Cash <b>${mine ? mine.g : 0}g</b> · Shares <b>${Math.round(worth)}g</b> · <b class="${pl >= 0 ? "up" : "dn"}">${pl >= 0 ? "+" : ""}${pl}g</b></span></div>` +
+    `<div class="bq-chart"><div><b>${mkSel}</b> ${escH(STOCKS[mkSel].name)}<span>${S.g.mk[si].toFixed(2)}g</span></div>${spark(sh0, 600, 90)}</div>` +
+    `<div class="bq-q">Shares per click ${[1, 10, 50, 100, "max"].map((q) => `<button data-q="${q}" class="${mkQty === q ? "on" : ""}">${q === "max" ? "Max" : q}</button>`).join("")}</div>` +
+    `<table class="mkt">${rows}</table><h3>Valley news</h3>${news}<div class="fine">Dividends 1.5% every dawn. Fee ${M && S.g.mayor === "vex" ? "none (Mayor Vex)" : "2%"} plus a 1% spread; big orders move the price as they fill. Prices react to kills, harvests, hacks, disasters, elections and bombs. <kbd>M</kbd>/<kbd>Esc</kbd> to close.</div>`;
+  for (const b of $("marketBody").querySelectorAll("button[data-s]")) b.onclick = (e) => { e.stopPropagation(); send({ t: "trade", sym: b.dataset.s, n: +b.dataset.n }); sfx("click"); };
+  for (const b of $("marketBody").querySelectorAll("button[data-q]")) b.onclick = () => { mkQty = b.dataset.q === "max" ? "max" : +b.dataset.q; renderMarket(); };
+  for (const r of $("marketBody").querySelectorAll("tr[data-row]")) r.onclick = () => { mkSel = r.dataset.row; renderMarket(); };
+  howTo("market", $("market").querySelector(".panel"));
 }
 $("market").addEventListener("click", (e) => { if (e.target === $("market")) toggleMarket(false); });
 
@@ -421,7 +429,7 @@ function renderCards() {
       INV.deck = d; send({ t: "cg", a: "deck", ids: d }); renderCards();
     };
     $("deckClear").onclick = () => { INV.deck = []; send({ t: "cg", a: "deck", ids: [] }); renderCards(); };
-    return;
+    snapDress(); return;
   }
   const v = cgState.v, staged = cgStaged;
   const used = staged.reduce((a, [uid]) => { const h = v.hand.find((x) => x[1] === uid); return a + (h ? CARDS[h[0]].cost : 0); }, 0), energy = v.energy - used;
@@ -446,5 +454,6 @@ function renderCards() {
   if ($("cgUndo")) $("cgUndo").onclick = () => { cgStaged = []; cgSel = null; renderCards(); };
   if ($("cgFold")) $("cgFold").onclick = () => send({ t: "cg", a: "quit" });
   if ($("cgClose")) $("cgClose").onclick = () => { send({ t: "cg", a: "quit" }); cgState = null; toggleCards(false); };
+  snapDress();
 }
 

@@ -74,6 +74,8 @@ Auto = a playtest scenario fails if it breaks. Bots = the bots exercise it, and 
 | Esc menu (Persona 5): Esc or losing the mouse opens it, every screen is a tab, Q/E or the wheel flip tabs, Esc backs out one level | Manual (headless: Esc, pick Bag, E to Skills, Esc back to menu, Esc to game) |
 | Map tab (BotW, `,`): zoom, drag, click for a waypoint shown on compass, radar and in the world; bag item cards with gear comparison, right-click menu, Sort; skills say what the next rank does; journal Track button feeds the objective tracker | Manual (headless screenshots of each, quest tracking with a faked quest) |
 | Shops: per-shop look (RE4 Merchant, Stardew, Fallout terminal, Yakuza), item card on the right, Shift-click buys five consumables; dialogue: Stardew box, portrait, typewriter text (click to finish) | Manual (headless screenshots of each shop and a real NPC talk) |
+| Minigames: casino (Yakuza, H/S/1-5/Enter keys), Slop Snap (Marvel Snap, drag cards, staged power preview, Enter ends turn), market (BAWSAQ: quantity picker, Max, chart per row), ballot (Papers, Please stamp, 1-9 keys), breach (Cyberpunk, next-line preview), control stations (Among Us, Task Completed/Failed); "How to play" banner until dismissed | Manual (headless screenshots of each, a real Snap match, real ballot vote) |
+| Build bar (Fortnite): slots along the bottom with costs and gold, ghost goes red and says why (too far, gold, occupied, crops, well, someone in the way, 25 max) | Manual (headless: ghost reason matched the server's accept/reject at 5 spots) |
 | Positional audio, music, NPC voices | Manual |
 | Gamepad and flight stick | Manual |
 | Windows and Linux builds | Auto: the release workflow smoke-tests both |

@@ -48,7 +48,6 @@ function drawHud(mine, t) {
     const rd = S.p.filter((p) => p.rd).length, y = slot(28);
     text(g.cd >= 0 ? `STARTING IN ${Math.ceil(g.cd)}` : `${rd}/${S.p.length} ready · press F when you are`, VW / 2, y + 14, g.cd >= 0 ? 28 : 16, g.cd >= 0 ? "#7dffb0" : "#ccc");
   }
-  if (building) { const y = slot(18); text("BUILD MODE  ·  click to place, 1-4 to pick, right-click, C or Esc to stop", VW / 2, y + 9, 14, "#9fe0ff"); const by = slot(56) + "px", bb = $("buildBar"); if (bb.style.top !== by) bb.style.top = by; }
   if (g.dis) {
     const DN = { meteor: "☄ METEOR SHOWER", flood: "🌊 FLOOD", tornado: "🌪 TORNADO", quake: "⚠ EARTHQUAKE" };
     hudAlert(slot(24), `${DN[g.dis.k] || g.dis.k.toUpperCase()}${g.dis.left > 0 ? `  ·  ${g.dis.left}s` : ""}${g.dis.st ? "  ·  get to the control station (⚠)" : ""}`, "#ffb060", t); // the tracker, top right, says where the station is

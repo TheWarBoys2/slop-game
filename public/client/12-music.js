@@ -68,6 +68,6 @@ function musicTick() {
 }
 setInterval(musicTick, 60);
 
-window.slopDebug = { get S() { return S; }, get me() { return me; }, get MAP() { return MAP; }, get mask() { return keyMask(); }, look(y, p) { yaw = y; pitch = p; }, get pred() { return pred; }, get playView() { return playView; }, send, ev: (e) => { handleEvent(e); handlePersonal(e); }, get ui() { return { ballotOpen, dlgOpen, fixOpen, bugOpen, fx: fx2 }; } }; // for tools/ and curious people
+window.slopDebug = { get S() { return S; }, get me() { return me; }, get MAP() { return MAP; }, get mask() { return keyMask(); }, look(y, p) { yaw = y; pitch = p; }, get pred() { return pred; }, get playView() { return playView; }, send, ev: (e) => { handleEvent(e); handlePersonal(e); }, get ui() { return { ballotOpen, dlgOpen, fixOpen, bugOpen, fx: fx2 }; }, get ghost() { const mine = S && S.p.find((p) => p.id === me); return ghost3d && mine ? { ...ghost3d, why: buildCheck(ghost3d, mine) } : null; } }; // for tools/ and curious people
 requestAnimationFrame(render);
 })();

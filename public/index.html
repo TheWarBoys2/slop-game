@@ -314,6 +314,73 @@
   #p5menu li.on::before { content: ""; position: absolute; inset: -4px -10px; background: #fff; z-index: -1; clip-path: polygon(0 18%, 100% 0, 94% 100%, 3% 82%); }
   #p5menu li.off { opacity: .45; }
   #p5menu .p5foot { position: absolute; left: 40px; bottom: 20px; color: #fff; font: 13px "Trebuchet MS", sans-serif; background: #000; padding: 4px 10px; transform: rotate(-3deg); }
+  /* minigames: each looks like the game it borrows from (20-games.js) */
+  .howto { display: flex; gap: 10px; align-items: center; margin: 0 0 10px; padding: 8px 10px; background: #ffd34d; color: #2a1a00; border-radius: 6px; font-size: 13px; line-height: 1.35; }
+  .howto b { white-space: nowrap; letter-spacing: 1px; } .howto span { flex: 1; } .howto kbd { background: #2a1a0022; color: #2a1a00; border-color: #2a1a0055; }
+  .howto button { border: 0; background: #2a1a00; color: #ffd34d; border-radius: 4px; padding: 5px 10px; font-weight: bold; cursor: pointer; }
+  /* Vex's casino (Yakuza): black lacquer, gold leaf, neon pink, a green felt table */
+  #casino .panel { background: linear-gradient(160deg, #1a0408, #07020a 60%); border: 2px solid #c8a040; border-radius: 2px; box-shadow: 0 0 0 1px #000, 0 0 30px #ff2a8a44, 0 10px 40px #000a; }
+  #casino h2 { font-family: Georgia, serif; font-size: 30px; letter-spacing: 6px; color: #e8c060; text-shadow: 0 0 12px #ff2a8a; } #casino h2::before { content: "賭"; display: inline-block; margin-right: 12px; padding: 0 6px; background: #b01020; color: #fff; text-shadow: none; }
+  #casino .tag { color: #d8b8c8; } #casino .fine { color: #8a7080; }
+  #casino .cbtn { background: #0a0206; color: #e8c060; border: 1px solid #c8a040; border-radius: 0; clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); padding: 10px 20px; }
+  #casino .cbtn:not(:disabled):hover { background: #c8a040; color: #1a0408; } #casino .cbtn.alt { color: #d8b8c8; border-color: #6a4a5a; } #casino .cbtn kbd { font-size: 10px; }
+  #cGame:not(:empty) { margin-top: 10px; padding: 10px 14px 14px; background: radial-gradient(ellipse at 50% 30%, #1f6a3a, #0c3a1c); border: 6px solid #4a2a10; border-radius: 60px 60px 14px 14px; box-shadow: inset 0 0 20px #0008; }
+  #cGame .tag { color: #c8e8c8; } #cGame .cmsg { color: #fff; font-weight: bold; margin: 6px 0; } #cGame h3 { text-shadow: 0 1px 0 #000; }
+  #pkCards .card.pick::after { content: attr(data-k); position: absolute; bottom: -18px; font-size: 12px; color: #e8ffe8; } #cGame .card { position: relative; box-shadow: 0 2px 4px #0008; }
+  /* Slop Snap (Marvel Snap): cosmic blue, hex energy, a big round END TURN */
+  #cards .panel.snapmatch { background: radial-gradient(ellipse at 50% 120%, #3a2aa0, #120a3a 55%, #05030f); border: 0; border-radius: 16px; box-shadow: 0 0 40px #4a3aff55; }
+  #cards .sc .cc { background: #2a8aff; border-radius: 0; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); width: 22px; } #cards .sc { border-radius: 10px; }
+  .snapmatch .loc { background: linear-gradient(#5a4ac8, #2a1a6a); border-radius: 12px; padding: 6px; margin: 4px 0; text-align: center; box-shadow: 0 0 12px #8a7aff66; }
+  .snapmatch .loc small { color: #d8d0ff; } .snapmatch .score span { display: inline-block; min-width: 26px; padding: 1px 6px; border-radius: 12px; background: #000a; font-weight: bold; }
+  .snapmatch .score.win span:last-child { background: #ff9a2a; color: #000; box-shadow: 0 0 10px #ff9a2a; } .snapmatch .score.lose span:first-child { background: #ff4a6a; box-shadow: 0 0 10px #ff4a6a; }
+  .snapmatch .proj { font-style: normal; color: #7dffb0; font-weight: bold; margin-left: 4px; }
+  .snapmatch .lane { background: #ffffff0a; border-color: #8a7aff33; } .snapmatch .lane.drop { border-color: #ffd34d; background: #ffd34d14; }
+  .snapmatch .hand .sc[draggable="true"] { cursor: grab; } .snapmatch .cg-head .en { display: inline-block; width: 30px; height: 30px; line-height: 30px; text-align: center; border-radius: 50%; background: #2a8aff; color: #fff; box-shadow: 0 0 12px #2a8aff; }
+  .snapmatch #cgEnd { border-radius: 40px; padding: 10px 30px; background: linear-gradient(#ffb84a, #e07a10); color: #2a1000; box-shadow: 0 0 16px #ff9a2a88; font-size: 18px; letter-spacing: 1px; } .snapmatch #cgEnd small { display: block; font-size: 11px; }
+  /* the stock exchange (GTA V's BAWSAQ): a stock site in the phone's browser */
+  #market .panel { background: #f4f4f0; color: #1a1a1a; border: 10px solid #111; border-radius: 22px; padding: 0 0 14px; }
+  #market .panel > h2 { display: none; } #market .howto { margin: 10px 16px 0; } #marketBody > :not(.bq-bar):not(.bq-top) { margin-left: 16px; margin-right: 16px; }
+  .bq-bar { display: flex; gap: 10px; align-items: center; padding: 6px 12px; background: #d8d8d0; font-size: 12px; color: #444; } .bq-bar span { color: #c44; letter-spacing: 2px; } .bq-bar i { flex: 1; background: #fff; border-radius: 10px; padding: 2px 10px; font-style: normal; }
+  .bq-top { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #0f5a2a; color: #fff; } .bq-top > b { font-size: 24px; font-style: italic; letter-spacing: -1px; } .bq-top em { color: #9fe07a; }
+  .bq-top span { font-size: 13px; } .bq-top .up { color: #9fe07a; } .bq-top .dn { color: #ff9a9a; }
+  .bq-chart { margin-top: 10px !important; padding: 8px; background: #fff; border: 1px solid #ccc; } .bq-chart div { font-size: 13px; color: #555; } .bq-chart div b { color: #0f5a2a; font-size: 16px; } .bq-chart div span { float: right; font-weight: bold; color: #111; }
+  .bq-chart svg { width: 100%; height: 90px; } .bq-chart polyline { stroke-width: 2px; }
+  .bq-q { margin-top: 8px !important; font-size: 13px; color: #555; } .bq-q button { margin-left: 4px; border: 1px solid #0f5a2a; background: #fff; color: #0f5a2a; border-radius: 3px; padding: 3px 10px; cursor: pointer; font-weight: bold; } .bq-q button.on { background: #0f5a2a; color: #fff; }
+  #market table.mkt td { border-bottom-color: #ddd; } #market table.mkt tr { cursor: pointer; } #market table.mkt tr:hover { background: #e8f0e0; } #market table.mkt tr.sel { background: #d8ecd0; box-shadow: inset 4px 0 0 #0f5a2a; }
+  #market table.mkt small { color: #666; } #market .up { color: #1a8a3a; } #market .dn { color: #c42a2a; } #market h3 { color: #0f5a2a; } #market .tag, #market .fine { color: #555; }
+  #market .btns button.by { background: #1a8a3a; color: #fff; } #market .btns button.sl { background: #c42a2a; color: #fff; } #market .btns button { min-width: 62px; }
+  /* the ballot (Papers, Please): a stamped document on the desk */
+  #story.papers { background: #d8cfae; color: #3a3226; border: 0; border-radius: 0; box-shadow: 4px 4px 0 #0006, inset 0 0 0 1px #8a7a5a; font-family: "Courier New", monospace; }
+  #story.papers .pp-head { margin: -12px -14px 10px; padding: 6px 10px; background: #5a4a3a; color: #e8dcc0; font-size: 11px; letter-spacing: 2px; font-weight: bold; }
+  #story.papers .st-h { color: #3a2a1a; } #story.papers .st-h span { color: #6a5a4a; } #story.papers .st-t { color: #3a3226; } #story.papers .st-f { color: #6a5a4a; }
+  #story.papers .st-c { position: relative; background: #ece4c8; border: 1px dashed #8a7a5a; border-radius: 0; overflow: hidden; } #story.papers .st-c:hover { border-style: solid; border-color: #3a2a1a; }
+  #story.papers .st-c small { color: #5a5040; } #story.papers .st-c b { color: #2a1a10; } #story.papers .st-n { color: #8a2a1a; } #story.papers .st-c.posad b { color: #a01a10; } #story.papers .st-c.posad { background: #e8c8b8; }
+  #story.papers .st-k { float: left; margin: 0 8px 0 0; background: #3a3226; color: #e8dcc0; border: 0; }
+  .stamp { position: absolute; right: 10px; top: 50%; transform: translateY(-50%) rotate(-12deg); padding: 2px 10px; border: 3px solid #2a8a3a; color: #2a8a3a; font-weight: bold; font-size: 18px; letter-spacing: 2px; opacity: .85; animation: stampIn .25s ease-out; pointer-events: none; }
+  @keyframes stampIn { from { transform: translateY(-50%) rotate(-12deg) scale(2.2); opacity: 0; } }
+  /* the breach (Cyberpunk 2077): lime on midnight blue, cyan for what's next */
+  #hack .panel { background: linear-gradient(#0d1220, #070a12); border: 1px solid #d0ed57; border-radius: 0; box-shadow: 0 0 0 4px #070a12, 0 0 0 5px #d0ed5755; clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 0 100%); }
+  #hack h2 { color: #d0ed57 !important; letter-spacing: 3px; } #hack .hk-time div { background: #d0ed57; } #hack .hk-time { background: #2a3010; }
+  #hack .hk-grid td { color: #8a9a40; border-color: #1a2030; } #hack .hk-grid td.on { color: #d0ed57; background: #1a2030; } #hack .hk-grid td.on:hover { background: #5ef6ff; color: #070a12; }
+  #hack .hk-grid td.nx:not(.used) { box-shadow: inset 0 0 0 1px #5ef6ff; color: #5ef6ff; } #hack .hk-grid td.used { color: #3a4020; }
+  #hack .hk-l { color: #d0ed57; } #hack .hk-buf span { border-color: #d0ed57; color: #5ef6ff; } #hack .hk-seq { color: #8a9a40; } #hack .hk-seq.ok { color: #5ef6ff; } #hack .hk-f { color: #8a9a40; }
+  #hack .cbtn { background: #d0ed57; color: #070a12; border-radius: 0; } #hack .cbtn.alt { background: transparent; color: #d0ed57; border: 1px solid #d0ed57; } #hack .keys { color: #6a7a40; }
+  /* control stations (Among Us): a riveted task panel, and the big "Task Completed!" */
+  #fix .panel { position: relative; background: linear-gradient(#5a6470, #3a424c) !important; border: 6px solid #1a1e24 !important; border-radius: 18px; box-shadow: inset 0 0 0 3px #7a8490, 0 10px 40px #000a; }
+  #fix .panel::before, #fix .panel::after { content: ""; position: absolute; top: 8px; width: 8px; height: 8px; border-radius: 50%; background: #9aa4b0; box-shadow: 0 1px 0 #1a1e24; } #fix .panel::before { left: 8px; } #fix .panel::after { right: 8px; }
+  #fixTitle { color: #fff !important; font-family: "Arial Black", Arial, sans-serif; text-shadow: 2px 2px 0 #000; } #fixHelp { color: #e8eef4; } #fix .keys { color: #c8d0d8; }
+  #fixCv { border: 4px solid #1a1e24; } #fix .hk-bar { background: #1a1e24 !important; } #fixTime { background: #7ae05a !important; }
+  .taskdone { position: absolute; left: 0; right: 0; top: 42%; text-align: center; font: 900 46px "Arial Black", Arial, sans-serif; color: #fff; -webkit-text-stroke: 2px #000; text-shadow: 4px 4px 0 #000; animation: taskIn .35s ease-out; pointer-events: none; }
+  .taskdone.fail { color: #ff5a5a; } @keyframes taskIn { from { transform: translateX(-60%); opacity: 0; } }
+  /* building (Fortnite): slots along the bottom, gold on the left, the piece's blurb on the right */
+  #buildBar { top: auto !important; bottom: 14px; background: none; border: 0; padding: 0; gap: 4px; align-items: flex-end; }
+  #buildBar .pc { position: relative; width: 74px; max-width: none; height: 74px; padding: 4px; text-align: center; background: linear-gradient(#2a3a5acc, #10182acc); border: 2px solid #4a6a9a; border-radius: 6px; transform: skewX(-6deg); }
+  #buildBar .pc.sel { border-color: #fff; background: linear-gradient(#3a7acaee, #1a3a7aee); box-shadow: 0 0 12px #4ab8ff; transform: skewX(-6deg) translateY(-6px); }
+  #buildBar .pc kbd { position: absolute; left: 3px; top: 2px; font-size: 10px; padding: 0 4px; } #buildBar .pc .fn-i { display: block; font-size: 26px; margin-top: 4px; }
+  #buildBar .pc b { display: block; color: #fff; font-size: 11px; } #buildBar .pc em { position: absolute; right: 4px; top: 3px; font-style: normal; font-size: 11px; color: #ffd34d; font-weight: bold; }
+  #buildBar .pc.poor em { color: #ff5a5a; } #buildBar .pc.poor .fn-i { filter: grayscale(1); opacity: .5; }
+  .fn-mats { width: 70px; padding: 6px; text-align: center; background: #000a; border-radius: 6px; } .fn-mats b { display: block; font-size: 20px; color: #ffd34d; } .fn-mats small { color: #ccc; font-size: 10px; } .fn-mats i { display: block; font-style: normal; font-size: 10px; color: #9fe0ff; margin-top: 4px; }
+  .fn-info { width: 200px; padding: 6px 8px; background: #000a; border-radius: 6px; font-size: 12px; } .fn-info b { color: #9fe0ff; } .fn-info small { display: block; color: #ccc; font-size: 11px; } .fn-info span { display: block; margin-top: 4px; color: #888; font-size: 10px; }
 </style>
 </head>
 <body>
