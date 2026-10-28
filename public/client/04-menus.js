@@ -5,7 +5,7 @@
 // The old letter keys still work for anyone who learnt them.
 const RADIAL = {
   g: [["🎒", "Bag", "I", () => toggleInv()], ["⭐", "Skills", "K", () => toggleSkills()], ["📓", "Journal", "J", () => toggleJournal()], ["🃏", "Cards", "Y", () => { if (!cgState) toggleCards(); }],
-      ["📈", "Stock market", "M", () => toggleMarket()], ["👒", "Wardrobe", "V", () => toggleWardrobe()], ["⚙️", "Options", "O", () => toggleOptions()]],
+      ["📈", "Stock market", "M", () => toggleMarket()], ["👒", "Wardrobe", "V", () => toggleWardrobe()], ["⚙️", "Options", "O", () => toggleOptions()], ["🗺", "Map", ",", () => toggleMap()]],
   x: [["🍞", "Eat or drink", "H", () => send({ t: "item", a: "quick" })], ["💣", "Grenade", "3", () => send({ t: "throw", k: "gren" })], ["🔥", "Molotov", "4", () => send({ t: "throw", k: "molo" })],
       ["🧽", "Clean your gun", "L", () => openClean()], ["🔨", "Build", "C", () => { if (!pred.swim && !flying()) toggleBuild(); }], ["🌀", "Switch shout", "Z", () => send({ t: "elem" })], ["🚽", "Relieve yourself", "", () => send({ t: "go" })], ["🌱", "Hoe out / away", "F", () => send({ t: "hoe" })]],
 };
@@ -13,7 +13,7 @@ let radial = null;
 // one screen at a time: opening any of them closes whichever other one was up
 function closeScreens(keep) {
   const list = [[invOpen, toggleInv], [skillsOpen, toggleSkills], [journalOpen, toggleJournal], [mktOpen, toggleMarket], [wardOpen, toggleWardrobe], [optsOpen, toggleOptions],
-    [stallOpen, toggleStall], [shopOpen, toggleShop], [casinoOpen, toggleCasino], [ballotOpen, toggleBallot], [cardsOpen && !cgState, toggleCards]];
+    [stallOpen, toggleStall], [shopOpen, toggleShop], [casinoOpen, toggleCasino], [ballotOpen, toggleBallot], [cardsOpen && !cgState, toggleCards], [mapOpen, toggleMap]];
   for (const [open, fn] of list) if (open && fn !== keep) fn(false);
 }
 function openRadial(key) { radial = { key, sel: -1, ax: 0, ay: 0, t0: T() }; keys.clear(); mouseDown = false; }
@@ -263,7 +263,7 @@ function toggleSkills(force) {
   $("skills").classList.toggle("hidden", !skillsOpen);
   if (skillsOpen) { keys.clear(); mouseDown = false; renderSkills(); }
 }
-let skillSig = "";
+let skillSig = "", skillHover = null;
 function renderSkills() {
   const mine = S?.p.find((p) => p.id === me);
   if (!mine) return;
@@ -273,9 +273,10 @@ function renderSkills() {
   $("skillpts").textContent = `Level ${mine.lv} · ${mine.pts} skill point${mine.pts === 1 ? "" : "s"} to spend. Your heirs keep everything you learn.`;
   $("skilltrees").innerHTML = TREES.map((tn, ti) => `<div class="tree"><h3>${tn}</h3>` + Object.entries(SKILL_INFO).filter(([, v]) => v[1] === ti).map(([id, [name, , desc, max]]) => {
     const r = mine.sk[id] || 0, can = mine.pts > 0 && r < max;
-    return `<div class="skill${can ? " can" : ""}${r ? " has" : ""}" data-s="${id}"><b>${name}</b> <span class="pips">${"●".repeat(r)}${"○".repeat(max - r)}</span><small>${desc}</small></div>`;
+    return `<div class="skill${can ? " can" : ""}${r ? " has" : ""}" data-s="${id}"><b>${name}</b> <span class="pips">${"★".repeat(r)}${"☆".repeat(max - r)}</span><small>${desc}</small></div>`;
   }).join("") + "</div>").join("");
-  for (const el of $("skilltrees").querySelectorAll(".skill")) el.onclick = () => send({ t: "learn", s: el.dataset.s });
+  for (const el of $("skilltrees").querySelectorAll(".skill")) { el.onclick = () => send({ t: "learn", s: el.dataset.s }); el.onmouseenter = () => { skillHover = el.dataset.s; $("skillnote").innerHTML = skillNote(skillHover, mine); }; }
+  $("skillnote").innerHTML = skillHover ? skillNote(skillHover, mine) : "Hover a skill to see what its next rank does.";
 }
 setInterval(() => { if (skillsOpen) renderSkills(); }, 200);
 $("skills").addEventListener("click", (e) => { if (e.target === $("skills")) toggleSkills(false); });

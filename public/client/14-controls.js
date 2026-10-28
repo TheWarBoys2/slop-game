@@ -10,7 +10,7 @@ const ACTIONS = [ // [id, default key, what it does, group]
   ["gren", "3", "Throw a grenade", "Fight"], ["molo", "4", "Throw a molotov", "Fight"], ["shout", "q", "Thu'um shout", "Fight"], ["ping", "u", "Ping: mark a spot, enemy or loot for your mates", "Fight"], ["elem", "z", "Change shout element", "Fight"],
   ["use", "e", "Use, talk, pick up", "Do"], ["eat", "h", "Eat or drink what you need most", "Do"], ["hoe", "f", "Hoe: till and plant", "Do"], ["build", "c", "Build mode", "Do"],
   ["mech", "p", "Call your mech", "Do"], ["clean", "l", "Strip and clean your gun", "Do"], ["view", "t", "First / third person", "Do"],
-  ["wheel", "g", "Screens wheel (hold)", "Screens"], ["wheel2", "x", "Actions wheel (hold)", "Screens"], ["bag", "i", "Bag", "Screens"], ["journal", "j", "Journal", "Screens"],
+  ["wheel", "g", "Screens wheel (hold)", "Screens"], ["wheel2", "x", "Actions wheel (hold)", "Screens"], ["bag", "i", "Bag", "Screens"], ["journal", "j", "Journal", "Screens"], ["map", ",", "Map", "Screens"],
   ["skills", "k", "Skills", "Screens"], ["market", "m", "Stock market", "Screens"], ["cards", "y", "Slop Snap", "Screens"], ["ballot", "n", "Ballot", "Screens"],
   ["ward", "v", "Wardrobe", "Screens"], ["opts", "o", "Options", "Screens"], ["buy", "b", "Buy menu (Dust II)", "Screens"], ["scores", "tab", "Scoreboard (hold)", "Screens"], ["chat", "enter", "Chat", "Screens"],
 ];

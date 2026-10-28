@@ -152,6 +152,7 @@ function radarRim(mine, [cx, cy], R, ox, oy, k, t) {
   if (S.g.adv) { const q = S.g.adv.q.find((x) => x[9]) || S.g.adv.q[0]; if (q) pin(q[4], q[5], advIcon(q), "#ffd34d"); }
   const boss = S.g.boss && S.z.find((z) => z[0] === S.g.boss); if (boss) pin(boss[2], boss[3], "💀", "#fff");
   if (S.g.dis && S.g.dis.st) pin(S.g.dis.st[0], S.g.dis.st[1], "⚠", "#ffd34d");
+  if (waypoint) { const dx = (waypoint.x - pred.x) * k, dy = (waypoint.y - pred.y) * k; if (Math.hypot(dx, dy) < R - 6) text("📍", cx + dx, cy + dy - 5, 13, "#fff", "center", false); else pin(waypoint.x, waypoint.y, "📍", "#6ff0ff"); }
   for (const pg of livePings(t)) { // pings: a dot inside the radar, a pin on the rim when they're further out
     const P = PING[pg.w] || PING.go, dx = (pg.x - pred.x) * k, dy = (pg.y - pred.y) * k;
     if (Math.hypot(dx, dy) < R - 6) { ctx.fillStyle = P[2]; ctx.beginPath(); ctx.arc(cx + dx, cy + dy, 4, 0, 7); ctx.fill(); } else pin(pg.x, pg.y, P[0], P[2]);
@@ -254,6 +255,7 @@ function hudObjective(mine, t) {
   else if (g.dis && g.dis.st) o = ["⚠", "Stop the disaster", "Work the control station", g.dis.st, "#ffd34d"];
   else if (g.mode === "royale" || g.ph === "royale") o = ["👑", "Be the last farmer standing", `${g.alive} left${g.zone ? ". Stay out of the fog" : ""}`, null, "#ffe9a0"];
   else if (hp && t - hearthHitT < 3 && Math.hypot(hp[0] - pred.x, hp[1] - pred.y) > 450 && g.mode !== "adventure") o = ["🔥", "Defend the Hearth", `It's under attack: ${Math.round(100 * g.hh / g.hm)}%`, hp, "#ff8040"];
+  else if (trackedObjective(mine)) o = trackedObjective(mine); // the one you picked in the journal
   else if (g.adv) { const q = g.adv.q.find((x) => x[9]) || g.adv.q[0]; o = q ? [advIcon(q), q[2], q[3], [q[4], q[5]], "#ffe9a0"] : ["📜", "Find work", "Every town has a notice board", null, "#ffe9a0"]; }
   else {
     const qn = questNpcs()[0], npc = qn && MAP.npcs && MAP.npcs.find((n) => n.id === qn.id);

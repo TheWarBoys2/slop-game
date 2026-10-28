@@ -236,8 +236,9 @@ function toggleInv(force) {
   $("inv").classList.toggle("hidden", !invOpen);
   if (invOpen) { toggleShop(false); toggleMarket(false); keys.clear(); mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); renderInv(); }
 }
+let invHtml = "";
 function renderInv() {
-  if (!INV) { $("invBody").innerHTML = `<div class="tag">Nothing yet.</div>`; return; }
+  if (!INV) { $("invBody").innerHTML = `<div class="tag">Nothing yet.</div>`; invHtml = ""; return; }
   const meter = (lbl, v, col) => `<div class="meter"><b>${lbl}</b><i><s style="width:${Math.max(0, Math.min(100, v))}%;background:${col}"></s></i><span>${v}</span></div>`;
   const slots = ["head", "body", "hands", "feet"].map((k) => {
     const g = INV.gear[k], d = g && GEAR[g.id];
@@ -249,18 +250,21 @@ function renderInv() {
     if (!it) { cells.push(`<div class="bslot empty"></div>`); continue; }
     const g = GEAR[it.id], d = ITEMS[it.id];
     const name = g ? g.name : d ? d.name : it.id, icon = g ? GEAR_ICON[g.slot] : d ? d.icon : "?";
-    const tip = g ? `${RAR_NAME[it.r || 0]} ${g.name}: ${gearDesc(g, it.r || 0)}. Click to wear it.` : d && d.kind === "seed" ? `${d.name}: ${d.desc} Click to plant these next.` : d ? `${d.name}: ${d.desc || ""}${d.f ? ` Food +${d.f}.` : ""}${d.d ? ` Drink +${d.d}.` : ""}${d.hp ? ` Heals ${d.hp > 500 ? "fully" : d.hp}.` : ""} Click to use.` : "";
-    cells.push(`<div class="bslot${d && d.kind === "seed" && INV.sel === d.crop ? " sel" : ""}" data-i="${i}" title="${escH(tip)} Right-click to drop it."><span class="ic">${icon}</span><span class="nm" style="color:${g ? RAR_COL[it.r || 0] : "#eee"}">${escH(name)}</span>${it.n > 1 ? `<span class="ct">${it.n}</span>` : ""}</div>`);
+    cells.push(`<div class="bslot${d && d.kind === "seed" && INV.sel === d.crop ? " sel" : ""}" data-i="${i}"><span class="ic">${icon}</span><span class="nm" style="color:${g ? RAR_COL[it.r || 0] : "#eee"}">${escH(name)}</span>${it.n > 1 ? `<span class="ct">${it.n}</span>` : ""}</div>`);
   }
   const mineP = S && S.p.find((q) => q.id === me), mate = mineP && S.p.filter((q) => q.id !== me && !q.d && !q.air).map((q) => [q, Math.hypot(q.x - mineP.x, q.y - mineP.y)]).filter(([, d]) => d < 150).sort((a, b) => a[1] - b[1])[0];
   const giveRow = mate ? `<div class="fine" style="margin-top:6px">Next to <b>${escH(mate[0].n)}</b>: <kbd>Shift</kbd>+click an item to give it. Give gold: ${[10, 50, 100, 500].map((n) => `<button class="tab" data-gold="${n}">${n}g</button>`).join(" ")}</div>` : `<div class="fine" style="margin-top:6px">Stand next to a mate to give them items or gold.</div>`;
   const me2 = S && S.p.find((p) => p.id === me), who = me2 ? `<div class="tag" style="margin:0 0 8px">${escH(me2.n)} · generation ${me2.gen} · ${escH(me2.tr)}: ${escH(TRAIT_DESC[me2.tr] || "")}</div>` : ""; // moved here from the HUD
-  $("invBody").innerHTML = `<div class="invL">${who}${meter("🍞 Food", INV.food, "#d8a050")}${meter("💧 Drink", INV.water, "#5ab0ff")}${meter("☢ Radiation", INV.rad, INV.rad > 50 ? "#e33" : "#9fff60")}<h3>Wearing</h3>${slots}${mechPanel()}</div>` +
-    `<div class="invR"><h3>Bag ${INV.bag.length}/${INV.size}</h3><div class="bag">${cells.join("")}</div>${giveRow}<div class="fine">Click to eat, drink, use or wear. Right-click to drop (someone else can pick it up). <kbd>H</kbd> eats or drinks whatever you need most. Cook two turnips at the Hearth [E] for stew. Fill bottles at the lake.</div></div>`;
+  const html = `<div class="invL">${who}${meter("🍞 Food", INV.food, "#d8a050")}${meter("💧 Drink", INV.water, "#5ab0ff")}${meter("☢ Radiation", INV.rad, INV.rad > 50 ? "#e33" : "#9fff60")}<h3>Wearing</h3>${slots}${mechPanel()}</div>` +
+    `<div class="invR"><h3>Bag ${INV.bag.length}/${INV.size} <button class="tab" id="bagSort" title="Gear first, then food, drink, medicine and seeds">Sort</button></h3><div class="bag">${cells.join("")}</div>${giveRow}<div class="fine">Click to eat, drink, use or wear. Hover for its card, right-click for more (give, drop). <kbd>H</kbd> eats or drinks whatever you need most. Cook two turnips at the Hearth [E] for stew. Fill bottles at the lake.</div></div>`;
+  if (html === invHtml && invOpen) return; // the bag arrives every second: only rebuild it when something changed, so hovers and clicks aren't lost
+  invHtml = html; $("invBody").innerHTML = html;
   for (const el of $("invBody").querySelectorAll(".bslot[data-i]")) {
     el.onclick = (e) => send({ t: "item", a: e.shiftKey ? "give" : "use", i: +el.dataset.i });
-    el.oncontextmenu = (e) => { e.preventDefault(); send({ t: "item", a: "drop", i: +el.dataset.i }); };
+    el.oncontextmenu = (e) => bagMenu(e, +el.dataset.i); // RE4: use, give or drop (18-stuff.js)
+    el.onmouseenter = () => bagHover(el, +el.dataset.i, true); el.onmouseleave = () => bagHover(el, 0, false);
   }
+  $("bagSort").onclick = () => send({ t: "item", a: "sort" });
   for (const el of $("invBody").querySelectorAll("[data-gold]")) el.onclick = () => send({ t: "item", a: "gold", n: +el.dataset.gold });
   for (const el of $("invBody").querySelectorAll(".gslot.on")) el.onclick = () => send({ t: "item", a: "unequip", slot: el.dataset.slot });
 }
