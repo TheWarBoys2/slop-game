@@ -44,7 +44,7 @@ function drawRadial() {
   ctx.restore();
 }
 // ---------------------------------------------------------------- lobby
-let lobbySig = "";
+let lobbySig = "", lobbyHost = 0;
 const MODE_INFO = {
   story: ["Hearth Defence: Story", "Hold the Hearth against the dead every night. Somebody poisoned the well, and it's someone different every game. Find the evidence, accuse them, then survive what they raised. Votes, a mayor, a celebrity visit and Dinosaur Day on day 4."],
   endless: ["Hearth Defence: Endless", "No story, no end. A boss every fifth night and Dinosaur Day every week. How long can you last?"],
@@ -70,18 +70,18 @@ function renderLobby(m, hostId) {
   const cd = m.g.cd >= 0 ? `Starting in ${Math.ceil(m.g.cd)}...` : ready ? `${ready}/${m.p.length} ready` : "";
   const sig = JSON.stringify([inLobby, m.g.ph, m.g.mode, m.p.map((p) => [p.id, p.n, p.rd, p.cl]), cd, hostId]);
   if (sig === lobbySig) return;
-  lobbySig = sig;
+  lobbySig = sig; lobbyHost = hostId;
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   $("lpTitle").textContent = `${MAP ? MAP.valley : "The valley"} · ${m.p.length} farmer${m.p.length === 1 ? "" : "s"} in the lobby. Nothing you do here earns gold or XP.`;
   const host = hostId === me;
-  $("lpModes").innerHTML = Object.entries(MODE_INFO).map(([k, [n, d]]) => `<div class="lp-mode${k === m.g.mode ? " sel" : ""}${host ? " pick" : ""}" data-m="${k}"><b>${n}${k === m.g.mode ? " ✓" : ""}</b>${d}</div>`).join("");
+  $("lpModes").innerHTML = Object.entries(MODE_INFO).map(([k, [n, d]]) => `<div class="lp-mode${k === m.g.mode ? " sel" : ""}${host ? " pick" : ""}" data-m="${k}"><i class="lp-mi">${GAME_MODE_ICON[k] || "🎮"}</i><b>${n}</b><span>${d}</span></div>`).join("");
   if (host) for (const el of $("lpModes").querySelectorAll(".lp-mode")) el.onclick = () => send({ t: "mode", m: el.dataset.m });
   $("lpTip").textContent = "Tip: " + LOBBY_TIPS[lobbyTip];
-  $("lpList").innerHTML = m.p.map((p) => `<div class="lp-row"><span style="color:${p.c}">${p.id === hostId ? "♛ " : ""}${esc(p.n)}</span><span><span class="${p.rd ? "ok" : "no"}">${p.rd ? "READY" : "not ready"}</span>${host && p.id !== me ? ` <button class="lp-kick" data-kick="${p.id}" title="Kick them out of the game">Kick</button>` : ""}</span></div>`).join("");
+  $("lpList").innerHTML = m.p.map((p, i) => `<div class="lp-row${p.rd ? " rd" : ""}"><b class="lp-n">${i + 1}</b><i class="lp-chip" style="background:${p.c}"></i><span class="lp-who">${p.id === hostId ? "♛ " : ""}${esc(p.n)}<small>${esc((DATA.CLASSES[p.cl] || {}).name || "")}</small></span><span><span class="${p.rd ? "ok" : "no"}">${p.rd ? "🏁 READY" : "not ready"}</span>${host && p.id !== me ? ` <button class="lp-kick" data-kick="${p.id}" title="Kick them out of the game">Kick</button>` : ""}</span></div>`).join("");
   for (const el of $("lpList").querySelectorAll("[data-kick]")) el.onclick = () => { const p = m.p.find((q) => q.id === +el.dataset.kick); if (p && confirm(`Kick ${p.n} out of the game?`)) send({ t: "kick", id: p.id }); };
   $("lpForce").classList.toggle("hidden", !host || m.p.length < 2 || m.g.cd >= 0 || ready === m.p.length);
-  $("lpMode").textContent = hostId === me ? "You're the host: click a mode to pick it." : "The host picks the mode.";
-  for (const b of [$("readyBtn"), $("overReady")]) { b.classList.toggle("on", !!(mine && mine.rd)); b.textContent = mine && mine.rd ? "Ready! (click to cancel)" : b.id === "readyBtn" ? "Ready" : "Ready for another round"; }
+  $("lpMode").textContent = hostId === me ? "You're the host: click a mode, or ← → to flip through them." : "The host picks the mode.";
+  for (const b of [$("readyBtn"), $("overReady")]) { b.classList.toggle("on", !!(mine && mine.rd)); b.textContent = mine && mine.rd ? "Ready! (click to cancel)" : b.id === "readyBtn" ? "Ready (F)" : "Play again (F)"; }
   $("lpCd").textContent = cd;
   $("overReadyInfo").textContent = m.g.ph === "over" ? (m.g.cd >= 0 ? `Everyone's ready. Starting in ${Math.ceil(m.g.cd)}...` : `${ready}/${m.p.length} ready. The next round starts when everyone is.`) : "";
 }

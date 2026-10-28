@@ -20,7 +20,8 @@ import client17 from "../public/client/17-map.js" with { type: "text" };
 import client18 from "../public/client/18-stuff.js" with { type: "text" };
 import client19 from "../public/client/19-shops.js" with { type: "text" };
 import client20 from "../public/client/20-games.js" with { type: "text" };
-const gameSrc = [client1, client2, client3, client4, client5, client6, client7, client8, client9, client10, client11, client13, client14, client15, client16, client17, client18, client19, client20, client12].join("\n"); // the browser client, one file per part, joined in order (12-music closes the shared function, so it stays last)
+import client21 from "../public/client/21-front.js" with { type: "text" };
+const gameSrc = [client1, client2, client3, client4, client5, client6, client7, client8, client9, client10, client11, client13, client14, client15, client16, client17, client18, client19, client20, client21, client12].join("\n"); // the browser client, one file per part, joined in order (12-music closes the shared function, so it stays last)
 import moveJs from "../public/move.js" with { type: "text" };
 import snapJs from "../public/snap.js" with { type: "text" };
 import r3dJs from "../public/r3d.js" with { type: "text" };
@@ -52,7 +53,7 @@ import { PLOTS, SHOPS } from "./map.js";
 import { deployMech } from "./mechs.js";
 import { infect, relieve } from "./needs.js";
 import { DOME_R, nukeWarn } from "./nukes.js";
-import { spawnZombie } from "./phases.js";
+import { spawnZombie, endGame } from "./phases.js";
 import { jump } from "./royale.js";
 import { cardAct, storyApi } from "./social.js";
 import { PIECES, SHOP, VEHICLES, chat, feed, fullName, game, makePlayer, newWeapon, players, toast } from "./state.js";
@@ -103,6 +104,7 @@ function onMessage(ws, raw) {
       if (m.elect) openElection();
       if (m.clues) for (let i = 0; i < m.clues; i++) storyApi.freeClue();
       if (m.dusk) game.ends = now() + 0.5;
+      if (m.end && ["day", "night"].includes(game.phase)) endGame(m.end === "win"); // the results screen
       if (m.killQ) for (const z of world.zombies) if (z.qid && z.type !== "boss") hurtZombie(z, z.hp + 1, p); // Adventure's quest monsters
       if (m.killBoss) { const b = world.zombies.find((z) => z.id === game.bossId); if (b) hurtZombie(b, b.hp + 1, p); }
       if (m.weapon) giveWeapon(p, newWeapon(m.weapon, m.rarity || 0));

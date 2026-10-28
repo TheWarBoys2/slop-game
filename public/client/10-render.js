@@ -443,6 +443,7 @@ function showOver() {
     (rows[0] ? `<tr><td colspan="${cols.length + 1}" class="motm">★ Player of the Match: ${esc(rows[0].name)}</td></tr>` : "");
   $("overLineage").parentElement.querySelector("h3:last-of-type").textContent = royale ? "" : "Dynasties";
   $("overLineage").innerHTML = rows.map((r) => `<div class="lineage">${r.lineage.map(esc).join(" → ")}</div>`).join("");
+  overDress(rows, royale, win);
   $("over").classList.remove("hidden");
   toggleShop(false); toggleSkills(false); toggleJournal(false);
   if (dlgOpen) showDlg({ close: 1 });

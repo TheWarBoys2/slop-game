@@ -381,6 +381,59 @@
   #buildBar .pc.poor em { color: #ff5a5a; } #buildBar .pc.poor .fn-i { filter: grayscale(1); opacity: .5; }
   .fn-mats { width: 70px; padding: 6px; text-align: center; background: #000a; border-radius: 6px; } .fn-mats b { display: block; font-size: 20px; color: #ffd34d; } .fn-mats small { color: #ccc; font-size: 10px; } .fn-mats i { display: block; font-style: normal; font-size: 10px; color: #9fe0ff; margin-top: 4px; }
   .fn-info { width: 200px; padding: 6px 8px; background: #000a; border-radius: 6px; font-size: 12px; } .fn-info b { color: #9fe0ff; } .fn-info small { display: block; color: #ccc; font-size: 11px; } .fn-info span { display: block; margin-top: 4px; color: #888; font-size: 10px; }
+  /* join (Smash Bros. character select): the P1 card on the left, character tiles on the right, READY TO FARM along the bottom */
+  #join .panel { max-width: 1080px; padding: 16px 22px 0; background: radial-gradient(ellipse at 70% 0%, #2a3a24, #12180f 70%); }
+  #join .cs-top { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; } #join h1 { font-size: 36px; font-style: italic; } #join .cs-top .tag { margin: 0; }
+  .cs-grid { display: grid; grid-template-columns: 300px 1fr; gap: 22px; } @media (max-width: 760px) { .cs-grid { grid-template-columns: 1fr; } }
+  #join label { margin: 9px 0 5px; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; }
+  .cs-card { position: relative; height: 210px; border-radius: 6px; overflow: hidden; background: linear-gradient(160deg, var(--pc, #e0b050) 0 38%, #1a1a1a 38%); box-shadow: inset 0 0 0 3px #000, 0 6px 0 #0006; transform: skewX(-4deg); }
+  .cs-card canvas { position: absolute; left: 50%; top: 6px; transform: translateX(-50%) skewX(4deg); width: 150px; height: 150px; }
+  .cs-p1 { position: absolute; left: 10px; top: 8px; padding: 2px 10px; background: #e02020; color: #fff; font: italic 900 18px sans-serif; border-radius: 4px; }
+  .cs-nm { position: absolute; left: 0; right: 0; bottom: 26px; text-align: center; font: italic 900 24px sans-serif; color: #fff; text-shadow: 2px 2px 0 #000; }
+  .cs-cl { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: 12px; color: #ccc; letter-spacing: 1px; text-transform: uppercase; }
+  #join .sw { width: 30px; height: 30px; } #join .opt { display: block; margin: 0; padding: 6px 10px; font-size: 13px; }
+  #classes { grid-template-columns: repeat(5, 1fr); gap: 6px; } #bgs { grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  #join .cls { position: relative; padding: 8px 4px 6px; text-align: center; background: linear-gradient(#3a4a30, #1e2618); border: 2px solid #000; border-radius: 4px; transform: skewX(-4deg); transition: transform .1s; }
+  #join .cls small { display: none; } #join .cls b { display: block; font-size: 13px; color: #fff; } #join .cls:hover { transform: skewX(-4deg) translateY(-2px); border-color: #888; }
+  #join .cls .cs-ic { display: block; font-style: normal; font-size: 30px; line-height: 1.2; } #bgs .cls .cs-ic { font-size: 22px; }
+  #join .cls.sel { border-color: #ffd34d; background: linear-gradient(#6a5a20, #2a2410); box-shadow: 0 0 12px #ffd34d88; }
+  #join .cls.sel::after { content: "P1"; position: absolute; right: -6px; top: -8px; padding: 0 5px; background: #e02020; color: #fff; font: italic 900 11px sans-serif; border-radius: 8px; transform: skewX(4deg); }
+  .cs-info { margin-top: 6px; padding: 6px 10px; min-height: 34px; background: #0006; border-left: 3px solid #ffd34d; font-size: 13px; color: #cfe0b8; line-height: 1.35; } .cs-info b { color: #ffd34d; }
+  #join #go { position: sticky; bottom: 0; margin: 14px -22px 0; width: calc(100% + 44px); border-radius: 0; padding: 12px; font: italic 900 30px sans-serif; letter-spacing: 3px; color: #ffe94d; text-shadow: 2px 2px 0 #6a0000; background: linear-gradient(100deg, transparent 0 4%, #c8101a 4% 96%, transparent 96%), linear-gradient(#000, #000); box-shadow: 0 -10px 14px #12180f; }
+  #join #go:hover { color: #fff; } #join #go::before { content: "▶ "; }
+  .cs-keys { margin: 8px 0 12px; } .cs-keys summary { cursor: pointer; color: #cfe0b8; font-weight: bold; }
+  /* lobby (Mario Kart's cup select): mode cards across the top, the racers below */
+  #lobbyPanel .panel { max-width: 900px; background: linear-gradient(#1a2a4a, #0a1224); border: 3px solid #fff; border-radius: 18px; }
+  #lobbyPanel h1 { font-style: italic; color: #fff; text-shadow: 3px 3px 0 #e02020; } #lobbyPanel .tag, #lobbyPanel .lp-f, #lobbyPanel .lp-tips { color: #b8c8e8; }
+  #lobbyPanel h3 { color: #ffd34d !important; font-style: italic; text-transform: uppercase; letter-spacing: 1px; }
+  .lp-grid { grid-template-columns: 1fr !important; } .lp-grid > div:last-child { order: -1; }
+  .lp-modes { display: grid !important; grid-template-columns: repeat(4, 1fr); gap: 10px !important; } @media (max-width: 640px) { .lp-modes { grid-template-columns: 1fr 1fr; } }
+  .lp-mode { position: relative; text-align: center; padding: 10px 8px !important; background: linear-gradient(#2a4a8a, #12204a) !important; border: 3px solid #4a6aaa !important; border-radius: 14px !important; color: #d8e4ff !important; transition: transform .12s; }
+  .lp-mode .lp-mi { display: block; font-style: normal; font-size: 34px; } .lp-mode b { font-style: italic; color: #fff !important; }
+  .lp-mode span { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; font-size: 11px; line-height: 1.3; margin-top: 4px; }
+  .lp-mode.sel { border-color: #ffd34d !important; background: linear-gradient(#e02020, #7a0a10) !important; transform: scale(1.05); box-shadow: 0 0 18px #ffd34d88; }
+  .lp-mode.sel::after { content: "✓"; position: absolute; right: 8px; top: 6px; color: #ffd34d; font-weight: bold; }
+  .lp-row { align-items: center; gap: 10px; background: linear-gradient(90deg, #ffffff18, #ffffff06) !important; border-radius: 4px 20px 20px 4px !important; padding: 6px 12px !important; }
+  .lp-row .lp-n { width: 22px; font: italic 900 18px sans-serif; color: #ffd34d; } .lp-chip { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; }
+  .lp-who { flex: 1; color: #fff; font-weight: bold; } .lp-who small { margin-left: 8px; color: #9ab; font-weight: normal; } .lp-row.rd { box-shadow: inset 4px 0 0 #3fbf6f; }
+  #lobbyPanel .readyBtn { font-style: italic; background: linear-gradient(#ffd34d, #e0a010); } #lobbyPanel .readyBtn.on { background: linear-gradient(#5fdf8f, #2a9a4f); }
+  /* end of a round (Smash Bros. results): a giant title, then the top four slide in as cards */
+  #over .panel { max-width: 920px; background: repeating-conic-gradient(from 0deg at 50% 0%, #ffffff08 0 6deg, transparent 6deg 12deg), linear-gradient(#2a1a3a, #0e0a18); border: 0; border-radius: 4px; }
+  #over[data-res="lose"] .panel { background: repeating-conic-gradient(from 0deg at 50% 0%, #ffffff06 0 6deg, transparent 6deg 12deg), linear-gradient(#3a1010, #120606); }
+  #overTitle { font: italic 900 40px sans-serif !important; letter-spacing: 1px; transform: skewX(-6deg); text-align: center; }
+  #over .tag { text-align: center; }
+  #overPodium { display: flex; gap: 10px; justify-content: center; margin: 14px 0; flex-wrap: wrap; }
+  .op-card { position: relative; width: 190px; padding: 0 0 10px; background: #111; border: 3px solid #000; border-radius: 6px; overflow: hidden; text-align: center; transform: skewX(-4deg); animation: opIn .45s ease-out both; animation-delay: var(--d); box-shadow: 0 6px 0 #0008; }
+  .op-card::before { content: ""; display: block; height: 70px; background: linear-gradient(160deg, var(--pc) 0 60%, #0000 60%), linear-gradient(#333, #111); }
+  .op-card.first { width: 220px; box-shadow: 0 0 0 3px #ffd34d, 0 0 26px #ffd34d66; }
+  .op-place { position: absolute; left: 10px; top: 4px; font: italic 900 46px sans-serif; color: #fff; text-shadow: 3px 3px 0 #000; } .op-card.first .op-place { color: #ffd34d; }
+  .op-name { margin-top: 8px; font: italic 900 20px sans-serif; color: #fff; } .op-cls { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 1px; }
+  .op-stats { display: flex; justify-content: center; gap: 12px; margin-top: 8px; font-size: 11px; color: #aaa; } .op-stats b { display: block; font-size: 17px; color: #fff; }
+  .op-rate { position: absolute; right: 10px; top: 12px; padding: 2px 8px; background: #000a; border-radius: 10px; color: #ffd34d; font-weight: bold; }
+  .op-motm { margin-top: 6px; color: #ffd34d; font-size: 12px; font-weight: bold; }
+  @keyframes opIn { from { transform: skewX(-4deg) translateY(40px); opacity: 0; } }
+  #overMore summary { cursor: pointer; color: #cfe0b8; font-weight: bold; margin-top: 6px; }
+  #overReady { font: italic 900 22px sans-serif; letter-spacing: 1px; }
 </style>
 </head>
 <body>
@@ -388,31 +441,39 @@
 
 <div id="join" class="overlay">
   <div class="panel">
-    <h1>SLOP VALLEY</h1>
-    <div class="tag">Farm by day. Survive by night. Blame your heir.</div>
-    <label>Name</label>
-    <input id="name" type="text" maxlength="16" placeholder="Gerald">
-    <label>Colour</label>
-    <div class="row" id="colors"></div>
-    <label>Hat</label>
-    <div class="row" id="hats"></div>
-    <label>Eyes</label>
-    <div class="row" id="eyes"></div>
-    <label>Background</label>
-    <div class="classes" id="bgs"></div>
-    <label>Starting trait <small style="color:#9fb58a;font-weight:normal">(your heirs roll their own)</small></label>
-    <div class="row" id="traits"></div>
-    <div class="tag" id="traitDesc" style="margin:6px 0 0"></div>
-    <label>Class</label>
-    <div class="classes" id="classes"></div>
-    <button class="big" id="go">Enter the Valley</button>
-    <div class="keys">
+    <div class="cs-top"><h1>SLOP VALLEY</h1><div class="tag" id="csTag">Farm by day. Survive by night. Blame your heir.</div></div>
+    <div class="cs-grid">
+      <div class="cs-left">
+        <div class="cs-card"><canvas id="csFace" width="180" height="180"></canvas><div class="cs-p1">P1</div><div class="cs-nm" id="csName"></div><div class="cs-cl" id="csCls"></div></div>
+        <label>Name</label>
+        <input id="name" type="text" maxlength="16" placeholder="Gerald">
+        <label>Colour</label>
+        <div class="row" id="colors"></div>
+        <label>Hat</label>
+        <div class="row" id="hats"></div>
+        <label>Eyes</label>
+        <div class="row" id="eyes"></div>
+      </div>
+      <div class="cs-right">
+        <label>Class</label>
+        <div class="classes" id="classes"></div>
+        <div class="cs-info" id="clsInfo"></div>
+        <label>Background</label>
+        <div class="classes" id="bgs"></div>
+        <div class="cs-info" id="bgInfo"></div>
+        <label>Starting trait <small style="color:#9fb58a;font-weight:normal">(your heirs roll their own)</small></label>
+        <div class="row" id="traits"></div>
+        <div class="tag" id="traitDesc" style="margin:6px 0 0"></div>
+      </div>
+    </div>
+    <button class="big" id="go">READY TO FARM</button>
+    <details class="keys cs-keys"><summary>Controls</summary>
       <kbd>WASD</kbd> move &nbsp; <kbd>Mouse</kbd> look/shoot &nbsp; <kbd>Right-click</kbd> aim &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>Shift</kbd> dodge &nbsp; <kbd>R</kbd> reload (tap again in the green) &nbsp; <kbd>E</kbd> use / talk / shop &nbsp; <kbd>Q</kbd> Thu'um &nbsp; <kbd>1</kbd><kbd>2</kbd> swap gun &nbsp; <kbd>T</kbd> camera<br>
       <b>Hold <kbd>G</kbd></b> for screens (bag, skills, journal, cards, market, wardrobe, options) &nbsp; <b>Hold <kbd>X</kbd></b> for actions (eat, grenade, molotov, clean gun, build, switch shout, relieve yourself: or just tap <kbd>X</kbd>). Flick the mouse at one and let go.<br>
       Shops are places in town: Vex's store and Haddock's armoury (by day), the Golden Slop casino (all hours), Old Giles's produce stall, and the Hearth itself. Walk up and press <kbd>E</kbd>. <kbd>F</kbd> ready &nbsp; <kbd>Tab</kbd> scores &nbsp; <kbd>Enter</kbd> chat<br>
       Helicopters: <kbd>W</kbd><kbd>S</kbd> nose down / up &nbsp; <kbd>A</kbd><kbd>D</kbd> bank &nbsp; <kbd>Mouse</kbd> turn &nbsp; <kbd>Space</kbd>/<kbd>C</kbd> climb / descend &nbsp; <kbd>Click</kbd> chain gun &nbsp; <kbd>Right-click</kbd> rockets. Flight sticks and gamepads work too (set up in <kbd>O</kbd> options).<br>
       Mechs: <kbd>P</kbd> calls yours down &nbsp; <kbd>WASD</kbd> walk &nbsp; <kbd>Click</kbd> right arm &nbsp; <kbd>Right-click</kbd> left arm &nbsp; <kbd>Space</kbd> jump jets. Click a mech part in your bag to bolt it on.
-    </div>
+    </details>
   </div>
 </div>
 
@@ -442,8 +503,9 @@
   <div class="panel">
     <h1 id="overTitle"></h1>
     <div class="tag" id="overSub"></div>
-    <h3 style="margin:14px 0 0;color:#cfe0b8">Match Ratings</h3>
-    <table id="overTable"></table>
+    <div id="overPodium"></div>
+    <details id="overMore"><summary>Full match ratings</summary>
+    <table id="overTable"></table></details>
     <h3 style="margin:18px 0 6px;color:#cfe0b8">Dynasties</h3>
     <div id="overLineage"></div>
     <div class="modeBtns hidden" style="margin-top:14px"><button data-m="story">Hearth Defence</button><button data-m="endless">Endless</button><button data-m="adventure">Adventure</button><button data-m="royale">Royale</button></div>
