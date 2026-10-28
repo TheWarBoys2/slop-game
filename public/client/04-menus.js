@@ -117,6 +117,7 @@ function renderCasino() {
   $("cGame").innerHTML = h;
   for (const b of $("cGame").querySelectorAll("button[data-a]")) b.onclick = () => { const a = b.dataset.a; send(a === "draw" ? { t: "casino", a, hold: pkHold } : { t: "casino", a }); if (a === "draw" || a === "leave") pkHold = [false, false, false, false, false]; };
   for (const c of $("cGame").querySelectorAll("#pkCards .card.pick")) c.onclick = () => { pkHold[+c.dataset.i] = !pkHold[+c.dataset.i]; renderCasino(); };
+  casinoDress();
 }
 function wheelSlices() { const total = WHEEL.reduce((a, s) => a + s.w, 0); let a0 = 0; return WHEEL.map((s) => { const a = (s.w / total) * Math.PI * 2, r = { ...s, a0, a1: a0 + a }; a0 += a; return r; }); }
 function drawWheel(t) {
@@ -174,9 +175,13 @@ function toggleBuild(force) {
   $("buildBar").classList.toggle("hidden", !building);
   renderBuildBar();
 }
-function renderBuildBar() {
-  const mine = S?.p.find((p) => p.id === me);
-  $("buildBar").innerHTML = Object.entries(PIECES).map(([id, pc], i) => `<div class="pc${id === buildKind ? " sel" : ""}" data-k="${id}"><b>${i + 1}. ${pc.name}</b> ${pc.cost}g<small>${pc.desc}</small></div>`).join("") + `<div class="pc"><b>Click</b> to place<small>C / Esc / right-click to stop building${mine ? ` · you have ${mine.g}g` : ""}</small></div>`;
+let buildSig = "";
+function renderBuildBar() { // Fortnite: a row of slots along the bottom, gold (your mats) on the left, the selected piece explained on the right
+  const mine = S?.p.find((p) => p.id === me), gold = mine ? mine.g : 0, mineN = S ? S.b.filter((b) => b[6] === me).length : 0, pc = PIECES[buildKind];
+  const sig = JSON.stringify([buildKind, gold, mineN, Object.keys(PIECES).length]); if (sig === buildSig) return; buildSig = sig;
+  $("buildBar").innerHTML = `<div class="fn-mats"><b>${gold}</b><small>gold</small><i>${mineN}/25 built</i></div>` +
+    Object.entries(PIECES).map(([id, p], i) => `<div class="pc${id === buildKind ? " sel" : ""}${gold < p.cost ? " poor" : ""}" data-k="${id}"><kbd>${i + 1}</kbd><span class="fn-i">${PIECE_ICON[id] || "▦"}</span><b>${p.name}</b><em>${p.cost}g</em></div>`).join("") +
+    `<div class="fn-info"><b>${pc ? pc.name : ""}</b><small>${pc ? pc.desc : ""}</small><span>Click place · ${keyFor("build")} / right-click / Esc stop</span></div>`;
   for (const el of $("buildBar").querySelectorAll(".pc[data-k]")) el.onclick = () => { buildKind = el.dataset.k; renderBuildBar(); };
 }
 setInterval(() => { if (building) renderBuildBar(); }, 500);
@@ -331,5 +336,6 @@ function renderStory() {
   for (const el of box.querySelectorAll("[data-e]")) el.onclick = () => send({ t: "elect", i: Number(el.dataset.e) });
   const mini = box.querySelector(".st-mini"); if (mini) mini.onclick = (e) => { e.stopPropagation(); toggleBallot(true); };
   const head = box.querySelector(".st-h"); if (head && !ballotOpen) { head.style.cursor = "pointer"; head.title = brief ? "Click to read it again" : ""; head.onclick = () => { storyAt = T(); renderStory(); }; }
+  ballotDress();
 }
 

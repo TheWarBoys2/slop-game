@@ -245,7 +245,7 @@ function render3d(mine, t, dt) {
     let gx = pred.x + Math.cos(yaw) * 90, gy = pred.y + Math.sin(yaw) * 90;
     if (d[2] < -0.02) { const tt = -cam.z / d[2]; if (tt < 400) { gx = cam.x + d[0] * tt; gy = cam.y + d[1] * tt; } }
     const g = { x: Math.round((gx - 20) / 40) * 40, y: Math.round((gy - 20) / 40) * 40 };
-    ghost = { ...g, ok: Math.hypot(g.x + 20 - pred.x, g.y + 20 - pred.y) < 280 && PIECES[buildKind] && mine.g >= PIECES[buildKind].cost * 0.7 };
+    ghost = { ...g, ok: !buildCheck(g, mine) };
     ghost3d = g;
   } else ghost3d = null;
   // expire effects
@@ -265,7 +265,7 @@ function render3d(mine, t, dt) {
   }
   if (t - hurtFlash < 0.3) tint("hurt", 0.5 * (1 - (t - hurtFlash) / 0.3));
   if (t - fogT < 1.2) tint("fog", 0.25 * (1 - (t - fogT) / 1.2));
-  drawHud(mine, t); drawHitDirs(t); drawAchievement(t); drawMsgLog();
+  drawHud(mine, t); if (building) placeBuildBar(); drawHitDirs(t); drawAchievement(t); drawMsgLog();
   drawMinimap(mine, t); drawCompass(t); zombieSounds(t);
   drawCrosshair(mine, t); drawBigMap(t); drawRadial(); // the wheel goes on top of everything
   if (mine && document.pointerLockElement !== cv && !menusOpen() && !radial) { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 240, VH / 2 + 80, 480, 34, 8); ctx.fill(); text(`Click to look around  ·  ${keyFor("view")} switches view  ·  hold F1 for controls`, VW / 2, VH / 2 + 97, 15, "#ffd34d"); }
@@ -330,7 +330,7 @@ function overlay3d(mine, t, dt) {
   if (hs && S.g.mode !== "royale") { text("THE HEARTH", hs.x, hs.y - 12, 14, "#ffe9a0"); bar(hs.x - 60, hs.y, 120, 8, S.g.hh / S.g.hm, S.g.hh / S.g.hm > 0.3 ? "#e8703a" : "#ff3030"); if (S.g.dome) { bar(hs.x - 60, hs.y + 10, 120, 5, S.g.dome[0] / S.g.dome[1], "#7cc8ff"); if (hs.d < 900) text(S.g.dome[0] >= S.g.dome[1] ? "DOME UP" : `DOME ${S.g.dome[0]}/${S.g.dome[1]}g`, hs.x, hs.y + 22, 10, "#9fe0ff"); } }
   for (const [, , vx, vy, , vhp] of S.vh) if (vhp < 100) { const s = P(vx, vy, 70); if (s) bar(s.x - 26, s.y, 52, 5, vhp / 100, vhp > 35 ? "#8fd35a" : "#e84a3a"); }
   for (const [, kind, bx, by, hp] of S.b) if (hp < 100 && kind !== "spikes") { const s = P(bx + 20, by + 20, 80); if (s && s.d < 700) bar(s.x - 18, s.y, 36, 4, hp / 100, "#e8a33a"); }
-  if (ghost3d && PIECES[buildKind]) { const s = P(ghost3d.x + 20, ghost3d.y + 20, 50); if (s) text(PIECES[buildKind].name, s.x, s.y, 12, "#fff"); }
+  if (ghost3d && PIECES[buildKind] && mine) { const s = P(ghost3d.x + 20, ghost3d.y + 20, 50), why = buildCheck(ghost3d, mine); if (s) { text(PIECES[buildKind].name, s.x, s.y, 12, why ? "#ff8070" : "#fff"); if (why) { ctx.font = "bold 13px sans-serif"; const w = ctx.measureText("✖ " + why).width + 18; ctx.fillStyle = "#000b"; ctx.beginPath(); ctx.roundRect(s.x - w / 2, s.y + 7, w, 20, 6); ctx.fill(); text("✖ " + why, s.x, s.y + 17, 13, "#ff6a5a"); } } }
   for (const f of fx) {
     const k = (t - f.t0) / f.dur; if (k >= 1) continue;
     if (f.kind === "text") { const s = P(f.x, f.y + 20, (f.z || 40) + k * 30); if (s) { ctx.globalAlpha = 1 - k; text(f.text, s.x, s.y, f.big ? 20 : 14, f.color); ctx.globalAlpha = 1; } }
