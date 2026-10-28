@@ -7,7 +7,7 @@ function render() {
   if (impact && T() < impact.until) { if (!impact.drawn) { impact.drawn = true; drawImpact(); } return; } // impact frame: hold the picture
   const t = T(), dt = Math.min(0.05, t - lastFrame); lastFrame = t; frameNo++;
   drawWheel(t);
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.setTransform(DPR * UIS, 0, 0, DPR * UIS, 0, 0);
   if (!has3d || !MAP || !S) {
     ctx.fillStyle = "#111"; ctx.fillRect(0, 0, VW, VH);
     if (has3d) text("Connecting to the valley...", VW / 2, VH / 2, 24, "#ffd34d");
@@ -33,15 +33,16 @@ function drawHud(mine, t) {
   else if (g.ph === "royale") label = `ROYALE · ${g.alive} alive${g.zone && g.zone[6] >= 0 ? ` · fog moves in ${g.zone[6]}s` : g.zone && g.zone[5] < g.zone[2] - 2 ? " · FOG CLOSING" : ""}`;
   else label = g.res === "win" ? "VICTORY" : g.res === "royale" ? "ROYALE OVER" : "DEFEAT";
   if (g.ph === "lobby") label += g.mode === "royale" ? " · Royale" : g.mode === "endless" ? " · Hearth Defence: Endless" : g.mode === "adventure" ? " · Adventure" : " · Hearth Defence";
-  ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 200, 10, 400, 44, 10); ctx.fill();
+  const lobby = g.ph === "lobby"; // the lobby and join panels already say all this, and the clock showed through them
+  if (!lobby) { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 200, 10, 400, 44, 10); ctx.fill(); }
   const dusk = (g.ph === "day" || (g.ph === "night" && g.left >= 0)) && g.left >= 0 && g.left <= 10; // the last ten seconds of a day or night glow amber
-  text(label, VW / 2, 26, 18, dusk && Math.floor(t * 2) % 2 ? "#ffb040" : g.ph === "night" ? "#9fc0ff" : "#ffe9a0");
+  if (!lobby) text(label, VW / 2, 26, 18, dusk && Math.floor(t * 2) % 2 ? "#ffb040" : g.ph === "night" ? "#9fc0ff" : "#ffe9a0");
   const hHit = t - hearthHitT < 1.5 && g.mode !== "royale";
   if (g.mode !== "royale" && g.mode !== "adventure") bar(VW / 2 - 180, 42, 360, 6, g.hh / g.hm, hHit && Math.floor(t * 8) % 2 ? "#ff3020" : "#e8703a");
   // everything under the clock and compass stacks downwards, so nothing lands on top of anything else
   let top = playView && !["lobby", "over", "intro"].includes(g.ph) && Math.min(420, VW - 460) >= 160 ? 84 : 62;
   const slot = (h) => { const y = top; top += h + 4; return y; };
-  if (g.ph === "lobby" && joined) {
+  if (g.ph === "lobby" && joined && $("lobbyPanel").classList.contains("hidden")) {
     const rd = S.p.filter((p) => p.rd).length, y = slot(28);
     text(g.cd >= 0 ? `STARTING IN ${Math.ceil(g.cd)}` : `${rd}/${S.p.length} ready · press F when you are`, VW / 2, y + 14, g.cd >= 0 ? 28 : 16, g.cd >= 0 ? "#7dffb0" : "#ccc");
   }
@@ -96,7 +97,7 @@ function drawHud(mine, t) {
     let y = 12;
     for (const { f, lines, bh, a } of rows) {
       ctx.globalAlpha = a;
-      ctx.font = "bold 13px Trebuchet MS"; const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 16;
+      ctx.font = `bold 13px "Trebuchet MS", sans-serif`; const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 16;
       ctx.fillStyle = "#000a"; ctx.fillRect(VW - w - 12, y, w, bh);
       lines.forEach((l, j) => text(l, VW - 20, y + 11 + j * 16, 13, f.color || "#fff", "right", false));
       y += bh + 4;
@@ -109,7 +110,7 @@ function drawHud(mine, t) {
   chatLog.forEach((c, i) => {
     const age = t - c.t; if (age > 15 && !chatting) return;
     ctx.globalAlpha = chatting ? 1 : Math.min(1, 15 - age);
-    ctx.font = "bold 14px Trebuchet MS";
+    ctx.font = `bold 14px "Trebuchet MS", sans-serif`;
     const y = chatY - (chatLog.length - 1 - i) * 20;
     text(c.from + ":", 14, y, 14, c.color, "left");
     const w = ctx.measureText(c.from + ": ").width;

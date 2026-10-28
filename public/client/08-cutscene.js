@@ -35,7 +35,7 @@ function openSpot(x, y, r) { // the nearest open ground to (x, y), for the dead 
   return { x, y };
 }
 function glowAt(x, y, z, r, rgb, a) {
-  const s = R3D.project(x, y, z); if (!s) return;
+  const s = project3(x, y, z); if (!s) return;
   const R = r * 600 / Math.max(120, s.d), g = ctx.createRadialGradient(s.x, s.y, 2, s.x, s.y, R);
   g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(s.x, s.y, R, 0, 7); ctx.fill();
 }
@@ -89,7 +89,7 @@ function introShot(t) {
 }
 function renderIntro(t, dt) {
   ctx.clearRect(0, 0, VW, VH);
-  R3D.resize(VW, VH);
+  R3D.resize(innerWidth, innerHeight); // the 3D view is in real pixels, the HUD in UI units
   if (document.pointerLockElement === cv) document.exitPointerLock();
   const sh = introShot(t), pr = sh.props ? sh.props(sh.k, t) : {};
   const npcs = (sh.npcs && MAP.npcs) || [];

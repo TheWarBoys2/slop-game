@@ -4,6 +4,7 @@
 const keys = new Set();
 let mouseDown = false, chatting = false, shopOpen = false, showScores = false;
 addEventListener("keydown", (e) => {
+  if (e.key === "F1") { e.preventDefault(); if (joined && !e.repeat) showKeySheet(true); return; } // hold for the controls
   if (e.key === "F8") { e.preventDefault(); toggleBug(); return; }
   if (bugOpen) { if (e.key === "Escape") toggleBug(false); return; }
   if (!joined) return;
@@ -14,7 +15,7 @@ addEventListener("keydown", (e) => {
   }
   if (fixOpen) { fixKey(e, true); return; }
   if (cleanOpen || hackOpen) { if (e.key === "Escape") { if (cleanOpen) closeClean(true); else closeHack(true); } return; }
-  const k = e.key.toLowerCase();
+  const k = bindKey(e.key.toLowerCase()); // rebound keys arrive as the key they stand in for
   if (k === "tab") { e.preventDefault(); showScores = true; return; }
   if (k === "enter") { openChat(); e.preventDefault(); return; }
   if (S && S.g.ph === "lobby") { if (k === "f") send({ t: "ready" }); else if (k === "o") toggleOptions(); else if (k === "escape") { if (optsOpen) toggleOptions(false); else closeScreens(); } return; } // the lobby is a screen, not a playground
@@ -65,14 +66,14 @@ addEventListener("keydown", (e) => {
   if (k === "l") openClean();
   if (k === "p") { const mine = S?.p.find((p) => p.id === me); if (mine && mine.inf !== "keys") send({ t: "mech" }); } // call your mech down
 });
-addEventListener("keyup", (e) => { if (fixOpen) fixKey(e, false); const k = e.key.toLowerCase(); keys.delete(k); if (radial && radial.key === k) pickRadial(radial.sel); if (k === "alt") e.preventDefault(); if (k === "tab") showScores = false; });
+addEventListener("keyup", (e) => { if (e.key === "F1") showKeySheet(false); if (fixOpen) fixKey(e, false); const k = bindKey(e.key.toLowerCase()); keys.delete(k); if (radial && radial.key === k) pickRadial(radial.sel); if (k === "alt") e.preventDefault(); if (k === "tab") showScores = false; });
 // CTRL is crouch now, and CTRL+W closes a browser tab; ask before leaving mid-game
 addEventListener("beforeunload", (e) => { if (joined && S && ["day", "night", "royale"].includes(S.g.ph)) { e.preventDefault(); e.returnValue = ""; } });
-addEventListener("blur", () => { radial = null; keys.clear(); mouseDown = false; adsDown = false; showScores = false; });
+addEventListener("blur", () => { showKeySheet(false); radial = null; keys.clear(); mouseDown = false; adsDown = false; showScores = false; });
 cv.addEventListener("mousemove", (e) => {
   if (radial) { // steer the wheel instead of the camera
     if (document.pointerLockElement === cv) { radial.ax += e.movementX; radial.ay += e.movementY; const d = Math.hypot(radial.ax, radial.ay); if (d > 120) { radial.ax *= 120 / d; radial.ay *= 120 / d; } }
-    else { radial.ax = e.clientX - innerWidth / 2; radial.ay = e.clientY - innerHeight / 2; }
+    else { radial.ax = (e.clientX - innerWidth / 2) / UIS; radial.ay = (e.clientY - innerHeight / 2) / UIS; }
     const items = RADIAL[radial.key], d = Math.hypot(radial.ax, radial.ay);
     radial.sel = d < 28 ? -1 : Math.round(((Math.atan2(radial.ay, radial.ax) + Math.PI / 2 + Math.PI * 4) % (Math.PI * 2)) / (Math.PI * 2 / items.length)) % items.length;
     return;

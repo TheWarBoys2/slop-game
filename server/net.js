@@ -13,7 +13,8 @@ import client10 from "../public/client/10-render.js" with { type: "text" };
 import client11 from "../public/client/11-screens.js" with { type: "text" };
 import client12 from "../public/client/12-music.js" with { type: "text" };
 import client13 from "../public/client/13-moon.js" with { type: "text" };
-const gameSrc = [client1, client2, client3, client4, client5, client6, client7, client8, client9, client10, client11, client13, client12].join("\n"); // the browser client, one file per part, joined in order (12-music closes the shared function, so it stays last)
+import client14 from "../public/client/14-controls.js" with { type: "text" };
+const gameSrc = [client1, client2, client3, client4, client5, client6, client7, client8, client9, client10, client11, client13, client14, client12].join("\n"); // the browser client, one file per part, joined in order (12-music closes the shared function, so it stays last)
 import moveJs from "../public/move.js" with { type: "text" };
 import snapJs from "../public/snap.js" with { type: "text" };
 import r3dJs from "../public/r3d.js" with { type: "text" };
