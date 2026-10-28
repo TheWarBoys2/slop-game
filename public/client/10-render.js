@@ -51,10 +51,7 @@ function drawHud(mine, t) {
   if (building) { const y = slot(18); text("BUILD MODE  ·  click to place, 1-4 to pick, right-click, C or Esc to stop", VW / 2, y + 9, 14, "#9fe0ff"); const by = slot(56) + "px", bb = $("buildBar"); if (bb.style.top !== by) bb.style.top = by; }
   if (g.dis) {
     const DN = { meteor: "☄ METEOR SHOWER", flood: "🌊 FLOOD", tornado: "🌪 TORNADO", quake: "⚠ EARTHQUAKE" };
-    let y = slot(22);
-    ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 130, y, 260, 22, 8); ctx.fill();
-    text(`${DN[g.dis.k] || g.dis.k.toUpperCase()}${g.dis.left > 0 ? `  ·  ${g.dis.left}s` : ""}`, VW / 2, y + 11, 13, "#ffb060");
-    if (g.dis.st) { const [sx, sy] = g.dis.st, d = Math.hypot(sx - pred.x, sy - pred.y); y = slot(20); ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 170, y, 340, 20, 8); ctx.fill(); text(`Stop it: control station ${Math.round(d / 10)}m ${compass(sx - pred.x, sy - pred.y)} (⚠ on your map)`, VW / 2, y + 10, 12, "#9fe0ff"); }
+    hudAlert(slot(24), `${DN[g.dis.k] || g.dis.k.toUpperCase()}${g.dis.left > 0 ? `  ·  ${g.dis.left}s` : ""}${g.dis.st ? "  ·  get to the control station (⚠)" : ""}`, "#ffb060", t); // the tracker, top right, says where the station is
   }
   if (g.moon) moonHud(g, slot, t); // Moonfall (13-moon.js)
   // boss bars (Dark Souls), along the bottom of the screen
@@ -65,7 +62,7 @@ function drawHud(mine, t) {
   }
   if (g.adv && ["day", "night"].includes(g.ph)) {
     const q = g.adv.q.find((x) => x[9]) || g.adv.q[0];
-    if (q) { const y = slot(20), dx = q[4] - pred.x, dy = q[5] - pred.y, txt = `${advIcon(q)} ${Math.round(Math.hypot(dx, dy) / 10)}m ${compass(dx, dy)}  ·  ${q[3].length > 90 ? q[3].slice(0, 88) + "…" : q[3]}`; ctx.font = 'bold 13px "Trebuchet MS", sans-serif'; const w = Math.min(VW - 40, ctx.measureText(txt).width + 48); ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - w / 2, y, w, 20, 8); ctx.fill(); text(txt, VW / 2, y + 10, 13, "#ffe9a0"); }
+    // the tracked job shows in the objective tracker, top right (hudObjective)
     let best = null, bd = 1100 * 1100;
     for (const [id, name] of g.adv.qb) { const z = S.z.find((q2) => q2[0] === id); if (!z) continue; const d = (z[2] - pred.x) ** 2 + (z[3] - pred.y) ** 2; if (d < bd) { bd = d; best = [z, name]; } }
     if (best && !g.boss) hudBossBar(best[1], best[0][4] / 100, "#d05030");
@@ -83,21 +80,22 @@ function drawHud(mine, t) {
   }
   // the Hearth is being hit and you're nowhere near it
   if (hHit && MAP.hearth && g.ph !== "lobby" && Math.hypot(MAP.hearth.x + MAP.hearth.w / 2 - pred.x, MAP.hearth.y + MAP.hearth.h / 2 - pred.y) > 450) {
-    const y = slot(18), hx = MAP.hearth.x + MAP.hearth.w / 2 - pred.x, hy = MAP.hearth.y + MAP.hearth.h / 2 - pred.y;
-    text(`🔥 THE HEARTH IS UNDER ATTACK  ·  ${Math.round(100 * g.hh / g.hm)}%  ·  ${Math.round(Math.hypot(hx, hy) / 10)}m ${compass(hx, hy)}`, VW / 2, y + 9, 14, Math.floor(t * 4) % 2 ? "#ff6040" : "#ffd34d");
+    const hx = MAP.hearth.x + MAP.hearth.w / 2 - pred.x, hy = MAP.hearth.y + MAP.hearth.h / 2 - pred.y;
+    hudAlert(slot(24), `THE HEARTH IS UNDER ATTACK  ·  ${Math.round(100 * g.hh / g.hm)}%  ·  ${Math.round(Math.hypot(hx, hy) / 10)}m ${compass(hx, hy)}`, "#ffd34d", t);
   }
 
   // kill feed (top right): wraps, keeps clear of the clock in the middle and stops above the story card
   {
-    const fw = Math.max(220, VW / 2 - Math.min(460, VW - 40) / 2 - 24), maxY = storyCardOn() ? 172 : VH * 0.45, rows = [];
+    const top0 = 12 + hudObjective(mine, t); // the Witcher tracker sits above the feed
+    const fw = Math.max(220, VW / 2 - Math.min(460, VW - 40) / 2 - 24), maxY = storyCardOn() ? Math.max(172, top0 + 60) : VH * 0.45, rows = [];
     let h = 0;
     for (let i = feed.length - 1; i >= 0; i--) {
       const f = feed[i], age = t - f.t; if (age > 8) continue;
       const lines = wrapText(f.text, 13, fw - 16), bh = 6 + lines.length * 16;
-      if (12 + h + bh > maxY) break;
+      if (top0 + h + bh > maxY) break;
       rows.unshift({ f, lines, bh, a: Math.min(1, 8 - age) }); h += bh + 4;
     }
-    let y = 12;
+    let y = top0;
     for (const { f, lines, bh, a } of rows) {
       ctx.globalAlpha = a;
       ctx.font = `bold 13px "Trebuchet MS", sans-serif`; const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 16;

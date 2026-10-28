@@ -63,6 +63,7 @@ addEventListener("keydown", (e) => {
   if (k === "3") send({ t: "throw", k: "gren" });
   if (k === "4") send({ t: "throw", k: "molo" });
   if (k === "z") send({ t: "elem" });
+  if (k === "u") doPing();
   if (k === "l") openClean();
   if (k === "p") { const mine = S?.p.find((p) => p.id === me); if (mine && mine.inf !== "keys") send({ t: "mech" }); } // call your mech down
 });
@@ -96,6 +97,7 @@ cv.addEventListener("mousedown", (e) => {
   if (playView && document.pointerLockElement !== cv) { if (e.button === 0 && !menusOpen()) lockMouse(); return; }
   if (building) { if (e.button === 0) { const g = ghostCell(); send({ t: "build", kind: buildKind, x: g.x, y: g.y }); } else toggleBuild(false); return; }
   if (e.button === 0) mouseDown = true;
+  if (e.button === 1) { e.preventDefault(); doPing(); } // middle click: ping (Apex)
   if (e.button === 2) adsDown = true;
 });
 addEventListener("mouseup", (e) => { if (e.button === 2) adsDown = false; else mouseDown = false; });
