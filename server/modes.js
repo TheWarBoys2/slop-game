@@ -21,6 +21,7 @@ export const MODE_RULES = {
     dinoDay: (day) => day === 4,
     bugNight: (n) => n === 3,
     bossWins: true,   // killing the last night's boss ends the game
+    moonFrom: 5,      // Moonfall (moonfall.js) can start on any dawn from this day; 0 = never
   },
   endless: {
     intro: FAST ? 3 : 25, day: DAY_LEN, night: NIGHT_LEN,
@@ -29,18 +30,19 @@ export const MODE_RULES = {
     dinoDay: (day) => day >= 4 && (day - 4) % 7 === 0,
     bugNight: (n) => n === 3 || (n > 3 && (n - 3) % 6 === 0),
     bossWins: false,  // a boss every fifth night; killing it just brings the sun up
+    moonFrom: 6,
   },
   adventure: {
     intro: FAST ? 2 : 10, day: ADV_DAY, night: ADV_NIGHT,
     open: true, town: true, townsfolk: false, story: false, pvp: false, respawn: true, uav: true, mechs: true, hearth: true, waves: false,
     politics: false, nukes: false, disasters: false, rates: true, // the towns run themselves, far from the valley's bombs and storms
-    dinoDay: () => false, bugNight: () => false, bossWins: false,
+    dinoDay: () => false, bugNight: () => false, bossWins: false, moonFrom: 0,
   },
   royale: {
     intro: FAST ? 2 : 10, day: DAY_LEN, night: NIGHT_LEN,
     open: false, town: false, townsfolk: false, story: false, pvp: true, respawn: false, uav: false, mechs: false, hearth: false, waves: false,
     politics: false, nukes: false, disasters: false, rates: false,
-    dinoDay: () => false, bugNight: () => false, bossWins: false,
+    dinoDay: () => false, bugNight: () => false, bossWins: false, moonFrom: 0,
   },
 };
 export const rules = () => MODE_RULES[game.mode] || MODE_RULES.story;

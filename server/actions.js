@@ -22,6 +22,7 @@ import { broadcastRaw } from "./tick.js";
 import { enterVehicle, exitVehicle, touchGlyph } from "./vehicles.js";
 import { world } from "./world.js";
 import { rules } from "./modes.js";
+import { moonUse } from "./moonfall.js";
 
 // ---------------------------------------------------------------- actions
 export function interact(p) {
@@ -34,6 +35,7 @@ export function interact(p) {
   { const c = world.caches.find((q) => dist2(q, p) < 62 * 62); if (c) return startHack(p, c); }
   if (game.mode === "adventure" && advInteract(p)) return; // notice boards, signposts, the folk, signs of the beast
   if (game.disaster && game.disaster.st && dist2(game.disaster.st, p) < 85 * 85) return startFix(p);
+  if (moonUse(p)) return; // Moonfall: the Giants' shrines
   { const b = bunkerWall(); if (b && rectHitsCircle(b, p, 46) && rules().town) return enterBunker(p); }
   let best = null, bd = 60 * 60;
   for (const c of world.crates) { const d = dist2(c, p); if (d < bd && (!c.vault || d < 26 * 26)) { bd = d; best = c; } } // vault loot: you have to be in the vault

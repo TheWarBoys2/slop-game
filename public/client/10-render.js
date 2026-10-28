@@ -53,6 +53,7 @@ function drawHud(mine, t) {
     text(`${DN[g.dis.k] || g.dis.k.toUpperCase()}${g.dis.left > 0 ? `  ·  ${g.dis.left}s` : ""}`, VW / 2, y + 11, 13, "#ffb060");
     if (g.dis.st) { const [sx, sy] = g.dis.st, d = Math.hypot(sx - pred.x, sy - pred.y); y = slot(20); ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 170, y, 340, 20, 8); ctx.fill(); text(`Stop it: control station ${Math.round(d / 10)}m ${compass(sx - pred.x, sy - pred.y)} (⚠ on your map)`, VW / 2, y + 10, 12, "#9fe0ff"); }
   }
+  if (g.moon) moonHud(g, slot, t); // Moonfall (13-moon.js)
   // boss bar
   if (g.boss) {
     const bz = S.z.find((z) => z[0] === g.boss);
@@ -239,6 +240,7 @@ function drawHud(mine, t) {
   if (!mine.d) {
     let hint = null;
     if (g.dis && g.dis.st && (g.dis.st[0] - pred.x) ** 2 + (g.dis.st[1] - pred.y) ** 2 < 85 * 85) hint = [g.dis.st[2] ? "Someone's working the station. Cover them!" : `E  ${{ meteor: "shoot down the meteors", flood: "open the sluice gates", tornado: "launch the cloud-seeding rocket", quake: "work the seismic damper" }[g.dis.k]}`, "#9fe0ff"];
+    if (!hint && g.moon) hint = moonHint();
     if (!hint) for (const [, x, y, busy] of S.ca || []) if ((x - pred.x) ** 2 + (y - pred.y) ** 2 < 62 * 62) { hint = [busy ? "Someone's hacking this one" : "E  hack the Slop-Tech cache", "#7dffb0"]; break; }
     if (!hint) { // office terminals: hack enough of a block's and its vault opens
       const tm = new Set(S.tm || []);

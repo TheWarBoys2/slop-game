@@ -33,6 +33,7 @@ import { ensureChunks, wildTick } from "./wild.js";
 import { world } from "./world.js";
 import { rules } from "./modes.js";
 import { zgridStale, zombiesNear } from "./zgrid.js";
+import { moonTick, moonView } from "./moonfall.js";
 
 // ---------------------------------------------------------------- tick
 world.lastT = now();
@@ -104,7 +105,7 @@ export function tick() {
 
   const playing = game.phase === "day" || game.phase === "night" || game.phase === "royale";
   if (playing) ballTick(t, dt);
-  if (playing) { vehicleTick(t, dt); buildTick(t); projTick(t, dt); fireTick(t, dt); disasterTick(t, dt); }
+  if (playing) { vehicleTick(t, dt); buildTick(t); projTick(t, dt); fireTick(t, dt); disasterTick(t, dt); moonTick(t, dt); }
   if (playing && world.NPC_POS.length) npcTick(t, dt);
 
   // players
@@ -351,7 +352,7 @@ function snapshot() {
       drop: game.drop && t - game.drop.t0 < game.drop.dur + 3 ? [r(game.drop.x0), r(game.drop.y0), r(game.drop.x1), r(game.drop.y1), +dropPos(t).k.toFixed(3)] : null,
       clues: [...game.clues].map(clueText), mq: mainQuest(),
       ph: game.phase, n: game.night, uav: game.uav && game.uav > t ? Math.ceil(game.uav - t) : 0, left: game.ends === Infinity ? -1 : Math.max(0, r(game.ends - t)), hh: r(game.hearth), hm: game.hearthMax, res: game.result, boss: game.bossId, bk: game.bossKind, valley: world.VALLEY, fog: game.fog ? 1 : 0, solved: solved() ? 1 : 0, dino: game.dino ? 1 : 0, dd: game.dinoDay ? 1 : 0,
-      du: dustView(t), bug: bugView(), adv: game.mode === "adventure" ? advView() : null,
+      du: dustView(t), bug: bugView(), moon: moonView(t), adv: game.mode === "adventure" ? advView() : null,
       mk: SYMS.map((s) => +game.market.px[s].toFixed(2)), news: game.market.news.map((n) => [n.text, n.up ? 1 : 0]),
       mayor: game.mayor, nuke: game.nuke ? [r(game.nuke.x), r(game.nuke.y), Math.max(0, +(game.nuke.at - t).toFixed(1))] : null, dome: game.dome && rules().nukes ? [game.dome.have, game.dome.cost] : null, waste: game.waste ? 1 : 0, hot: game.hot.map((h) => [r(h.x), r(h.y), r(h.r), h.lake ? 1 : 0]),
       elec: game.elec ? { c: game.elec.cands, v: Object.fromEntries(game.elec.votes), left: Math.max(0, r(game.elec.ends - t)) } : null,

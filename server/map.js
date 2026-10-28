@@ -82,6 +82,11 @@ export function damageWall(w, dmg) {
 }
 // walls knocked down (and rubble left behind) since the last tick: sent as one small "wd" message
 let wallsGone = [], wallsAdded = [];
+// clear the wild off a patch (Moonfall's Giants need room to stand): whatever grew there goes, without a map resend
+export function clearPatch(b) {
+  world.WALLS = world.WALLS.filter((o) => { const gone = o.kind !== "hearth" && o.x < b.x + b.w && o.x + o.w > b.x && o.y < b.y + b.h && o.y + o.h > b.y; if (gone) wallsGone.push(o.id); return !gone; });
+  world.mapVer++;
+}
 export function sendWallChanges() {
   if (!wallsGone.length && !wallsAdded.length) return;
   broadcastRaw(JSON.stringify({ t: "wd", ver: world.mapVer, gone: wallsGone, add: wallsAdded }));

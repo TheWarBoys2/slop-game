@@ -26,6 +26,7 @@ Only the host installs anything. Everyone else just opens a link in their browse
 | Mayoral elections every five nights, one of the candidates a Posadist | Tropico |
 | Adventure mode: notice-board monster contracts, three signs to find before the beast shows itself, signpost fast travel | The Witcher 3 |
 | Bug Night: alien bug holes all over the valley, plasma artillery bugs, and a Brain Bug that kills them all when it dies | Starship Troopers, Helldivers 2 |
+| A moon with a face falls on the valley in three days unless you wake the four Giants | The Legend of Zelda: Majora's Mask |
 | Mech suits built from parts that drop off big monsters: autocannon, rocket pod, flamer and sword arms, jump-jet legs | MechWarrior, Titanfall |
 | Adventure mode: gigs from fixers who pay on the spot, breaching data spikes, an open world of towns to work through | Cyberpunk 2077 |
 
@@ -59,6 +60,8 @@ Walk into a town to find it; after that its signpost can take you to any town yo
 **Dinosaur Day.** On day 4 of the story (and day 4, then every seventh day, in Endless) nothing but dinosaurs comes out of the well: raptor packs roam all day, and that night is dinosaurs only, fewer of them than a normal night, with one T. rex. They don't turn up any other time.
 
 **Bug Night and mechs.** Story night 3 (and Endless night 3, then every sixth night) is Bug Night: holes open around the town and alien bugs pour out of them. Warrior bugs hunt people wherever they are, spitters plant themselves and lob plasma (at the Hearth if nobody's about), and from night 5 armoured tanker bugs spray acid. An explosion (grenade, rocket, or a mech landing on it) seals a hole. Halfway through the night, or once most holes are shut, the Brain Bug crawls out of its hive; kill it and every bug drops dead (200g and a mech part each). The first Bug Night airdrops everyone a basic mech. More parts drop from elites, bosses, the T. rex, tanker bugs and sealed holes, or Haddock sells them. Parts go in your bag: use one to bolt it on (core, legs, two arms, a head). P calls your mech down; it repairs by the Hearth, and a wrecked one costs 250g to rebuild.
+
+**The moon is falling.** Some mornings (from day 5 of the story, day 6 in Endless, at most once a game) the valley wakes up to a moon with a face on it, and it's coming down. You have three days and two nights: the bell tolls at every dawn and dusk and the hours count down under the clock. Four Giants sleep at stone circles out in the wild, one each to the north, east, south and west of town (🗿 on your map and compass). Press E at a circle to play the Oath to Order, then hold the circle while the moon's dead come for you; leave it empty and the Giant drifts back to sleep. Each Giant you wake stands up on the horizon and pays whoever held the circle 120g. Wake all four and they hold the moon up: 300g each and a Legendary for everyone by the Hearth. From the second day bits of the moon start falling, and on the final night the ground won't stop shaking. If it lands, that's the game.
 
 **Features and bugs.** Press F8 (or the 🐞 button) to send a bug or an idea. It's appended to `bug-reports.txt` next to `SlopValley.exe` (or `SlopValley-linux`) on the host's PC, along with where you were and what the game was doing, ready to upload.
 
