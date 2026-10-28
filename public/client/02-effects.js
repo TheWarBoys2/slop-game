@@ -115,6 +115,7 @@ function handleEvent(e) {
   else if (e.k === "zap") { fx.push({ kind: "zap", t0: t, dur: 0.35, pts: e.pts }); if (Math.hypot(e.pts[0][0] - pred.x, e.pts[0][1] - pred.y) < 900) sfx("zap"); }
   else if (e.k === "meteor") { fx.push({ kind: "boom", t0: t, dur: 0.8, x: e.x, y: e.y, z: e.z, r: 170 }); fx.push({ kind: "boom", t0: t, dur: 1.4, x: e.x, y: e.y, z: e.z, r: 120, dust: true }); const d = Math.hypot(e.x - pred.x, e.y - pred.y); sfxAt({ x: e.x, y: e.y, far: 3500 }, "boom"); if (d < 1200) { shake = Math.max(shake, 16 * (1 - d / 1200)); } }
   else if (e.k === "quake") shake = Math.max(shake, 14);
+  else if (e.k === "moon") moonEvent(e, t); // Moonfall (13-moon.js)
   else if (e.k === "siren") { sirenT = t; sfx("siren"); }
   else if (e.k === "nuke") { nukeFx = { x: e.x, y: e.y, t }; shake = Math.max(shake, 30); sfx("nuke"); }
   else if (e.k === "hatch") { sfxAt({ x: e.x, y: e.y, far: 500 }, "click"); }

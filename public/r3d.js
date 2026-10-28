@@ -1005,6 +1005,110 @@ var R3D = (function () {
   }
   const angLerp = (a, b, k) => { let d = b - a; d = Math.atan2(Math.sin(d), Math.cos(d)); return a + d * k; };
 
+  // ---------------------------------------------------------------- Moonfall: the moon, the Giants' shrines and the Giants
+  function moonFace() { // the grimace, painted once
+    const c = document.createElement("canvas"); c.width = c.height = 256; const x = c.getContext("2d");
+    const eye = (cx, flip) => {
+      x.fillStyle = "#f6edc4"; x.beginPath(); x.ellipse(cx, 104, 36, 26, flip * 0.18, 0, 7); x.fill();
+      x.fillStyle = "#e8a020"; x.beginPath(); x.arc(cx + flip * 4, 104, 17, 0, 7); x.fill();
+      x.fillStyle = "#b01808"; x.beginPath(); x.arc(cx + flip * 4, 104, 10, 0, 7); x.fill();
+      x.fillStyle = "#000"; x.beginPath(); x.arc(cx + flip * 4, 104, 5, 0, 7); x.fill();
+      x.strokeStyle = "#3a2410"; x.lineWidth = 13; x.lineCap = "round"; x.beginPath(); x.moveTo(cx - flip * 44, 62); x.lineTo(cx + flip * 30, 82); x.stroke(); // the brows: furious
+      x.strokeStyle = "#7a5030"; x.lineWidth = 4; x.beginPath(); x.ellipse(cx, 106, 44, 34, 0, 0, 7); x.stroke();
+    };
+    eye(78, -1); eye(178, 1);
+    x.fillStyle = "#8a6038"; x.beginPath(); x.moveTo(128, 112); x.lineTo(112, 158); x.lineTo(144, 158); x.fill(); // the nose
+    x.fillStyle = "#2a1408"; x.beginPath(); x.ellipse(128, 192, 74, 30, 0, 0, 7); x.fill(); // the mouth, and all those teeth
+    x.fillStyle = "#f2ead0"; for (let i = 0; i < 9; i++) { x.fillRect(62 + i * 15, 172, 12, 18); x.fillRect(66 + i * 14, 196, 11, 16); }
+    x.strokeStyle = "#7a5030"; x.lineWidth = 5; x.beginPath(); x.moveTo(44, 182); x.quadraticCurveTo(128, 238, 212, 182); x.stroke();
+    return new T.CanvasTexture(c);
+  }
+  function moonSkin() { // grey-orange and pocked
+    const c = document.createElement("canvas"); c.width = 256; c.height = 128; const x = c.getContext("2d");
+    x.fillStyle = "#cfa878"; x.fillRect(0, 0, 256, 128);
+    for (let i = 0; i < 60; i++) { const r = 2 + Math.random() * 12; x.fillStyle = `rgba(90,60,40,${0.15 + Math.random() * 0.25})`; x.beginPath(); x.arc(Math.random() * 256, Math.random() * 128, r, 0, 7); x.fill(); }
+    return new T.CanvasTexture(c);
+  }
+  const GIANT_COL = [0x9a7ac0, 0xc0a050, 0x6aa080, 0x8aa0b0];
+  function giantMesh(i) { // a Giant: huge, hunched, wearing a mask; arms are their own groups so they can lift
+    const g = new T.Group(), skin = new T.MeshLambertMaterial({ color: GIANT_COL[i], fog: false }), dark = new T.MeshLambertMaterial({ color: 0x3a3028, fog: false });
+    const leg = (s) => { const l = mesh(new T.BoxGeometry(70, 300, 80), skin, s * 55, 150, 0); g.add(l); };
+    leg(-1); leg(1);
+    g.add(mesh(new T.BoxGeometry(220, 300, 130), skin, 0, 440, 0));
+    g.add(mesh(new T.BoxGeometry(240, 40, 140), dark, 0, 300, 0)); // a belt
+    const head = mesh(new T.SphereGeometry(75, 12, 10), skin, 0, 650, 0); g.add(head);
+    const mask = mesh(new T.BoxGeometry(110, 120, 20), new T.MeshLambertMaterial({ color: 0xf0e0b0, emissive: 0x302010, fog: false }), 0, 650, 76); g.add(mask);
+    for (const s of [-1, 1]) g.add(mesh(new T.SphereGeometry(12, 8, 6), new T.MeshBasicMaterial({ color: 0x40d0ff, fog: false }), s * 26, 668, 88)); // glowing eyes
+    const arms = [];
+    for (const s of [-1, 1]) { const a = new T.Group(); a.position.set(s * 135, 570, 0); a.add(mesh(new T.BoxGeometry(56, 320, 60), skin, 0, -160, 0)); g.add(a); arms.push(a); }
+    g.userData.arms = arms;
+    return g;
+  }
+  function moon3d(S, t, dt, st) {
+    const M = S.g.moon; if (!M) return;
+    const c = st.cam, MAP_CX = st.MAP.W / 2, MAP_CY = st.MAP.H / 2;
+    // how far down it's come: 0 at the first dawn, 1 when it lands; once the Giants have it, it goes back up
+    const e = pooled("moon", () => {
+      const g = new T.Group();
+      g.add(mesh(new T.SphereGeometry(1, 32, 20), new T.MeshBasicMaterial({ map: moonSkin(), fog: false })));
+      const f = mesh(new T.CircleGeometry(0.86, 32), new T.MeshBasicMaterial({ map: moonFace(), transparent: true, fog: false })); f.position.z = 1.01; g.add(f);
+      return g;
+    });
+    let k = M.f ? 1 : M.h >= 0 ? 1 - M.h / 72 : (e.k0 ?? 0.8);
+    if (M.sv < 0) e.k0 = k; else k = (e.k0 ?? 0.8) * Math.max(0, 1 - M.sv / 14);
+    const el = lerp(0.42, 0.9, k), D = 4200, rad = lerp(260, 1500, k ** 1.6) * (1 + Math.sin(t * 9) * (M.h >= 0 && M.h < 6 ? 0.004 : 0));
+    const up = M.sv > 0 ? M.sv * 160 : 0; // pushed back up into the sky
+    at(e.obj, c.x, c.y - D * Math.cos(el), c.z + D * Math.sin(el) + up);
+    e.obj.scale.setScalar(rad);
+    e.obj.lookAt(c.x, c.z, c.y);
+    // the sky goes the colour of a bad dream as it comes down
+    if (k > 0.35 && M.sv < 0) { const tint = new T.Color(S.g.ph === "night" ? 0x3a0c06 : 0xc8501e), q = Math.min(0.75, (k - 0.35) * 1.1); scene.background.lerp(tint, q); scene.fog.color.lerp(tint, q); }
+    // the shrines, and the Giants who wake at them
+    for (let i = 0; i < M.sh.length; i++) {
+      const [sx, sy, prog, awake, on] = M.sh[i];
+      const s = pooled(`moonshrine:${i}`, () => {
+        const g = new T.Group(), stone = mat(0x8a8478);
+        for (let j = 0; j < 9; j++) { const a = j / 9 * Math.PI * 2; const b = mesh(new T.BoxGeometry(22, 70 + (j % 3) * 18, 22), stone, Math.cos(a) * 190, 40, Math.sin(a) * 190); b.rotation.y = -a; g.add(b); }
+        g.add(mesh(new T.CylinderGeometry(16, 22, 90, 8), stone, 0, 45, 0));
+        const gem = mesh(new T.OctahedronGeometry(16, 0), new T.MeshLambertMaterial({ color: GIANT_COL[i], emissive: 0x000000 }), 0, 112, 0); g.add(gem); g.userData.gem = gem;
+        const ring = mesh(new T.RingGeometry(176, 196, 48), new T.MeshBasicMaterial({ color: 0xc08aff, transparent: true, opacity: 0.25, side: T.DoubleSide, depthWrite: false }), 0, 3, 0); ring.rotation.x = -Math.PI / 2; g.add(ring); g.userData.ring = ring;
+        const fill = mesh(new T.CircleGeometry(176, 48), new T.MeshBasicMaterial({ color: 0xc08aff, transparent: true, opacity: 0, side: T.DoubleSide, depthWrite: false }), 0, 2, 0); fill.rotation.x = -Math.PI / 2; g.add(fill); g.userData.fill = fill;
+        const sleeper = mesh(new T.SphereGeometry(150, 12, 8), mat(0x6a6458), 0, 40, -330); sleeper.scale.set(1.3, 0.8, 1); g.add(sleeper); g.userData.sleeper = sleeper; // the Giant, curled up asleep
+        return g;
+      });
+      at(s.obj, sx, sy, 0);
+      s.obj.rotation.y = Math.atan2(MAP_CX - sx, MAP_CY - sy); // the sleeper lies on the far side, away from town
+      const U = s.obj.userData;
+      U.gem.rotation.y = t * (on ? 4 : 0.6); U.gem.material.emissive.setHex(awake ? GIANT_COL[i] : on ? (Math.floor(t * 4) % 2 ? 0xc08aff : 0x301040) : 0x000000);
+      U.ring.material.opacity = awake ? 0.15 : on ? 0.5 + Math.sin(t * 6) * 0.2 : 0.25;
+      U.fill.material.opacity = on ? 0.08 + prog / 100 * 0.3 : 0; U.fill.scale.setScalar(Math.max(0.01, prog / 100));
+      U.sleeper.visible = !awake;
+      if (awake) {
+        const gi = pooled(`giant:${i}`, () => giantMesh(i));
+        if (gi.woke === undefined) gi.woke = M.sv >= 0 ? t - 10 : t;
+        const rise = Math.min(1, (t - gi.woke) / 4), away = Math.atan2(sy - MAP_CY, sx - MAP_CX);
+        at(gi.obj, sx + Math.cos(away) * 420, sy + Math.sin(away) * 420, -760 * (1 - rise));
+        gi.obj.rotation.y = Math.atan2(MAP_CX - sx, MAP_CY - sy); // facing town
+        const lift = M.sv >= 0 || M.f ? Math.PI * 0.95 : 0.15 + Math.sin(t * 0.8 + i) * 0.08; // arms up to catch the moon
+        gi.obj.userData.arms.forEach((a, j) => { a.rotation.x = lerp(a.rotation.x, -lift, Math.min(1, dt * 2)); a.rotation.z = (j ? -1 : 1) * (M.sv >= 0 ? 0.25 : 0.05); });
+      }
+    }
+    // pieces of the moon coming down
+    for (const [mx, my, left] of M.r || []) {
+      const r = pooled(`mrock:${mx}:${my}`, () => {
+        const g = new T.Group();
+        const ring = mesh(new T.RingGeometry(120, 132, 36), new T.MeshBasicMaterial({ color: 0xff7030, transparent: true, opacity: 0.7, side: T.DoubleSide, depthWrite: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = 2; g.add(ring);
+        const rock = mesh(new T.DodecahedronGeometry(26, 0), mat(0x9a8060, 0xff5010)); g.add(rock); g.userData.rock = rock;
+        const trail = mesh(new T.ConeGeometry(20, 180, 8, 1, true), new T.MeshBasicMaterial({ color: 0xffb040, transparent: true, opacity: 0.6, depthWrite: false })); rock.add(trail); trail.position.set(0, 90, 0);
+        g.userData.ring = ring; return g;
+      });
+      const q = Math.max(0, Math.min(1, 1 - left / 2.2));
+      at(r.obj, mx, my, 0);
+      r.obj.userData.ring.material.opacity = 0.4 + q * 0.5 + Math.sin(t * 20) * 0.1;
+      const rock = r.obj.userData.rock; rock.position.set(0, (1 - q) * 1600 + 20, (1 - q) * 900); rock.rotation.set(t * 3, t * 2, 0); // from the north, where the moon is
+    }
+  }
+
   // ---------------------------------------------------------------- per frame
   function frame(st) {
     frameNo++;
@@ -1374,6 +1478,7 @@ var R3D = (function () {
         const rock = e.obj.userData.rock; rock.position.set(-(1 - k) * 300, (1 - k) * 1400 + 20, -(1 - k) * 500); rock.rotation.set(t * 3, t * 2, 0);
       }
     }
+    moon3d(S, t, dt, st); // Moonfall
     // players
     let si = 0;
     const spotUse = [];
