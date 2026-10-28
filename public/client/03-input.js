@@ -39,6 +39,8 @@ addEventListener("keydown", (e) => {
   if (k === "n") { toggleBallot(); return; }
   if (k === "escape" && ballotOpen) { toggleBallot(false); return; }
   if (k === "j") { toggleJournal(); return; }
+  if (k === ",") { toggleMap(); return; }
+  if (k === "escape" && mapOpen) { toggleMap(false); return; }
   if ((k === "g" || k === "x") && !e.repeat && !menusOpen() && !dlgOpen) { openRadial(k); return; }
   if (radial && /^[1-8]$/.test(k)) { pickRadial(Number(k) - 1); return; }
   if (radial && k === "escape") { radial = null; return; } // changed your mind
@@ -81,7 +83,7 @@ cv.addEventListener("mousemove", (e) => {
   }
   if (document.pointerLockElement === cv) { const sm = S && S.p.find((q) => q.id === me), sc = sm && sm.w === "sniper" && adsZoom > 1.3; const sens = 0.0024 * OPTS.sens * (sc ? 0.2 : adsZoom > 1.05 ? 0.55 : 1); yaw += e.movementX * sens; pitch = Math.max(-1.45, Math.min(1.45, pitch - e.movementY * sens * (OPTS.invert ? -1 : 1))); return; }
 });
-const menusOpen = () => pauseOpen || fixOpen || dlgOpen || bugOpen || ballotOpen || (S && S.g.ph === "lobby") || cleanOpen || hackOpen || optsOpen || chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || journalOpen || invOpen || mktOpen || cardsOpen || stallOpen || (S && S.g.ph === "over");
+const menusOpen = () => pauseOpen || mapOpen || fixOpen || dlgOpen || bugOpen || ballotOpen || (S && S.g.ph === "lobby") || cleanOpen || hackOpen || optsOpen || chatting || shopOpen || skillsOpen || casinoOpen || wardOpen || journalOpen || invOpen || mktOpen || cardsOpen || stallOpen || (S && S.g.ph === "over");
 // Browsers refuse to re-lock the mouse for about a second after it was released (closing a menu with Esc counts).
 // So if a click comes too soon, quietly try again once the browser allows it instead of leaving the mouse stuck.
 let lockRetry = 0;

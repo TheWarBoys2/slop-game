@@ -190,6 +190,11 @@ function equipGear(p, i) {
 export function itemAct(p, m) {
   if (m.a === "use") return useItem(p, m.i | 0);
   if (m.a === "unequip") { const g = own(p.gear, m.slot); if (!g) return; if (!bagAdd(p.bag, g.id, 1, g.r)) return toast(p, "Your bag is full.", "#f88"); delete p.gear[m.slot]; p.invDirty = true; return; }
+  if (m.a === "sort") { // gear (best first), then food, drink, medicine, seeds and the rest
+    const KIND = { food: 1, drink: 2, med: 3, seed: 4 }, rank = (it) => (GEAR[it.id] ? 0 : KIND[ITEMS[it.id]?.kind] || 5);
+    p.bag.sort((a, b) => rank(a) - rank(b) || (b.r || 0) - (a.r || 0) || String(a.id).localeCompare(String(b.id)));
+    p.invDirty = true; return;
+  }
   if (m.a === "drop") { // leave it on the ground in a crate, for anyone to pick up
     const it = p.bag[m.i | 0]; if (!it || p.dead || p.air) return;
     p.bag.splice(m.i | 0, 1); p.invDirty = true;

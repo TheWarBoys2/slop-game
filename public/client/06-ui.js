@@ -125,7 +125,7 @@ function renderAdvJournal(mine) {
 function renderJournal() {
   const mine = S?.p.find((p) => p.id === me);
   if (!mine) return;
-  if (S.g.adv) return renderAdvJournal(mine);
+  if (S.g.adv) { renderAdvJournal(mine); hookJournal(); return; }
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const qs = mine.q.length ? mine.q.map(([title, desc, prog, goal, done, npc]) => `<div class="jq${done ? " done" : ""}"><b>${esc(title)}</b> <span>${done ? "done" : `${prog}/${goal}`}</span><small>${esc(desc)} (${esc(npc)})</small></div>`).join("") : `<div class="tag">No quests yet. Talk to people in town [E].</div>`;
   const cl = S.g.clues.length ? S.g.clues.map((c) => `<div class="jc">${esc(c)}</div>`).join("") : `<div class="tag">Nothing yet. Somebody in town knows something.</div>`;
@@ -139,6 +139,7 @@ function renderJournal() {
   let war = "";
   if (S.g.dome) { const [h, k] = S.g.dome, left = 5 - S.g.n; war = `<h3>The war</h3><div class="jq${h >= k ? " done" : ""}"><b>Raise the Hearth Dome</b> <span>${h}/${k}g</span><small>${h >= k ? "It's up. Stand inside it (near the Hearth) when the siren goes. Each bomb drains it by half, so keep it topped up." : left > 0 ? `The wireless says the bombs come after day 5 (${left} day${left === 1 ? "" : "s"} from now). No Dome, no Hearth. Pay in at the Hearth [E].` : "The bombs can fall any night now. Pay in at the Hearth [E]. If the siren goes before it's full, get to the bunker or the bottom of the lake."}</small></div>`; }
   $("journalBody").innerHTML = `${war}<h3>Quests</h3>${qs}<h3>Who poisoned the well? Evidence (${S.g.clues.length}/5)</h3>${S.g.solved ? `<div class="tag">Solved. Now survive what they raised.</div>` : S.g.clues.length >= 3 ? `<div class="tag" style="color:#ffd34d">You know enough to accuse someone: talk to them [E]. The suspects are Mayor Grubb, Vex and Morwen. Accuse the wrong one and the real culprit gets bolder. Follow the orange ? if you're stuck.</div>` : `<div class="tag">It's someone different every game. Follow the orange ? to whoever knows something.</div>`}${cl}${lg}`;
+  hookJournal();
 }
 setInterval(() => { if (journalOpen) renderJournal(); }, 500);
 

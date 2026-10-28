@@ -7,6 +7,7 @@ const P5_TABS = [ // [id, label, icon, key action, is it open, open/close it, ca
   ["bag", "Bag", "🎒", "bag", () => invOpen, (on) => toggleInv(on)],
   ["skills", "Skills", "⭐", "skills", () => skillsOpen, (on) => toggleSkills(on)],
   ["journal", "Journal", "📓", "journal", () => journalOpen, (on) => toggleJournal(on)],
+  ["map", "Map", "🗺", "map", () => mapOpen, (on) => toggleMap(on)],
   ["market", "Market", "📈", "market", () => mktOpen, (on) => toggleMarket(on)],
   ["cards", "Cards", "🃏", "cards", () => cardsOpen, (on) => toggleCards(on), () => !cgState],
   ["ballot", "Ballot", "🗳", "ballot", () => ballotOpen, (on) => toggleBallot(on), () => S && (S.vote || S.g.elec)],
@@ -40,7 +41,7 @@ let tabSig = "";
 function drawTabs() {
   const cur = openTabNow(), show = !!cur && inGameTabs();
   if (!cur) fromPause = false;
-  document.body.classList.toggle("p5", show);
+  document.body.classList.toggle("p5", show); document.body.classList.toggle("p5ballot", show && ballotOpen);
   tabStrip.classList.toggle("hidden", !show);
   if (!show) { tabSig = ""; return; }
   const sig = cur[0] + P5_TABS.map(tabCan).join() + keyFor("opts");
