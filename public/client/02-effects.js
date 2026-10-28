@@ -70,6 +70,7 @@ function handleEvent(e) {
   else if (e.k === "feed") pushLim(feed, { text: e.text, color: e.color, t }, 6);
   else if (e.k === "chat") pushLim(chatLog, { from: e.from, text: e.text, color: e.color, t }, 8);
   else if (e.k === "say") bubbles.set(e.id, { text: e.text, t });
+  else if (e.k === "ping") addPing(e, t);
   else if (e.k === "banner") { banner = { text: e.text, sub: e.sub, t }; sfx("banner"); if (e.npc) { const n = S && S.np && S.np.find((q) => q[0] === e.npc); if (n && Math.hypot(n[1] - pred.x, n[2] - pred.y) < 600) speakNpc(e.npc, ARRIVE_LINE[e.npc] || ""); } } // only the people standing there hear them
   else if (e.k === "vote") { sfx("banner"); pushLim(toasts, { text: "The town meeting is open until dusk. Press N to vote.", color: "#e0c0ff", t }, 4); }
   else if (e.k === "clue") { sfx("lvl"); clueT = t; }
@@ -139,11 +140,11 @@ function handlePersonal(e) {
       if (e.wk) impactFrame("wk"); else if (e.big && e.kill) impactFrame("big"); else if (e.hs && (e.kill || !AUTO_GUNS.has(w))) impactFrame("hs"); else if (e.kill && (w === "sword" || w === "sniper" || w === "laser")) impactFrame(w === "sword" ? "big" : "hs"); }
   }
   else if (e.k === "fitted") sfx("clank");
-  else if (e.k === "lvl") { pushLim(toasts, { text: `LEVEL ${e.lvl}!  Press K to spend your skill point`, color: "#9fe0ff", t }, 4); sfx("lvl"); }
+  else if (e.k === "lvl") { achieve(`Level ${e.lvl}`, `A skill point to spend: press ${keyFor("skills")}`, t); sfx("lvl"); }
   else if (e.k === "perfect") { pushLim(toasts, { text: "PERFECT RELOAD  +20% damage this mag" + (S && S.p && (S.p.find((q) => q.id === me) || {}).w === "ak" ? ", and no more maybe" : ""), color: "#7dffb0", t }, 4); sfx("perfect"); }
   else if (e.k === "jam") { pushLim(toasts, { text: "Fumbled the reload!", color: "#ff8080", t }, 4); sfx("jam"); }
   else if (e.k === "gold") pushLim(toasts, { text: `+${e.amt}g  ${e.reason}`, color: "#ffd34d", t }, 4);
-  else if (e.k === "hurt") { hurtFlash = t; shake = Math.max(shake, 5); sfx("hurt"); }
+  else if (e.k === "hurt") { hurtFlash = t; shake = Math.max(shake, 5); sfx("hurt"); if (e.fx !== undefined) hitFrom(e.fx, e.fy, t); }
   else if (e.k === "eff") fx.push({ kind: "text", t0: t, dur: 1, x: e.x, y: e.y, z: e.z, text: e.m > 1 ? "SUPER EFFECTIVE!" : "not very effective...", color: e.m > 1 ? "#ffd34d" : "#9aa", big: e.m > 1 });
   else if (e.k === "click") sfx("click");
   else if (e.k === "jammed") { pushLim(toasts, { text: "JAMMED! Press R to clear it. Press L to strip and clean your gun.", color: "#ff8060", t }, 4); sfx("jam"); }
@@ -175,7 +176,7 @@ function handlePersonal(e) {
 }
 const messes = [];
 let symT = -9, adsDown = false, adsZoom = 1, watcher = null;
-function pushLim(arr, v, n) { arr.push(v); while (arr.length > n) arr.shift(); }
+function pushLim(arr, v, n) { if ((arr === feed || arr === toasts) && v && v.text) logMsg(v); arr.push(v); while (arr.length > n) arr.shift(); }
 // ---------------------------------------------------------------- weapon feel: recoil, view punch, impact frames
 // [view punch (radians, just the camera), climb (how far it really pushes your aim up), screen shake]
 const RECOIL = { pistol: [0.035, 0.012, 2.5], smg: [0.016, 0.005, 1.4], rifle: [0.028, 0.009, 2.4], ak: [0.04, 0.013, 3], shotgun: [0.09, 0.028, 7], sniper: [0.12, 0.03, 8], staff: [0.03, 0.004, 3], rocket: [0.1, 0.02, 9], laser: [0.16, 0.03, 14] };

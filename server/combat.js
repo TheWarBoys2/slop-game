@@ -77,7 +77,7 @@ export function hurtPlayer(v, dmg, attacker, cause) {
   if (v.armor > 0) { const soak = Math.min(v.armor, dmg * 0.5); v.armor -= soak; dmg -= soak; }
   dmg *= 1 - Math.min(0.6, gearSum(v.gear, "def")); // helmet, vest, boots
   v.hp -= dmg; v.lastHurt = now(); addStress(v, dmg * 0.12);
-  v.pe.push({ k: "hurt" });
+  v.pe.push(attacker && Number.isFinite(attacker.x) && attacker !== v ? { k: "hurt", fx: Math.round(attacker.x), fy: Math.round(attacker.y) } : { k: "hurt" }); // where it came from, for the damage arrows
   if (v.hp <= 0) killPlayer(v, attacker, cause);
 }
 export function killPlayer(v, attacker, cause) {

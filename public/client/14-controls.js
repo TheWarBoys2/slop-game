@@ -7,7 +7,7 @@ const ACTIONS = [ // [id, default key, what it does, group]
   ["fwd", "w", "Move forward", "Move"], ["left", "a", "Move left", "Move"], ["back", "s", "Move back", "Move"], ["right", "d", "Move right", "Move"],
   ["jump", " ", "Jump, double jump, climb", "Move"], ["dodge", "shift", "Sprint (hold), dodge roll (tap)", "Move"], ["crouch", "control", "Crouch, slide, dive", "Move"],
   ["reload", "r", "Reload (tap again on the mark for a quick reload)", "Fight"], ["prim", "1", "Pistol", "Fight"], ["sec", "2", "Primary gun", "Fight"],
-  ["gren", "3", "Throw a grenade", "Fight"], ["molo", "4", "Throw a molotov", "Fight"], ["shout", "q", "Thu'um shout", "Fight"], ["elem", "z", "Change shout element", "Fight"],
+  ["gren", "3", "Throw a grenade", "Fight"], ["molo", "4", "Throw a molotov", "Fight"], ["shout", "q", "Thu'um shout", "Fight"], ["ping", "u", "Ping: mark a spot, enemy or loot for your mates", "Fight"], ["elem", "z", "Change shout element", "Fight"],
   ["use", "e", "Use, talk, pick up", "Do"], ["eat", "h", "Eat or drink what you need most", "Do"], ["hoe", "f", "Hoe: till and plant", "Do"], ["build", "c", "Build mode", "Do"],
   ["mech", "p", "Call your mech", "Do"], ["clean", "l", "Strip and clean your gun", "Do"], ["view", "t", "First / third person", "Do"],
   ["wheel", "g", "Screens wheel (hold)", "Screens"], ["wheel2", "x", "Actions wheel (hold)", "Screens"], ["bag", "i", "Bag", "Screens"], ["journal", "j", "Journal", "Screens"],
@@ -78,5 +78,5 @@ function showKeySheet(on) {
   for (const [id, , label, g] of ACTIONS) (groups[g] = groups[g] || []).push(`<div class="ks-r">${k(id)}<span>${label}</span></div>`);
   sheet.innerHTML = `<div class="ks-h">Controls <small>let go of F1 to close · change them in Options ${k("opts")}</small></div>${now ? `<div class="ks-now">${now}</div>` : ""}` +
     `<div class="ks-cols">${Object.entries(groups).map(([g, rows]) => `<div><div class="ctl-g">${g}</div>${rows.join("")}</div>`).join("")}` +
-    `<div><div class="ctl-g">Mouse</div><div class="ks-r"><kbd>Click</kbd><span>Shoot, swing, place</span></div><div class="ks-r"><kbd>Right</kbd><span>Aim down sights</span></div><div class="ks-r"><kbd>Wheel</kbd><span>Swap guns</span></div><div class="ctl-g">Always</div><div class="ks-r"><kbd>Esc</kbd><span>Back out of anything</span></div><div class="ks-r"><kbd>F8</kbd><span>Ideas and bugs</span></div></div></div>`;
+    `<div><div class="ctl-g">Mouse</div><div class="ks-r"><kbd>Click</kbd><span>Shoot, swing, place</span></div><div class="ks-r"><kbd>Right</kbd><span>Aim down sights</span></div><div class="ks-r"><kbd>Wheel</kbd><span>Swap guns</span></div><div class="ks-r"><kbd>Middle</kbd><span>Ping</span></div><div class="ctl-g">Always</div><div class="ks-r"><kbd>Esc</kbd><span>Back out of anything</span></div><div class="ks-r"><kbd>F8</kbd><span>Ideas and bugs</span></div></div></div>`;
 }

@@ -163,6 +163,13 @@ function onMessage(ws, raw) {
     case "vote": if (game.vote && Number.isInteger(m.i) && m.i >= 0 && m.i < game.vote.ev.choices.length) game.vote.votes.set(p.id, m.i); break;
     case "bug": fileBug(p, m); break;
     case "fix": finishFix(p, m); break;
+    case "ping": { // a marker for the whole party (Apex-style pings), at most two a second; not in a free-for-all
+      const t = now(), x = +m.x, y = +m.y, z = +m.z || 0;
+      if (rules().pvp || p.dead || t - (p.pingAt || 0) < 0.5 || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) break;
+      p.pingAt = t;
+      world.events.push({ k: "ping", id: p.id, x: Math.round(x), y: Math.round(y), z: Math.round(Math.max(-500, Math.min(3000, z))), w: ["go", "enemy", "loot", "ride"].includes(m.w) ? m.w : "go" });
+      break;
+    }
     case "chat": { const text = String(m.text || "").slice(0, 120).trim(); if (text) chat(fullName(p), text, p.color), world.events.push({ k: "say", id: p.id, text }); break; }
   }
 }

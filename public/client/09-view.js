@@ -35,6 +35,7 @@ function drawCompass(t) {
   if (S.g.adv) { for (const [, x, y, disc, , home] of S.g.adv.t) if (!home) mark(x, y, disc ? "🏘" : "❔", "#ffe9a0"); for (const q of S.g.adv.q) mark(q[4], q[5], advIcon(q), "#ffd34d"); }
   const boss = S.g.boss && S.z.find((z) => z[0] === S.g.boss); if (boss) mark(boss[2], boss[3], "💀", "#fff");
   if (S.g.moon) moonCompass(mark);
+  for (const pg of livePings(T())) { const P = PING[pg.w] || PING.go; mark(pg.x, pg.y, P[0], P[2]); }
   ctx.fillStyle = "#ffd34d"; ctx.fillRect(cx - 1, y - 14, 2, 5);
 }
 function drawMinimap(mine, t) {
@@ -252,7 +253,7 @@ function render3d(mine, t, dt) {
   const vm = ownView && mine && !mine.d && !scoped ? { type: mine.w, rar: mine.wr, sk: mine.wsk, at: mine.wat, spr: sprintK, sli: slideK, man: mantleDip, rl: mine.rl > 0 && mine.rt ? 1 - mine.rl / mine.rt : 0, show: true, kick: Math.max(0, 1 - (t - lastShotT) / 0.12), bob: moving ? t * 11 : 0, ads: adsK, swing: sl ? Math.min(1, (t - sl) / 0.25) : 1 } : null;
   R3D.frame({ S, MAP, t, dt, me, pred, aimYaw, aimPitch, fp: ownView, cam, fx, messes, hearthHitT, ghost, vm, slashT, nukeFx, cropKeys: CROP_KEYS, domeR: DOME_R });
   if (scoped && ownView) { ctx.save(); ctx.beginPath(); ctx.arc(VW / 2, VH / 2, VH * 0.44, 0, 7); ctx.clip(); } // through the scope, names and labels only show inside the lens
-  overlay3d(mine, t, dt);
+  overlay3d(mine, t, dt); drawPings(t);
   if (scoped && ownView) ctx.restore();
   if (scoped && ownView) { // scope overlay: black outside the lens, fine crosshair inside
     const R = VH * 0.44; tint("scope", 1);
@@ -263,7 +264,7 @@ function render3d(mine, t, dt) {
   }
   if (t - hurtFlash < 0.3) tint("hurt", 0.5 * (1 - (t - hurtFlash) / 0.3));
   if (t - fogT < 1.2) tint("fog", 0.25 * (1 - (t - fogT) / 1.2));
-  drawHud(mine, t);
+  drawHud(mine, t); drawHitDirs(t); drawAchievement(t); drawMsgLog();
   drawMinimap(mine, t); drawCompass(t); zombieSounds(t);
   drawCrosshair(mine, t); drawRadial(); // the wheel goes on top of everything
   if (mine && document.pointerLockElement !== cv && !menusOpen() && !radial) { ctx.fillStyle = "#000a"; ctx.beginPath(); ctx.roundRect(VW / 2 - 240, VH / 2 + 80, 480, 34, 8); ctx.fill(); text(`Click to look around  ·  ${keyFor("view")} switches view  ·  hold F1 for controls`, VW / 2, VH / 2 + 97, 15, "#ffd34d"); }
