@@ -39,6 +39,27 @@ if [ ! -x "$BIN" ]; then
   exit 1
 fi
 
+# an older copy still running holds the port; offer to stop it rather than crash
+OLD=$(pgrep -f "SlopValley-linux" 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+if [ -n "$OLD" ]; then
+  echo
+  echo "Slop Valley is already running (process $OLD), probably in another window or left in the background."
+  if [ -t 0 ]; then
+    printf "Stop it and start a fresh server? [Y/n] "
+    read -r ANS
+    case "$ANS" in
+      [nN]*) echo "Leaving it running. To run a second one, use another port: PORT=$((PORT + 1)) ./SlopValley.sh"; exit 0 ;;
+    esac
+    kill $OLD 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -f "SlopValley-linux" >/dev/null 2>&1 || break; sleep 0.5; done
+    pgrep -f "SlopValley-linux" >/dev/null 2>&1 && kill -9 $OLD 2>/dev/null && sleep 0.5
+    echo "Stopped the old one."
+  else
+    echo "Stop it first (pkill -f SlopValley-linux), or use another port: PORT=$((PORT + 1)) ./SlopValley.sh"
+    exit 1
+  fi
+fi
+
 echo
 echo "If you run a firewall, open TCP port $PORT (for example: sudo ufw allow $PORT/tcp)."
 echo
