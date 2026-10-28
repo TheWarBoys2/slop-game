@@ -71,6 +71,7 @@ Auto = a playtest scenario fails if it breaks. Bots = the bots exercise it, and 
 | Radial menus, every screen (bag, skills, journal, cards, market, wardrobe, options) | Manual |
 | Interface size and HUD opacity (Options), rebindable keys (Options > Controls), hold F1 cheat sheet | Manual (headless screenshot at 75% and 140%) |
 | HUD helpers: objective tracker (top right), pings (middle click / U, in world, compass and radar), damage direction arcs, red "!" alert boxes, level-up achievement, message log while chatting | Manual (headless screenshot with faked events; ping relay checked over a socket) |
+| Esc menu (Persona 5): Esc or losing the mouse opens it, every screen is a tab, Q/E or the wheel flip tabs, Esc backs out one level | Manual (headless: Esc, pick Bag, E to Skills, Esc back to menu, Esc to game) |
 | Positional audio, music, NPC voices | Manual |
 | Gamepad and flight stick | Manual |
 | Windows and Linux builds | Auto: the release workflow smoke-tests both |

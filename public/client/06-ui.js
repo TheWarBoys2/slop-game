@@ -69,7 +69,6 @@ function renderOptions() {
   $("o-voices").onchange = (e) => { OPTS.voices = e.target.checked; saveOpts(); if (OPTS.voices) speakNpc("grubb", "\"Splendid. Can you hear me? Splendid.\""); else hush(); };
 }
 $("options").addEventListener("click", (e) => { if (e.target === $("options")) toggleOptions(false); });
-$("optBtn").onclick = (e) => { e.target.blur(); toggleOptions(); };
 
 // ---------------------------------------------------------------- dialogue & journal
 let dlgOpen = false;
