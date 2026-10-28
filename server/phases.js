@@ -26,6 +26,7 @@ import { broadcastRaw } from "./tick.js";
 import { shrineReset, spawnVehicles } from "./vehicles.js";
 import { world } from "./world.js";
 import { isDinoDay, rules } from "./modes.js";
+import { moonDawn, moonDusk } from "./moonfall.js";
 
 // ---------------------------------------------------------------- phases
 // launched from the lobby once everyone is ready: build the world, play the opening, then drop everyone in
@@ -33,7 +34,7 @@ export function startGame() {
   PLOTS.length = BASE_PLOTS; // tilled plots belong to the last game
   BALL.x = BALL.y = 0;
   generateMap((Math.random() * 1e9) | 0);
-  world.vehicles = []; world.builds = []; game.bugs = null; game.forceBugs = false; game.zone = null; game.drop = null; game.countdown = 0; game.skip = new Set(); game.pendingVote = null; game.adv = null; world.ADV_KEEP = []; game.force = false;
+  world.vehicles = []; world.builds = []; game.bugs = null; game.forceBugs = false; game.zone = null; game.drop = null; game.countdown = 0; game.skip = new Set(); game.pendingVote = null; game.adv = null; world.ADV_KEEP = []; game.force = false; game.moon = null;
   game.deeds = freshDeeds(); game.legend = null;
   if (rules().townsfolk) placeNpcs(); else world.NPC_POS = [];
   world.projs = []; fires.clear(); scorched.clear(); game.disaster = null; game.dino = false; game.dinoDay = false; shrineReset(); game.dust = null;
@@ -179,6 +180,7 @@ export function startNight() {
   kind.start(n);
   game.spawnTotal = game.spawnLeft;
   maybeNuke();
+  moonDusk();
 }
 // Rates: every morning the valley takes a tenth of anything over 1500g. Hoarding gold is the one thing it taxes.
 const RATES_FREE = 1500, RATES = 0.1;
@@ -235,6 +237,7 @@ export function startDay() {
   openVote(day);
   if ((day - 1) % ELECT_EVERY === 0) openElection(); // election day: the mayor's race joins the ballot
   if (rules().story && day === game.cameoDay) cameoArrive();
+  moonDawn();
 }
 export function endGame(win) {
   game.phase = "over"; game.result = win ? "win" : "lose"; game.vote = null; game.elec = null; game.nuke = null;

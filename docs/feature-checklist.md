@@ -18,6 +18,7 @@ Auto = a playtest scenario fails if it breaks. Bots = the bots exercise it, and 
 | Dinosaur Day | Auto: dino-day |
 | Bug Night, holes, Brain Bug | Auto: bug-night (bugs appear) · Manual: sealing holes, Brain Bug death |
 | Disasters and their control-station minigames | Auto: disasters (strikes) · Bots: minigames |
+| Moonfall: the moon, title cards, four Giants' shrines, moon rocks, the landing | Auto: moon-saved (Oath at a shrine wakes a Giant; all four save the valley), moon-lands (it lands, game lost) · Manual: the moon and Giants in 3D, the HUD line (`SLOP_MOON=1`, tp `moon: "now" / "wake" / "night" / "fall"`) |
 | Nukes, siren, Hearth Dome, bunker | Auto: bug-night nuke probe (goes off, kills go through the normal death path) · Manual: Dome, bunker (`SLOP_NUKE=1`) |
 | Mystery: clues, accusation, Last Night boss, ending cutscene | Manual (tp `clues`, `killBoss`) |
 | Elections, daily ballot, mayor policies | Bots |

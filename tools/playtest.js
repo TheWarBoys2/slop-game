@@ -30,6 +30,8 @@ const SCENARIOS = [
     expect: (s) => [need(/[gpkq]/.test(s.zt || ""), "bugs came out of the holes")] },
   { name: "disasters", secs: 55, env: { SLOP_DISASTER: "any" },
     expect: (s) => [need(!!s.dis, "a disaster struck")] },
+  { name: "moon-saved", secs: 40, env: { SLOP_MOON: "1" }, probes: ["giants"], expect: () => [] },
+  { name: "moon-lands", secs: 40, env: { SLOP_MOON: "1" }, probes: ["moonfall"], expect: () => [] },
 ];
 
 const need = (ok, what) => (ok ? null : what);
@@ -141,6 +143,27 @@ function probeClient(port, probes, mode) {
       if (!await waitFor(() => playing() && S.g.ph === "night", 45000)) return "night never came for the probe";
       send({ t: "tp", hp: 500, nuke: 1 });
       return await waitFor(() => events.some((e) => e.k === "nuke"), 30000) ? null : "the test nuke never went off";
+    },
+    // Moonfall: wake one Giant the proper way (Oath at the shrine, hold the circle), the rest by test hook; the moon goes back up
+    async giants() {
+      if (!await waitFor(() => playing() && S.g.moon && S.g.moon.h >= 0, 45000)) return "the moon never came";
+      const [sx, sy] = S.g.moon.sh[0];
+      const woke = await waitFor(() => {
+        if (S.g.moon.sh[0][3]) return true;
+        send({ t: "tp", x: sx + 40, y: sy + 40, hp: 500, clearZ: 1 });
+        if (!S.g.moon.sh[0][4]) send({ t: "use" });
+        return false;
+      }, 30000);
+      if (!woke) return `the first Giant never woke (last message: ${toasts.at(-1) || "none"})`;
+      send({ t: "tp", moon: "wake" });
+      return await waitFor(() => events.some((e) => e.k === "moon" && e.say === "saved"), 10000) ? null : "the Giants never held up the moon";
+    },
+    // Moonfall: nobody wakes the Giants, so it lands at the end of the final night and the game is lost
+    async moonfall() {
+      if (!await waitFor(() => playing() && S.g.moon && S.g.moon.h >= 0, 45000)) return "the moon never came";
+      send({ t: "tp", moon: "night" });
+      if (!await waitFor(() => events.some((e) => e.k === "moon" && e.say === "fall"), 20000)) return "the moon never landed";
+      return await waitFor(() => S.g.ph === "over" && S.g.res === "lose", 5000) ? null : "the moon landed but the game didn't end";
     },
     // walk into Dust II's CT spawn, find the radio and start a round
     async dust() {

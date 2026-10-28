@@ -12,7 +12,8 @@ import client9 from "../public/client/09-view.js" with { type: "text" };
 import client10 from "../public/client/10-render.js" with { type: "text" };
 import client11 from "../public/client/11-screens.js" with { type: "text" };
 import client12 from "../public/client/12-music.js" with { type: "text" };
-const gameSrc = [client1, client2, client3, client4, client5, client6, client7, client8, client9, client10, client11, client12].join("\n"); // the browser client, one file per part, joined in order
+import client13 from "../public/client/13-moon.js" with { type: "text" };
+const gameSrc = [client1, client2, client3, client4, client5, client6, client7, client8, client9, client10, client11, client13, client12].join("\n"); // the browser client, one file per part, joined in order (12-music closes the shared function, so it stays last)
 import moveJs from "../public/move.js" with { type: "text" };
 import snapJs from "../public/snap.js" with { type: "text" };
 import r3dJs from "../public/r3d.js" with { type: "text" };
@@ -52,6 +53,7 @@ import { broadcastRaw, tick } from "./tick.js";
 import { exitVehicle } from "./vehicles.js";
 import { world } from "./world.js";
 import { MODE_RULES, rules } from "./modes.js";
+import { moonTest } from "./moonfall.js";
 
 // the browser gets the same tables the server plays by (data.js), plus a few names from the other data modules
 const CLIENT_DATA = { ...DATA, GEAR_RAR, BOSS_NAMES: Object.fromEntries(Object.entries(BOSSES).map(([k, b]) => [k, b.name])) };
@@ -102,6 +104,7 @@ function onMessage(ws, raw) {
       if (m.bugs) game.forceBugs = true;
       if (m.killBrain && game.bugs) { const b = world.zombies.find((z) => z.id === game.bugs.brain); if (b) hurtZombie(b, b.hp + 1, p); }
       if (m.brainNow && game.bugs && !game.bugs.brain) brainEmerges();
+      if (typeof m.moon === "string") moonTest(p, m.moon); // Moonfall
       if (m.sealAll && game.bugs) for (const h of [...game.bugs.holes]) if (!h.hive) sealHole(h, p);
       if (m.mode !== undefined) p.weapons[p.active].mode = m.mode || undefined;
       if (m.enh !== undefined) p.weapons[p.active].enh = m.enh;
@@ -190,7 +193,22 @@ function fileBug(p, m) {
   toast(p, ok ? (kind === "IDEA" ? "Idea saved. Thanks!" : "Bug report saved. Thanks!") : "Couldn't save the report on the host's PC. Tell them in chat.", ok ? "#8f8" : "#f88");
   if (ok) console.log(`  Bug report from ${fullName(p)} saved to ${BUG_FILE}`);
 }
-const server = Bun.serve({
+// a second copy of the game (or anything else) already on the port: say so plainly instead of Bun's crash dump
+function listenOrExit(start) {
+  try { return start(); } catch (err) {
+    if (!err || (err.code !== "EADDRINUSE" && !/in use/i.test(String(err.message)))) throw err;
+    console.error(`
+  Port ${PORT} is already in use, so Slop Valley can't start.
+  Usually that's another copy of Slop Valley still running (another window, or one left in the background).
+  Close it and try again, or run on another port:
+    Linux:   pkill -f SlopValley-linux   (or: fuser -k ${PORT}/tcp)
+    Windows: close the other Slop Valley window, or end SlopValley.exe in Task Manager
+    Other port: PORT=${PORT + 1} ./SlopValley.sh   (or: SlopValley.exe ${PORT + 1})
+`);
+    process.exit(1);
+  }
+}
+const server = listenOrExit(() => Bun.serve({
   port: PORT,
   hostname: "0.0.0.0",
   fetch(req, srv) {
@@ -221,7 +239,7 @@ const server = Bun.serve({
       if (players.size === 0 && game.phase !== "lobby") { game.phase = "lobby"; world.zombies = []; world.projs = []; world.caches = []; fires.clear(); world.crates = []; world.vehicles = []; world.builds = []; world.WALLS = world.WALLS.filter((w) => w.kind !== "built"); game.vote = null; game.zone = null; game.drop = null; game.pendingVote = null; }
     },
   },
-});
+}));
 // a crash in one tick shouldn't take the whole valley down: log it to the bug file and carry on
 let tickErrs = 0, tickErrAt = 0;
 setInterval(() => {

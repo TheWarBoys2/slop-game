@@ -30,6 +30,7 @@ function drawCompass(t) {
   for (const n of questNpcs()) mark(n.x, n.y, "❓", "#ffa020");
   if (S.g.adv) { for (const [, x, y, disc, , home] of S.g.adv.t) if (!home) mark(x, y, disc ? "🏘" : "❔", "#ffe9a0"); for (const q of S.g.adv.q) mark(q[4], q[5], advIcon(q), "#ffd34d"); }
   const boss = S.g.boss && S.z.find((z) => z[0] === S.g.boss); if (boss) mark(boss[2], boss[3], "💀", "#fff");
+  if (S.g.moon) moonCompass(mark);
   ctx.fillStyle = "#ffd34d"; ctx.fillRect(cx - 1, y - 14, 2, 5);
 }
 function drawMinimap(mine, t) {
@@ -72,6 +73,7 @@ function drawMinimap(mine, t) {
   for (const [, cx2, cy2] of S.ca || []) { ctx.fillStyle = "#7dffb0"; ctx.fillRect(mx + (cx2 - ox) * k - 2, my + (cy2 - oy) * k - 2, 4, 4); }
   if (S.g.dis && S.g.dis.k === "tornado") text("🌪", mx + (S.g.dis.x - ox) * k, my + (S.g.dis.y - oy) * k, 12, "#ccc");
   if (S.g.dis && S.g.dis.st) { const sx = mx + (S.g.dis.st[0] - ox) * k, sy = my + (S.g.dis.st[1] - oy) * k; ctx.fillStyle = Math.floor(T() * 3) % 2 ? "#9fe0ff" : "#ffd34d"; ctx.beginPath(); ctx.arc(sx, sy, 5, 0, 7); ctx.fill(); text("⚠", sx, sy - 9, 11, "#ffd34d"); }
+  if (S.g.moon) moonMap(mx, my, ox, oy, k);
   for (const v of S.vh) { ctx.fillStyle = AIR[v[1]] ? "#ffd34d" : "#9fe0ff"; ctx.fillRect(mx + (v[2] - ox) * k - 2, my + (v[3] - oy) * k - 2, 4, 4); }
   for (const p of S.p) {
     if (p.d || p.air === 1 || p.air === 3) continue;
