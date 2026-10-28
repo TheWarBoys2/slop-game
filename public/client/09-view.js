@@ -245,14 +245,14 @@ function render3d(mine, t, dt) {
   R3D.frame({ S, MAP, t, dt, me, pred, aimYaw, aimPitch, fp: ownView, cam, fx, messes, hearthHitT, ghost, vm, slashT, nukeFx, cropKeys: CROP_KEYS, domeR: DOME_R });
   overlay3d(mine, t, dt);
   if (scoped && ownView) { // scope overlay: black outside the lens, fine crosshair inside
-    const R = VH * 0.44; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.rect(0, 0, VW, VH); ctx.arc(VW / 2, VH / 2, R, 0, 7, true); ctx.fill("evenodd");
+    const R = VH * 0.44; tint("scope", 1);
     ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(VW / 2 - R, VH / 2); ctx.lineTo(VW / 2 + R, VH / 2); ctx.moveTo(VW / 2, VH / 2 - R); ctx.lineTo(VW / 2, VH / 2 + R); ctx.stroke();
     ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(VW / 2 - R, VH / 2); ctx.lineTo(VW / 2 - R * 0.12, VH / 2); ctx.moveTo(VW / 2 + R * 0.12, VH / 2); ctx.lineTo(VW / 2 + R, VH / 2); ctx.moveTo(VW / 2, VH / 2 + R * 0.12); ctx.lineTo(VW / 2, VH / 2 + R); ctx.stroke();
     ctx.fillStyle = "#ff3030"; ctx.beginPath(); ctx.arc(VW / 2, VH / 2, 1.8, 0, 7); ctx.fill();
     if (!mine.cro) text("CTRL to crouch: steadier scope", VW / 2, VH / 2 + R + 18, 12, "#bbb");
   }
-  if (t - hurtFlash < 0.3) { const g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VH * 0.8); g.addColorStop(0, "#f000"); g.addColorStop(1, `rgba(200,0,0,${0.5 * (1 - (t - hurtFlash) / 0.3)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); }
-  if (t - fogT < 1.2) { ctx.fillStyle = `rgba(120,40,160,${0.25 * (1 - (t - fogT) / 1.2)})`; ctx.fillRect(0, 0, VW, VH); }
+  if (t - hurtFlash < 0.3) tint("hurt", 0.5 * (1 - (t - hurtFlash) / 0.3));
+  if (t - fogT < 1.2) tint("fog", 0.25 * (1 - (t - fogT) / 1.2));
   drawHud(mine, t);
   drawMinimap(mine, t); drawCompass(t); zombieSounds(t);
   drawCrosshair(mine, t); drawRadial(); // the wheel goes on top of everything
