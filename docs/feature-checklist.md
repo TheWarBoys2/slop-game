@@ -73,6 +73,7 @@ Auto = a playtest scenario fails if it breaks. Bots = the bots exercise it, and 
 | HUD helpers: objective tracker (top right), pings (middle click / U, in world, compass and radar), damage direction arcs, red "!" alert boxes, level-up achievement, message log while chatting | Manual (headless screenshot with faked events; ping relay checked over a socket) |
 | Esc menu (Persona 5): Esc or losing the mouse opens it, every screen is a tab, Q/E or the wheel flip tabs, Esc backs out one level | Manual (headless: Esc, pick Bag, E to Skills, Esc back to menu, Esc to game) |
 | Map tab (BotW, `,`): zoom, drag, click for a waypoint shown on compass, radar and in the world; bag item cards with gear comparison, right-click menu, Sort; skills say what the next rank does; journal Track button feeds the objective tracker | Manual (headless screenshots of each, quest tracking with a faked quest) |
+| Shops: per-shop look (RE4 Merchant, Stardew, Fallout terminal, Yakuza), item card on the right, Shift-click buys five consumables; dialogue: Stardew box, portrait, typewriter text (click to finish) | Manual (headless screenshots of each shop and a real NPC talk) |
 | Positional audio, music, NPC voices | Manual |
 | Gamepad and flight stick | Manual |
 | Windows and Linux builds | Auto: the release workflow smoke-tests both |

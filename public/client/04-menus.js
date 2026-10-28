@@ -249,6 +249,7 @@ function renderShop(force) {
     d.onclick = () => send({ t: "buy", item: id });
     $("shopitems").appendChild(d);
   });
+  shopDress(mine); // the shop's look and the item card (19-shops.js)
 }
 $("shop").addEventListener("click", (e) => { if (e.target === $("shop")) toggleShop(false); });
 for (const [id, close] of [["inv", () => toggleInv(false)], ["skills", () => toggleSkills(false)], ["journal", () => toggleJournal(false)], ["market", () => toggleMarket(false)], ["stall", () => toggleStall(false)], ["cards", () => { if (!cgState) toggleCards(false); }]])

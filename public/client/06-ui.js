@@ -90,6 +90,7 @@ function showDlg(e) {
   box.querySelector(".dl-x").onclick = () => { send({ t: "dlg", i: -1 }); showDlg({ close: 1 }); };
   speakNpc(e.npc, e.text);
   box.classList.remove("hidden");
+  dlgDress(e); // portrait and typewriter (19-shops.js)
   sfx("hit");
 }
 let journalOpen = false;

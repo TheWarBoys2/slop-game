@@ -272,6 +272,32 @@
   #journal .jq { background: #fffaf0cc; border: 1px solid #c8bc98; color: #2a2a4a; } #journal .jq small { color: #5a5070; } #journal .jq span { color: #8a5a10; }
   #journal .jc { background: #fffaf0cc; color: #2a2a4a; border-left-color: #2a4a8a; } #journal .tag, #journal .keys { color: #4a4a6a; } #journal .lg small { font-weight: bold; }
   .jtrack { float: right; margin-left: 8px; background: #2a4a8a; color: #fff; border: 0; border-radius: 10px; padding: 1px 9px; font-size: 11px; cursor: pointer; } .jtrack.on { background: #c43a3a; }
+  /* shops: one layout (list left, card right), four looks */
+  #shop .panel { max-width: 800px !important; display: grid; grid-template-columns: 1fr 250px; column-gap: 18px; align-items: start; }
+  #shop .panel > :not(#shopitems):not(#shopcard) { grid-column: 1 / -1; } #shop .panel > .keys { grid-column: 1; } #shop #shopitems { grid-column: 1; } #shopcard { grid-column: 2; grid-row: 3 / span 2; position: sticky; top: 0; background: #0008; border-radius: 6px; padding: 10px; font-size: 12px; min-height: 120px; }
+  #shopcard .bt-h { border-left: 4px solid #888; padding-left: 8px; margin-bottom: 6px; } #shopcard .bt-h b { display: block; font-size: 15px; } #shopcard .bt-h small { opacity: .7; text-transform: capitalize; }
+  #shopcard .bt-r { display: flex; gap: 6px; padding: 2px 0; border-bottom: 1px solid #fff2; } #shopcard .bt-r span { flex: 1; opacity: .8; } #shopcard .bt-r i { font-style: normal; } #shopcard .up { color: #6f6; } #shopcard .down { color: #f66; } #shopcard .dim { opacity: .6; }
+  #shopcard .bt-f { margin-top: 6px; opacity: .85; } #shopcard .sc-p { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; font-size: 13px; } #shopcard .sc-p b { font-size: 20px; color: #ffd34d; } #shopcard .sc-p .poor { color: #ff7060; }
+  #shopcard .sc-k { margin-top: 8px; opacity: .7; font-size: 11px; }
+  #shopname::after { content: attr(data-hello); display: block; font-size: 13px; font-weight: normal; opacity: .75; font-style: italic; }
+  #shop[data-skin="merchant"] .panel { background: radial-gradient(ellipse at 30% 0%, #3a2a5a, #160f24 70%); border: 2px solid #b08a3a; border-radius: 2px; }
+  #shop[data-skin="merchant"] #shopname { font-family: Georgia, serif; color: #e8c060 !important; letter-spacing: 2px; text-transform: uppercase; }
+  #shop[data-skin="merchant"] .item { background: #2a1f3a; border: 1px solid #4a3a6a; border-radius: 2px; } #shop[data-skin="merchant"] .item:hover { background: #3a2a52; border-color: #e8c060; }
+  #shop[data-skin="stardew"] .panel { background: #f0d9a8; color: #4a2a10; border: 6px solid #8a4a1a; border-radius: 4px; box-shadow: inset 0 0 0 3px #d8a050, 0 10px 40px #000a; }
+  #shop[data-skin="stardew"] #shopname { color: #6a2a0a !important; } #shop[data-skin="stardew"] .tag { color: #6a4a2a; }
+  #shop[data-skin="stardew"] .item { background: #fbe8c0; border: 2px solid #c88a40; color: #4a2a10; border-radius: 2px; } #shop[data-skin="stardew"] .item:hover { background: #fff3d8; border-color: #8a4a1a; } #shop[data-skin="stardew"] .item .k { color: #b04a10; } #shop[data-skin="stardew"] .item small { color: #7a5a3a; }
+  #shop[data-skin="stardew"] #shopcard { background: #fbe8c0; border: 2px solid #c88a40; color: #4a2a10; } #shop[data-skin="stardew"] #shopcard .sc-p b { color: #b06a10; } #shop[data-skin="stardew"] .tab { background: #e0b878; color: #4a2a10; } #shop[data-skin="stardew"] .tab.on { background: #8a4a1a; color: #fff; }
+  #shop[data-skin="pipboy"] .panel { background: repeating-linear-gradient(#0a1a0a 0 2px, #0c200c 2px 4px); color: #5aff7a; border: 2px solid #3adf5a; border-radius: 10px; font-family: Consolas, "Courier New", monospace; box-shadow: 0 0 30px #3adf5a33 inset, 0 10px 40px #000a; text-shadow: 0 0 4px #3adf5a88; }
+  #shop[data-skin="pipboy"] #shopname { color: #8aff9a !important; text-transform: uppercase; } #shop[data-skin="pipboy"] .tag, #shop[data-skin="pipboy"] .dome { color: #5aff7a; background: transparent; }
+  #shop[data-skin="pipboy"] .item { background: transparent; border: 1px solid #2a8a3a; border-radius: 0; } #shop[data-skin="pipboy"] .item:hover { background: #5aff7a; color: #021; text-shadow: none; } #shop[data-skin="pipboy"] #shopcard { background: transparent; border: 1px solid #2a8a3a; } #shop[data-skin="pipboy"] #shopcard .sc-p b { color: #8aff9a; }
+  #shop[data-skin="yakuza"] .panel { background: linear-gradient(#1a0612, #0a0208); border: 2px solid #ff2a8a; border-radius: 4px; box-shadow: 0 0 24px #ff2a8a55, 0 10px 40px #000a; }
+  #shop[data-skin="yakuza"] #shopname { color: #ffd34d !important; text-shadow: 0 0 10px #ff2a8a; } #shop[data-skin="yakuza"] .item { background: #2a0a1c; border: 1px solid #6a1a4a; } #shop[data-skin="yakuza"] .item:hover { border-color: #ffd34d; }
+  /* talking (Stardew Valley): a wooden box, the portrait on the right */
+  #dlg { background: #f0d9a8 !important; color: #4a2a10; border: 6px solid #8a4a1a !important; border-radius: 4px !important; box-shadow: inset 0 0 0 3px #d8a050, 0 8px 30px #000a; padding-right: 150px !important; min-height: 150px; }
+  #dlg .dl-n { color: #6a2a0a; } #dlg .dl-n span { color: #8a6a4a; } #dlg .dl-t { color: #3a2010; } #dlg .dl-t.typing { cursor: pointer; }
+  #dlg .dl-o { background: #fbe8c0; color: #4a2a10; border: 2px solid #c88a40; border-radius: 2px; } #dlg .dl-o:hover { background: #fff3d8; border-color: #8a4a1a; color: #000; } #dlg .dl-o b { color: #b04a10; } #dlg .dl-x { color: #8a6a4a; }
+  #dlg .dl-p { position: absolute; right: 14px; top: 14px; width: 120px; text-align: center; } #dlg .dl-pf { height: 110px; border: 4px solid #8a4a1a; display: flex; align-items: center; justify-content: center; font-size: 58px; color: #fff; font-family: Georgia, serif; box-shadow: inset 0 0 0 2px #d8a050; }
+  #dlg .dl-pn { margin-top: 4px; background: #fbe8c0; border: 2px solid #c88a40; font-weight: bold; font-size: 13px; padding: 2px; }
   #bigmap { background: none; cursor: crosshair; }
   body.p5:not(.p5ballot) #story, body.p5 #elect { display: none; } /* the story card waits behind the menus */
   #p5menu { position: fixed; inset: 0; z-index: 13; overflow: hidden; font-family: "Arial Black", Impact, sans-serif; }
